@@ -1,2 +1,1 @@
-# superplumber
-Piped functions with dependency injection
+# SuperPlumber
