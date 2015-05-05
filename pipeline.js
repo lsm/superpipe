@@ -62,12 +62,13 @@ Pipeline.prototype = {
         });
 
         var ctx = {
-          setDep: function() {
-            setDep.apply(null, arguments);
-            return ctx;
-          },
           injector: injector
         };
+
+        injector.regDependency('setDep', function() {
+          setDep.apply(null, arguments);
+          return ctx;
+        });
 
         injector.regDependency(ctx);
 
