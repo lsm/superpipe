@@ -1,18 +1,26 @@
+/**
+ * Module dependencies
+ */
+
 var Injector = require('./injector');
 var Pipeline = require('./pipeline');
 var assign = require('lodash.assign');
 var EventEmitter = require('eventemitter3');
 
-module.exports = Plumber;
+/**
+ * The plumber constructor. It can make pipelines and maintain shared dependencies
+ * between pipelines.
+ *
+ * @type {Function}
+ */
 
-function Plumber(injector) {
-  this.initialized = false;
+var Plumber = module.exports = function Plumber(injector) {
+  EventEmitter.call(this);
   this.injector = injector || new Injector();
   this.reservedDeps = ['on', 'autoBind', 'emit',
     'setDep', 'getDep', 'set', 'get',
     'next', 'pipe', 'pipeline'
   ];
-  this.emitter = new EventEmitter();
 
   // bind selected functions to current context
   ['autoBind', 'isDepNameReserved', 'emit'].forEach(function(prop) {
@@ -21,9 +29,9 @@ function Plumber(injector) {
       this.injector.regDependency(prop, this[prop]);
     }
   }, this);
-}
+};
 
-Plumber.prototype = {
+Plumber.prototype = assign(EventEmitter.prototype, {
   listenTo: function(emitter, eventName) {
     return this.pipefy().listenTo(emitter, eventName);
   },
@@ -50,14 +58,6 @@ Plumber.prototype = {
         }
       });
     }
-  },
-
-  on: function(name, handler) {
-    this.emitter.on(name, handler);
-  },
-
-  emit: function() {
-    this.emitter.emit.apply(this.emitter, arguments);
   },
 
   setDep: function(name, dep, props) {
@@ -137,4 +137,4 @@ Plumber.prototype = {
   getDep: function(name) {
     return this.injector.getDependency(name);
   }
-};
+});
