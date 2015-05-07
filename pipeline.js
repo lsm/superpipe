@@ -1,3 +1,5 @@
+'use strict';
+
 var Injector = require('./injector');
 var toArray = require('lodash.toarray');
 var EventEmitter = require('eventemitter3');
@@ -52,51 +54,42 @@ Pipeline.prototype = {
           injector: injector
         });
 
-        // global deps getter/setter for sharing states cross pipelines
+        // global deps setter for sharing states cross pipelines
         injector.regDependency('set', function() {
           plumber.setDep.apply(plumber, arguments);
           setDep.apply(null, arguments);
         });
-        injector.regDependency('get', function() {
-          return plumber.getDep.apply(plumber, arguments);
-        });
 
-        var ctx = {
-          injector: injector
-        };
+        // local deps setter unique for each event
+        injector.regDependency('setDep', setDep);
 
-        injector.regDependency('setDep', function() {
-          setDep.apply(null, arguments);
-          return ctx;
-        });
+        var next = function next(err) {
+          var pipe;
 
-        injector.regDependency(ctx);
+          if (err) {
+            if (self.errorHandler) {
+              // error handler fn as a pipe
+              pipe = self.errorHandler;
+            } else {
+              console.warn('No error handler function');
+              console.error(err);
+            }
+          } else {
+            // get the right unit from the pipes array
+            pipe = pipes[step++];
+          }
 
-        var next = function next() {
-          // get the right unit from the pipes array
-          var pipe = pipes[step++];
           if (pipe) {
             var fn = pipe.fn;
             var deps = pipe.deps;
             //  run the actual function
-            var result = fn.apply(ctx, args);
+            var result = fn.apply(injector, args);
             // check if we need to run next automatically
-            if (result !== false && (!deps || (deps.indexOf('next') === -1))) {
+            if (!err && result !== false && (!deps || (deps.indexOf('next') === -1))) {
               // no deps or has deps but next is not required
-              // call next when there's a true result
+              // call next pipe when the returned value is not false
               next();
             }
-          }
-        };
-
-        ctx.next = next;
-
-        ctx.error = function(error) {
-          if (self.errorHandler) {
-            self.errorHandler.call(ctx, error);
-          } else {
-            console.warn('No error handler function');
-            console.error(error);
           }
         };
 
@@ -110,19 +103,21 @@ Pipeline.prototype = {
     return this;
   },
 
-  pipe: function(fn, deps) {
+  buildPipe: function(fn, deps) {
     var injector = this.injector;
+    var fnName;
     if ('string' === typeof fn) {
-      var fnName = fn;
-      fn = function() {
-        // @todo @note should test and catch bug like this
-        var _fn = injector.getDependency(fnName);
+      fnName = fn;
+      fn = function(_fn) {
         if ('function' === typeof _fn) {
-          return _fn.apply(this, arguments);
+          // @todo @note should test and catch bug like this
+          // when it's a function call it with rest of the arguments
+          return _fn.apply(this, toArray(arguments).slice(1));
         } else if ('boolean' === typeof _fn) {
+          // directly return the value when it is a boolean for flow control
           return _fn;
         } else {
-          throw new Error('Dependency ' + fnName + ' is not a function.');
+          throw new Error('Dependency ' + fnName + ' is not a function or boolean.');
         }
       };
     }
@@ -145,23 +140,30 @@ Pipeline.prototype = {
       throw new Error('deps should be either string or array of dependency names');
     }
 
-    // get our injected version of pipe function
-    fn = injector.inject(fn, deps, injector);
+    // Put the named function as the first element in deps for late dependency discovery
+    if (fnName && Array.isArray(deps)) {
+      deps.unshift(fnName);
+    }
 
-    // save to the pipes array as a pipes unit
-    this.pipes.push({
+    // get our injected version of pipe function
+    fn = injector.inject(fn, deps);
+
+    // return injectable function with depedencies array
+    return {
       fn: fn,
       deps: deps
-    });
+    };
+  },
 
+  pipe: function(fn, deps) {
+    // save to the pipes array as a pipes unit
+    var pipe = this.buildPipe.apply(this, arguments);
+    this.pipes.push(pipe);
     return this;
   },
 
-  error: function(errorHandler) {
-    if ('string' === typeof errorHandler) {
-      errorHandler = this.injector.getDependency(errorHandler);
-    }
-    this.errorHandler = errorHandler;
+  error: function() {
+    this.errorHandler = this.buildPipe.apply(this, arguments);
     return this;
   }
 };

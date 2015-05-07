@@ -1,3 +1,4 @@
+'use strict';
 /* globals describe, it */
 var Plumber = require('../plumber');
 var Pipeline = require('../pipeline');
@@ -65,6 +66,12 @@ describe('Pipeline', function() {
       emitter.emit('click');
     });
 
+    it('should has `this` equal to 0', function() {
+      pipeline.pipe(function() {
+        should(this).be.equal(0);
+      });
+    });
+
     it('should keep the original argument if null is provided while still provide the right dependency need to be injected', function() {
       pipeline
         .pipe(function(event, next) {
@@ -77,15 +84,15 @@ describe('Pipeline', function() {
 
     });
 
-    it('should not register getDep as a dependency', function () {
-      pipeline.pipe(function (getDep) {
+    it('should not register getDep as a dependency', function() {
+      pipeline.pipe(function(getDep) {
         should(getDep).be.equal(undefined);
       }, 'getDep');
     });
 
     it('should register setDep as dependencies and bind with dependencies of current pipeline', function(done) {
       pipeline
-        .pipe(function (setDep) {
+        .pipe(function(setDep) {
           plumber.setDep.should.not.be.equal(setDep);
           plumber.setDep('key', 'old value');
           setDep('key', 'new value');
@@ -115,6 +122,33 @@ describe('Pipeline', function() {
           myFn: 'hashedDeps'
         }, 'hashedDeps');
       emitter.emit('keydown');
+    });
+  });
+
+  describe('#error', function() {
+    var plumber = new Plumber(injector);
+    plumber.setDep('dep1', 1);
+    var pipeline = plumber.listenTo(emitter, 'error');
+    var errMessage = 'Error message';
+
+    it('should call error handler when next is called with truthy first argument', function(done) {
+      pipeline.pipe(function(next) {
+        next(errMessage);
+      }, 'next');
+      pipeline.error(function(err) {
+        err.should.be.equal(errMessage);
+        done();
+      });
+      emitter.emit('error', errMessage);
+    });
+
+    it('should call error handler with requested dependencies', function(done) {
+      pipeline.error(function(err, arg1) {
+        err.should.be.equal(errMessage);
+        arg1.should.be.equal(1);
+        done();
+      }, null, 'dep1');
+      emitter.emit('error', errMessage);
     });
   });
 });
