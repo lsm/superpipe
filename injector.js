@@ -1,3 +1,5 @@
+'use strict';
+
 var assign = require('lodash.assign');
 var toArray = require('lodash.toarray');
 
@@ -63,9 +65,18 @@ Injector.prototype = {
     var self = this;
     fn = function() {
       var defaultArgs = toArray(arguments);
-      var injector = (this instanceof Injector ? this : (this.injector || self));
+      var ctx;
+      var injector;
+
+      if (this instanceof Injector) {
+        ctx = 0;
+        injector = this;
+      } else {
+        ctx = this;
+        injector = this.injector || self;
+      }
       var _args = injector.getDependencies(fnArgs, defaultArgs);
-      return _fn.apply(this, _args);
+      return _fn.apply(ctx, _args);
     };
     return fn;
   }
