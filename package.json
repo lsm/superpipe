@@ -1,7 +1,7 @@
 {
-  "name": "superplumber",
+  "name": "superpipe",
   "version": "0.1.0",
-  "description": "superplumber",
+  "description": "The missing pipeline for functional reactive programming",
   "main": "index.js",
   "scripts": {
     "test": "mocha",
@@ -19,14 +19,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/lsm/superplumber.git"
+    "url": "git://github.com/lsm/superpipe.git"
   },
   "keywords": [
-    "superplumber",
     "flow",
     "stream",
     "pipe",
+    "pipeline",
     "event",
+    "ioc",
     "frp",
     "functional",
     "reactive"
