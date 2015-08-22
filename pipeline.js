@@ -34,9 +34,9 @@ Pipeline.prototype = {
       name = emitter;
       emitter = this.emitter;
     }
-    var listenFn = emitter.on;
+    var listenFn = emitter.on || emitter.addEventListener || emitter.addListener;
     if ('function' !== typeof listenFn) {
-      throw new Error('emitter has no listening funciton "on"');
+      throw new Error('emitter has no listening funciton "on, addEventListener or addListener"');
     }
     listenFn = listenFn.bind(emitter);
 

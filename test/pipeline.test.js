@@ -23,7 +23,7 @@ describe('Pipeline', function() {
     it('should throw if listenFn is not a function', function() {
       (function() {
         pipeline.listenTo({}, 'click');
-      }).should.throw(/^emitter has no listening funciton "on"/);
+      }).should.throw(/^emitter has no listening funciton "on, addEventListener or addListener"/);
     });
   });
 
