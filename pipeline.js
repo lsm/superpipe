@@ -2,6 +2,8 @@
 
 var Injector = require('./injector');
 var toArray = require('lodash.toarray');
+var isObject = require('lodash.isobject');
+var isArray = require('lodash.isarray');
 var EventEmitter = require('eventemitter3');
 
 module.exports = Pipeline;
@@ -121,10 +123,12 @@ Pipeline.prototype = {
         }
       };
     }
-    if (Array.isArray(fn)) {
+
+    if (isArray(fn)) {
       deps = fn.slice(1);
       fn = fn[0];
     }
+
     if ('function' !== typeof fn) {
       throw new Error('fn should be a function or name of registered function dependency: ' + fn);
     }
@@ -132,11 +136,11 @@ Pipeline.prototype = {
     // normalize deps to array
     if (arguments.length > 2) {
       deps = Array.prototype.slice.call(arguments, 1);
-    } else if ('string' === typeof deps || (!Array.isArray(deps) && 'object' === typeof deps)) {
+    } else if ('string' === typeof deps || (!isArray(deps) && isObject(deps))) {
       deps = [deps];
     }
 
-    if (deps && !Array.isArray(deps)) {
+    if (deps && !isArray(deps)) {
       throw new Error('deps should be either string or array of dependency names');
     }
 
