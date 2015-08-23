@@ -1,1 +1,1 @@
-# SuperPlumber [![build status](https://travis-ci.org/lsm/superpipe.svg?branch=master)](http://travis-ci.org/lsm/superpipe)
+# SuperPlumber [![build status](https://travis-ci.org/lsm/superpipe.svg?branch=master)](http://travis-ci.org/lsm/superpipe) [![Coverage Status](https://coveralls.io/repos/lsm/superpipe/badge.svg?branch=master&service=github)](https://coveralls.io/github/lsm/superpipe?branch=master)

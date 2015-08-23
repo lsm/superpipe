@@ -1,8 +1,8 @@
 'use strict';
 /* globals describe, it */
-var Plumber = require('../plumber');
-var Pipeline = require('../pipeline');
-var Injector = require('../injector');
+var Plumber = require('../');
+var Pipeline = Plumber.Pipeline;
+var Injector = Plumber.Injector;
 var EventEmitter = require('events').EventEmitter;
 var should = require('should');
 

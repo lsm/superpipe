@@ -1,7 +1,7 @@
 /* globals describe, beforeEach, it*/
-var Plumber = require('../plumber');
+var Plumber = require('../');
 var should = require('should');
-var Pipeline = require('../pipeline');
+var Pipeline = Plumber.Pipeline;
 
 
 describe('Plumber', function() {
