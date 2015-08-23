@@ -84,6 +84,9 @@ Pipeline.prototype = {
           if (pipe) {
             var fn = pipe.fn;
             var deps = pipe.deps;
+            if ('string' === typeof fn.fnName) {
+              fn.fn._fn = injector.getDependency(fn.fnName);
+            }
             //  run the actual function
             var result = fn.apply(injector, args);
             // check if we need to run next automatically
@@ -110,11 +113,12 @@ Pipeline.prototype = {
     var fnName;
     if ('string' === typeof fn) {
       fnName = fn;
-      fn = function(_fn) {
+      fn = function fn() {
+        var _fn = fn._fn;
         if ('function' === typeof _fn) {
           // @todo @note should test and catch bug like this
           // when it's a function call it with rest of the arguments
-          return _fn.apply(this, toArray(arguments).slice(1));
+          return _fn.apply(this, toArray(arguments));
         } else if ('boolean' === typeof _fn) {
           // directly return the value when it is a boolean for flow control
           return _fn;
@@ -144,13 +148,13 @@ Pipeline.prototype = {
       throw new Error('deps should be either string or array of dependency names');
     }
 
-    // Put the named function as the first element in deps for late dependency discovery
-    if (fnName && Array.isArray(deps)) {
-      deps.unshift(fnName);
-    }
-
     // get our injected version of pipe function
     fn = injector.inject(fn, deps);
+
+    // Set the original function name to the injected function for later dependency discovery
+    if (fnName) {
+      fn.fnName = fnName;
+    }
 
     // return injectable function with depedencies array
     return {

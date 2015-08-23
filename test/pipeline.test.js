@@ -27,8 +27,37 @@ describe('Pipeline', function() {
     });
   });
 
-  describe('#pipe', function() {
+  describe('#pipe("fnName")', function  () {
+    var emitter = new EventEmitter();
+    var injector = new Injector();
+    var plumber = new Plumber(injector);
+    var pipeline = plumber
+      .listenTo(emitter, 'click');
 
+    it('should accept string as first argument and get the pipe function use the value of the string and call it', function (done){
+      pipeline
+        .pipe('setDep')
+        .pipe(function(target) {
+          target.should.be.equal('x');
+          done();
+        }, 'target');
+      emitter.emit('click', {target: 'x'});
+    });
+
+    it('should accept object as hashed dependencies', function() {
+      plumber.setDep('hashedDeps', function hashedDeps(obj, fn) {
+          obj.myFn.should.be.equal(hashedDeps);
+          fn.should.be.equal(hashedDeps);
+        })
+        .listenTo(emitter, 'keydown')
+        .pipe('hashedDeps', {
+          myFn: 'hashedDeps'
+        }, 'hashedDeps');
+      emitter.emit('keydown');
+    });
+  });
+
+  describe('#pipe', function() {
     function clickHandler() {}
 
     var value = 1;
@@ -110,18 +139,6 @@ describe('Pipeline', function() {
 
     it('should call the piped stream functions for the correct times', function() {
       value.should.be.equal(13);
-    });
-
-    it('should accept object as hashed dependencies', function() {
-      plumber.setDep('hashedDeps', function hashedDeps(obj, fn) {
-          obj.myFn.should.be.equal(hashedDeps);
-          fn.should.be.equal(hashedDeps);
-        })
-        .listenTo(emitter, 'keydown')
-        .pipe('hashedDeps', {
-          myFn: 'hashedDeps'
-        }, 'hashedDeps');
-      emitter.emit('keydown');
     });
   });
 

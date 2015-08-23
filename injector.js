@@ -78,6 +78,8 @@ Injector.prototype = {
       var _args = injector.getDependencies(fnArgs, defaultArgs);
       return _fn.apply(ctx, _args);
     };
+    // keep the original function as a reference
+    fn.fn = _fn;
     return fn;
   }
 };
