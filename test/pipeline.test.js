@@ -27,21 +27,23 @@ describe('Pipeline', function() {
     });
   });
 
-  describe('#pipe("fnName")', function  () {
+  describe('#pipe("fnName")', function() {
     var emitter = new EventEmitter();
     var injector = new Injector();
     var plumber = new Plumber(injector);
     var pipeline = plumber
       .listenTo(emitter, 'click');
 
-    it('should accept string as first argument and get the pipe function use the value of the string and call it', function (done){
+    it('should accept string as first argument and get the pipe function use the value of the string and call it', function(done) {
       pipeline
         .pipe('setDep')
         .pipe(function(target) {
           target.should.be.equal('x');
           done();
         }, 'target');
-      emitter.emit('click', {target: 'x'});
+      emitter.emit('click', {
+        target: 'x'
+      });
     });
 
     it('should accept object as hashed dependencies', function() {
@@ -145,18 +147,23 @@ describe('Pipeline', function() {
   describe('#error', function() {
     var plumber = new Plumber(injector);
     plumber.setDep('dep1', 1);
-    var pipeline = plumber.listenTo(emitter, 'error');
+    var pipeline = plumber.listenTo(emitter, 'normal');
     var errMessage = 'Error message';
+    var normalMessage = 'Normal message';
 
     it('should call error handler when next is called with truthy first argument', function(done) {
-      pipeline.pipe(function(next) {
-        next(errMessage);
-      }, 'next');
+      pipeline
+        .pipe(function(msg) {
+          msg.should.be.equal(normalMessage);
+        })
+        .pipe(function(next) {
+          next(errMessage);
+        }, 'next');
       pipeline.error(function(err) {
         err.should.be.equal(errMessage);
         done();
       });
-      emitter.emit('error', errMessage);
+      emitter.emit('normal', normalMessage);
     });
 
     it('should call error handler with requested dependencies', function(done) {
@@ -165,7 +172,7 @@ describe('Pipeline', function() {
         arg1.should.be.equal(1);
         done();
       }, null, 'dep1');
-      emitter.emit('error', errMessage);
+      emitter.emit('normal', normalMessage);
     });
   });
 });
