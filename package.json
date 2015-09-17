@@ -2,7 +2,7 @@
   "name": "superpipe",
   "version": "0.3.0",
   "description": "The missing pipeline for functional reactive programming",
-  "main": "index.js",
+  "main": "lib/plumber.js",
   "scripts": {
     "test": "mocha",
     "watch": "nodemon -x 'mocha -w'"
