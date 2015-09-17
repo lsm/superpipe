@@ -1,6 +1,6 @@
 'use strict';
 /* globals describe, it */
-var Plumber = require('../');
+var Plumber = require('../index');
 var Pipeline = Plumber.Pipeline;
 var Injector = Plumber.Injector;
 var EventEmitter = require('events').EventEmitter;

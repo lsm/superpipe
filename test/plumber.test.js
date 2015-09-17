@@ -1,5 +1,5 @@
 /* globals describe, beforeEach, it*/
-var Plumber = require('../');
+var Plumber = require('../index');
 var should = require('should');
 var Pipeline = Plumber.Pipeline;
 
