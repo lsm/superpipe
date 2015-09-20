@@ -4,7 +4,7 @@ Hire SuperPipe for your complex reactive javascript application
 
 ##  Quick Start
 
-The easiest way to install node-twitter-bot is with [`npm`](http://npmjs.org)
+The easiest way to install SuperPipe is with [`npm`](http://npmjs.org)
 
 ```sh
 
