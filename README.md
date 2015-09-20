@@ -22,6 +22,10 @@ var plumber = new SuperPipe();
 
 ```
 
+##  Example
+
+*  [math operation](https://github.com/lsm/superpipe/tree/master/example/math-operation)
+
 ##  Documentation
 
 
