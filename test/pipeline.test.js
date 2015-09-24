@@ -59,6 +59,36 @@ describe('Pipeline', function() {
     });
   });
 
+  describe('#pipe(number)', function() {
+    var plumber = new Plumber(injector);
+    var pipeline = plumber.listenTo('fast');
+
+    it('should throttle the event emitted', function(done) {
+      var normalCounter = 0;
+      var throttledCounter = 0;
+      pipeline
+        .pipe(function() {
+          normalCounter++;
+        })
+        .pipe(100)
+        .pipe(function() {
+          throttledCounter++;
+          if (throttledCounter === 2) {
+            normalCounter.should.be.equal(11);
+            done();
+          }
+        });
+
+      for (var i = 0; i < 10; i++) {
+        pipeline.trigger('fast');
+      }
+
+      setTimeout(function() {
+        pipeline.trigger('fast');
+      }, 110);
+    });
+  });
+
   describe('#pipe', function() {
     function clickHandler() {}
 
