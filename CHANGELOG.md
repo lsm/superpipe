@@ -1,3 +1,7 @@
+0.4.0 2015-09-23
+================
+- `#pipe` now accepts number as millisecond for throttling event stream
+
 0.3.0-3 2015-09-16
 ================
 - Bug fix for error handler not getting error object.
