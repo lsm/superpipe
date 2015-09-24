@@ -1,8 +1,8 @@
 'use strict';
 /* globals describe, it */
-var Plumber = require('../test_index');
-var Pipeline = Plumber.Pipeline;
-var Injector = Plumber.Injector;
+var SuperPipe = require('../test_index');
+var Pipeline = SuperPipe.Pipeline;
+var Injector = SuperPipe.Injector;
 var EventEmitter = require('events').EventEmitter;
 var should = require('should');
 
@@ -14,8 +14,8 @@ describe('Pipeline', function() {
 
 
   describe('#listenTo', function() {
-    var plumber = new Plumber(injector);
-    var pipeline = new Pipeline(plumber);
+    var sp = new SuperPipe(injector);
+    var pipeline = new Pipeline(sp);
     it('should return an instance of Pipeline', function() {
       pipeline.listenTo('click').should.be.an.instanceOf.Pipeline;
     });
@@ -30,8 +30,8 @@ describe('Pipeline', function() {
   describe('#pipe("fnName")', function() {
     var emitter = new EventEmitter();
     var injector = new Injector();
-    var plumber = new Plumber(injector);
-    var pipeline = plumber
+    var sp = new SuperPipe(injector);
+    var pipeline = sp
       .listenTo(emitter, 'click');
 
     it('should accept string as first argument and get the pipe function use the value of the string and call it', function(done) {
@@ -47,7 +47,7 @@ describe('Pipeline', function() {
     });
 
     it('should accept object as hashed dependencies', function() {
-      plumber.setDep('hashedDeps', function hashedDeps(obj, fn) {
+      sp.setDep('hashedDeps', function hashedDeps(obj, fn) {
           obj.myFn.should.be.equal(hashedDeps);
           fn.should.be.equal(hashedDeps);
         })
@@ -60,8 +60,8 @@ describe('Pipeline', function() {
   });
 
   describe('#pipe(number)', function() {
-    var plumber = new Plumber(injector);
-    var pipeline = plumber.listenTo('fast');
+    var sp = new SuperPipe(injector);
+    var pipeline = sp.listenTo('fast');
 
     it('should throttle the event emitted', function(done) {
       var normalCounter = 0;
@@ -101,8 +101,8 @@ describe('Pipeline', function() {
       return true;
     }
 
-    var plumber = new Plumber(injector);
-    var pipeline = plumber
+    var sp = new SuperPipe(injector);
+    var pipeline = sp
       .setDep('handleClick', clickHandler)
       .listenTo(emitter, 'click');
 
@@ -154,13 +154,13 @@ describe('Pipeline', function() {
     it('should register setDep as dependencies and bind with dependencies of current pipeline', function(done) {
       pipeline
         .pipe(function(setDep) {
-          plumber.setDep.should.not.be.equal(setDep);
-          plumber.setDep('key', 'old value');
+          sp.setDep.should.not.be.equal(setDep);
+          sp.setDep('key', 'old value');
           setDep('key', 'new value');
         }, 'setDep')
         .pipe(function(key) {
           key.should.be.equal('new value');
-          plumber.getDep('key').should.be.equal('old value');
+          sp.getDep('key').should.be.equal('old value');
           done();
         }, 'key');
 
@@ -175,9 +175,9 @@ describe('Pipeline', function() {
   });
 
   describe('#error', function() {
-    var plumber = new Plumber(injector);
-    plumber.setDep('dep1', 1);
-    var pipeline = plumber.listenTo(emitter, 'normal');
+    var sp = new SuperPipe(injector);
+    sp.setDep('dep1', 1);
+    var pipeline = sp.listenTo(emitter, 'normal');
     var errMessage = 'Error message';
     var normalMessage = 'Normal message';
 

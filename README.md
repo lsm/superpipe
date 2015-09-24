@@ -18,7 +18,7 @@ npm install superpipe
 
 var SuperPipe = require('superpipe');
 
-var plumber = new SuperPipe();
+var sp = new SuperPipe();
 
 ```
 

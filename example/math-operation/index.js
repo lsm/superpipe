@@ -2,8 +2,8 @@ var SuperPipe = require('../../lib/plumber');
 var operation = require('./operation');
 
 
-var plumber = new SuperPipe();
-var pipeline = plumber.pipefy()
+var sp = new SuperPipe();
+var pipeline = sp
   .listenTo('math operation')
   .pipe(operation.addition, null, null, 'setDep')
   .pipe(operation.substraction, 'x', 'y', 'setDep')

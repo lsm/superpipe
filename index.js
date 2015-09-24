@@ -1,1 +1,1 @@
-module.exports = require('./lib/plumber');
+module.exports = require('./lib/superpipe');
