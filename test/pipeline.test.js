@@ -63,7 +63,7 @@ describe('Pipeline', function() {
     var sp = new SuperPipe(injector);
     var pipeline = sp.listenTo('fast');
 
-    it('should throttle the event emitted', function(done) {
+    it('should throttle the events emitted', function(done) {
       var normalCounter = 0;
       var throttledCounter = 0;
       pipeline

@@ -1,6 +1,6 @@
 {
   "name": "superpipe",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "The missing pipeline for functional reactive programming",
   "main": "index",
   "scripts": {
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "eventemitter3": "1.0.1",
+    "insider": "0.2.0",
     "lodash.assign": "3.1.0",
     "lodash.isarray": "3.0.4",
     "lodash.isobject": "3.0.2",
@@ -40,6 +41,6 @@
   "engines": {
     "node": ">= 0.8.0"
   },
-  "author": "Marc Liu <marc@instbrew.com>",
+  "author": "lsm <liusenmiao@gmail.com>",
   "license": "MIT"
 }
