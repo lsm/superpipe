@@ -1,8 +1,14 @@
-sudo: false
+---
 language: node_js
 node_js:
   - "0.10"
   - "0.12"
   - "stable"
+
+sudo: false
+
+cache:
+  directories:
+    - node_modules
 
 script: make test-coveralls
