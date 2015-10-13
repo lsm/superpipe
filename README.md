@@ -2,7 +2,7 @@
 
 [![License MIT][license-img]][license-url]
 [![NPM version][npm-img]][npm-url]
-[![build status][travis-img]][travis-img]
+[![build status][travis-img]][travis-url]
 [![Coverage Status][coverage-img]][coverage-url]
 [![Code Climate][climate-img]][climate-url]
 
