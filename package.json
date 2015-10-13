@@ -21,7 +21,8 @@
     "mocha": "2.3.3",
     "mocha-lcov-reporter": "1.0.0",
     "nodemon": "1.7.1",
-    "should": "7.1.0"
+    "should": "7.1.0",
+    "zuul": "^3.6.0"
   },
   "repository": {
     "type": "git",

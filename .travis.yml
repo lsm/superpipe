@@ -1,14 +1,14 @@
----
 language: node_js
 node_js:
-  - "0.10"
-  - "0.12"
-  - "stable"
-
+- '0.10'
+- '0.12'
+- stable
 sudo: false
-
 cache:
   directories:
-    - node_modules
-
-script: make test-coveralls
+  - node_modules
+script: make test-all
+env:
+  global:
+  - secure: igtPvUYxGK7+ghuysT2tNWUr6ezLxLrQHzBRuMg8pHZood+KPcy+z5zTTt6M30ywnw8RETAxeb+Hg0LyyiUlnVLgNs6P58K2C5h7bWlVMzsyGqNM+MG2Lv995VZGulLITBIaQvXgGtlDde4LhnGf52WaWoWeuRee+Xgeu8iUYk4=
+  - secure: L89XCM1NU6PtRrkDpbiJjU1Zd8czZI75GOW0xFUxmgvniEmiDOC/zMCILsdNW76WsN2K6ayso3qdnTvuyGPBYlRHS547V38946fOQGaAT1y+UP4fYUpNKsD5wnxAc82pr5pyaERtXMcw2RnkjODgJ4qlQ+nn+haxDxHj6o5tgMQ=

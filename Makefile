@@ -1,5 +1,3 @@
-
-
 unit:
 	npm test
 watch:
@@ -12,7 +10,8 @@ lib-cov:
 test-report:
 	@./node_modules/.bin/mocha --reporter $(REPORTER)
 
-test-coveralls: lib-cov
+test-all: lib-cov
 	@echo TRAVIS_JOB_ID $(TRAVIS_JOB_ID)
 	SUPERPIPE_COV=1 $(MAKE) test-report REPORTER=mocha-lcov-reporter | ./node_modules/coveralls/bin/coveralls.js
+	zuul -- test/*
 	@rm -rf ./lib-cov
