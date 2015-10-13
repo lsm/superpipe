@@ -1,6 +1,6 @@
 {
   "name": "superpipe",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "The missing pipeline for functional reactive programming",
   "main": "index",
   "scripts": {

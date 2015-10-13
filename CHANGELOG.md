@@ -1,3 +1,8 @@
+0.5.0 2015-10-13
+================
+- `Pipeline.trigger`, `Pipeline.toTrigger` and `Pipeline.emitter` have been removed
+- `SuperPipe.listenTo` and `Pipeline.listenTo` use instance of superpipe as emitter if only event name is provided.
+
 0.4.0 2015-09-23
 ================
 - `#pipe` now accepts number as millisecond for throttling event stream
