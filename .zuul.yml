@@ -1,5 +1,5 @@
 ui: mocha-bdd
-concurrency: 1
+concurrency: 5
 browsers:
   - name: chrome
     version: 45
