@@ -80,11 +80,11 @@ describe('Pipeline', function() {
         });
 
       for (var i = 0; i < 10; i++) {
-        pipeline.trigger('fast');
+        sp.emit('fast');
       }
 
       setTimeout(function() {
-        pipeline.trigger('fast');
+        sp.emit('fast');
       }, 110);
     });
   });
