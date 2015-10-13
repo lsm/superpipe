@@ -6,11 +6,11 @@ browsers:
   - name: ie
     version: 6..latest
   - name: firefox
-    version: 3..latest
+    version: 3.0..latest
   - name: iphone
-    version: 4.3..latest
+    version: 5.1..latest
   - name: ipad
-    version: 4.3..latest
+    version: 5.1..latest
   - name: android
     version: 4.0..latest
   - name: opera
