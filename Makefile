@@ -13,5 +13,5 @@ test-report:
 test-all: lib-cov
 	@echo TRAVIS_JOB_ID $(TRAVIS_JOB_ID)
 	SUPERPIPE_COV=1 $(MAKE) test-report REPORTER=mocha-lcov-reporter | ./node_modules/coveralls/bin/coveralls.js
-	zuul -- test/*
+	travis_wait zuul -- test/*
 	@rm -rf ./lib-cov
