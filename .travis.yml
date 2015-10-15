@@ -5,7 +5,7 @@ sudo: false
 cache:
   directories:
   - node_modules
-script: make test-all
+script: travis_wait make test-all
 env:
   global:
   - secure: DB1e9naCtikmO9l89TLK0eplmoFPGzPpbV4Y+pVNyNLwtt23ozK+eDeUb8s9f6Mt/AJqq8Jb8GvxWFYjGbJb6IhXFhndRGP6pt2rqBMSpiY4aIwUWHSZZlnSF4Mvo5P6I22u/uHh3Gy2i/CtlG/D2wg8qHBkdkk4eklneHa6A8Y=
