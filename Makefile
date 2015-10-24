@@ -3,9 +3,9 @@ unit:
 watch:
 	npm run watch
 
-test-coverage:
+coverage:
 	@echo TRAVIS_JOB_ID $(TRAVIS_JOB_ID)
 	npm run coverage
 
-test-browser:
+browser:
 	zuul -- test/*
