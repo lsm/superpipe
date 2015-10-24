@@ -6,7 +6,7 @@
 [![Coverage Status][coverage-img]][coverage-url]
 [![Code Climate][climate-img]][climate-url]
 
-[![Sauce Test Status](https://saucelabs.com/browser-matrix/spipe.svg)](https://saucelabs.com/u/superpipe)
+[![Sauce Test Status](https://saucelabs.com/browser-matrix/spipe.svg)](https://saucelabs.com/u/spipe)
 
 
 Hire SuperPipe for your complex reactive javascript application
