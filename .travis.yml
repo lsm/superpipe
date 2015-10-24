@@ -1,12 +1,28 @@
-language: node_js
-node_js:
-- stable
 sudo: false
+language: node_js
+matrix:
+  fast_finish: true
+  include:
+    - node_js: "4"
+      env: TASK=test-browser
+    - node_js: "4"
+      env: TASK=test-coverage
+    - node_js: "3"
+      env: TASK=unit
+    - node_js: "2"
+      env: TASK=unit
+    - node_js: "1"
+      env: TASK=unit
+    - node_js: "0.12"
+      env: TASK=unit
+    - node_js: "0.10"
+      env: TASK=unit
 cache:
   directories:
   - node_modules
-script: travis_wait make test-all
+script:
+  - make ${TASK}
 env:
   global:
-  - secure: DB1e9naCtikmO9l89TLK0eplmoFPGzPpbV4Y+pVNyNLwtt23ozK+eDeUb8s9f6Mt/AJqq8Jb8GvxWFYjGbJb6IhXFhndRGP6pt2rqBMSpiY4aIwUWHSZZlnSF4Mvo5P6I22u/uHh3Gy2i/CtlG/D2wg8qHBkdkk4eklneHa6A8Y=
-  - secure: eLYuCLKTzL2G0JunrSTJg79cXn/oxIaie+A1CAMrAxhwKRYS/KI1WJcdpyX4kXATTl0spOT/qHaN0PIydzIokZH8AoD++Mbi3CMGUasBhw2/akDXf2/m0tZew5p2OUs+5pG4lzJYjpXf9lJ1Ok2FD3yUwCiq5zMRn2+Qv8J6/lA=
+  - secure: D7TwkiKbaSeHWk7bUDA4aL1rYzQBrKjDdPgJYoV35km8KipPvujbWacpdREz4mgpXjtE01U1exLjQsTq2aoG576a/PArdQx+6Wfw7rTA18xRBBf6FovAw9y0i/6I6Y3Qhb2OevD/DfctEVuoQHK+IfEk1xHf3VtXJ2XXeN0VPqI=
+  - secure: FPMYWtm9QGNAQJ4zWT0e6vVwsvfeFe5xEBs4nv+XLd2RiKt+sa5eoVoOxqDl3h95MfTFngr+UylR7MKnwAgwrZzsDlMZrgDItObVgsVvEHBjCT185m9MyW7W0tPEHG3TFsuS71F6J+Qr2TiqUt3Y441A5Dp1Z74+dKkxTPp9go0=
