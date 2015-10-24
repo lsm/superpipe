@@ -1,10 +1,10 @@
 'use strict';
 /* globals describe, it */
+var assume = require('assume');
 var SuperPipe = require('../');
 var Pipeline = SuperPipe.Pipeline;
 var Injector = SuperPipe.Injector;
 var EventEmitter = require('events').EventEmitter;
-var should = require('should');
 
 
 describe('Pipeline', function() {
@@ -17,13 +17,13 @@ describe('Pipeline', function() {
     var sp = new SuperPipe(injector);
     var pipeline = new Pipeline(sp);
     it('should return an instance of Pipeline', function() {
-      pipeline.listenTo('click').should.be.an.instanceOf.Pipeline;
+      assume(pipeline.listenTo('click')).is.instanceOf(Pipeline);
     });
 
     it('should throw if listenFn is not a function', function() {
-      (function() {
+      assume(function() {
         pipeline.listenTo({}, 'click');
-      }).should.throw(/^emitter has no listening funciton "on, addEventListener or addListener"/);
+      }).throws(/^emitter has no listening funciton "on, addEventListener or addListener"/);
     });
   });
 
@@ -38,7 +38,7 @@ describe('Pipeline', function() {
       pipeline
         .pipe('setDep')
         .pipe(function(target) {
-          target.should.be.equal('x');
+          assume(target).equals('x');
           done();
         }, 'target');
       emitter.emit('click', {
@@ -48,8 +48,8 @@ describe('Pipeline', function() {
 
     it('should accept object as hashed dependencies', function() {
       sp.setDep('hashedDeps', function hashedDeps(obj, fn) {
-        obj.myFn.should.be.equal(hashedDeps);
-        fn.should.be.equal(hashedDeps);
+        assume(obj.myFn).equals(hashedDeps);
+        assume(fn).equals(hashedDeps);
       })
         .listenTo(emitter, 'keydown')
         .pipe('hashedDeps', {
@@ -74,7 +74,7 @@ describe('Pipeline', function() {
         .pipe(function() {
           throttledCounter++;
           if (throttledCounter === 2) {
-            normalCounter.should.be.equal(11);
+            assume(normalCounter).equals(11);
             done();
           }
         });
@@ -96,7 +96,7 @@ describe('Pipeline', function() {
     var value = 1;
 
     function processer(handlerFn, setDep) {
-      handlerFn.should.be.equal(clickHandler);
+      assume(handlerFn).equals(clickHandler);
       setDep('valueFromProcesserA', value);
       value++;
       return true;
@@ -108,9 +108,9 @@ describe('Pipeline', function() {
       .listenTo(emitter, 'click');
 
     it('should throw if fn is not a function or name of a dependency function', function() {
-      (function() {
+      assume(function() {
         pipeline.pipe({});
-      }).should.throw(/^fn should be a function or name of registered function dependency/);
+      }).throws(/^fn should be a function or name of registered function dependency/);
     });
 
     it('should accept mutiple arguments string as dependencies', function() {
@@ -128,16 +128,16 @@ describe('Pipeline', function() {
       emitter.emit('click');
     });
 
-    it('should has `this` equal to 0', function() {
+    it('should has 0 or null as context for each pipeline functions', function() {
       pipeline.pipe(function() {
-        should(this).be.equal(0);
+        assume(+this).equals(0)
       });
     });
 
     it('should keep the original argument if null is provided while still provide the right dependency need to be injected', function() {
       pipeline
         .pipe(function(event, next) {
-          event.target.should.be.equal('a');
+          assume(event.target).equals('a');
           next();
         }, null, 'next');
       emitter.emit('click', {
@@ -148,20 +148,20 @@ describe('Pipeline', function() {
 
     it('should not register getDep as a dependency', function() {
       pipeline.pipe(function(getDep) {
-        should(getDep).be.equal(undefined);
+        assume(getDep).equals(undefined);
       }, 'getDep');
     });
 
     it('should register setDep as dependencies and bind with dependencies of current pipeline', function(done) {
       pipeline
         .pipe(function(setDep) {
-          sp.setDep.should.not.be.equal(setDep);
+          assume(sp.setDep).not.equals(setDep);
           sp.setDep('key', 'old value');
           setDep('key', 'new value');
         }, 'setDep')
         .pipe(function(key) {
-          key.should.be.equal('new value');
-          sp.getDep('key').should.be.equal('old value');
+          assume(key).equals('new value');
+          assume(sp.getDep('key')).equals('old value');
           done();
         }, 'key');
 
@@ -171,7 +171,7 @@ describe('Pipeline', function() {
     });
 
     it('should call the piped stream functions for the correct times', function() {
-      value.should.be.equal(13);
+      assume(value).equals(13);
     });
   });
 
@@ -185,13 +185,13 @@ describe('Pipeline', function() {
     it('should call error handler when next is called with truthy first argument', function(done) {
       pipeline
         .pipe(function(msg) {
-          msg.should.be.equal(normalMessage);
+          assume(msg).equals(normalMessage);
         })
         .pipe(function(next) {
           next(errMessage);
         }, 'next');
       pipeline.error(function(err) {
-        err.should.be.equal(errMessage);
+        assume(err).equals(errMessage);
         done();
       });
       emitter.emit('normal', normalMessage);
@@ -199,8 +199,8 @@ describe('Pipeline', function() {
 
     it('should call error handler with requested dependencies', function(done) {
       pipeline.error(function(err, arg1) {
-        err.should.be.equal(errMessage);
-        arg1.should.be.equal(1);
+        assume(err).equals(errMessage);
+        assume(arg1).equals(1);
         done();
       }, null, 'dep1');
       emitter.emit('normal', normalMessage);

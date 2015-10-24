@@ -1,6 +1,6 @@
 /* globals describe, beforeEach, it*/
 var SuperPipe = require('../');
-var should = require('should');
+var assume = require('assume')
 var Pipeline = SuperPipe.Pipeline;
 
 
@@ -9,16 +9,16 @@ describe('SuperPipe', function() {
   describe('#constructor', function() {
     it('should return an instance of SuperPipe', function() {
       var sp = new SuperPipe();
-      sp.should.be.an.instanceOf.SuperPipe;
-      sp.listenTo.should.be.a.Function;
-      sp.setDep.should.be.a.Function;
-      sp.getDep.should.be.a.Function;
+      assume(sp).is.instanceOf(SuperPipe);
+      assume(sp.listenTo).is.a('function');
+      assume(sp.setDep).is.a('function');
+      assume(sp.getDep).is.a('function');
     });
 
     it('should register function members as dependencies', function() {
       var sp = new SuperPipe();
-      sp.getDep('autoBind').should.be.a.Function;
-      sp.getDep('isDepNameReserved').should.be.a.Function;
+      assume(sp.autoBind).is.a('function');
+      assume(sp.isDepNameReserved).is.a('function');
     });
   });
 
@@ -44,49 +44,49 @@ describe('SuperPipe', function() {
     });
 
     it('should throw if arguments signature is not recognized', function() {
-      (function() {
+      assume(function() {
         sp.setDep();
-      }).should.throw(/^Unsupported function arguments/);
-      (function() {
+      }).throws(/^Unsupported function arguments/);
+      assume(function() {
         sp.setDep(function() {});
-      }).should.throw(/^Unsupported function arguments/);
+      }).throws(/^Unsupported function arguments/);
     });
 
     it('should be okay to set falsity values as dependencies', function() {
       sp.setDep('name', '');
-      sp.getDep('name').should.be.equal('');
+      assume(sp.getDep('name')).equals('');
       sp.setDep('name');
-      should(sp.getDep('name')).be.equal(undefined);
+      assume(sp.getDep('name')).equals(undefined);
       sp.setDep('name', null);
-      should(sp.getDep('name')).be.equal(null);
+      assume(sp.getDep('name')).equals(null);
       sp.setDep('name', false);
-      should(sp.getDep('name')).be.equal(false);
+      assume(sp.getDep('name')).equals(false);
       sp.setDep('name', 0);
-      should(sp.getDep('name')).be.equal(0);
+      assume(sp.getDep('name')).equals(0);
     });
 
     it('should throw if set dependency with reserved name', function() {
-      (function() {
+      assume(function() {
         sp.setDep({
           setDep: 1
         });
-      }).should.throw(/The name of your dependency is reserved:/);
+      }).throws(/The name of your dependency is reserved:/);
       sp.reservedDeps.forEach(function(reserved) {
-        (function() {
+        assume(function() {
           sp.setDep(reserved, {});
-        }).should.throw(/The name of your dependency is reserved:/);
+        }).throws(/The name of your dependency is reserved:/);
       });
     });
 
     it('should set dependency with name and value', function() {
       sp.setDep('dep1', depObject);
-      should.deepEqual(depObject, sp.getDep('dep1'));
+      assume(depObject).deep.equals(sp.getDep('dep1'));
     });
 
     it('should override old dependency with new value', function() {
       sp.setDep('dep1', depObject);
       sp.setDep('dep1', depStr);
-      sp.getDep('dep1').should.be.equal(depStr);
+      assume(sp.getDep('dep1')).equals(depStr);
     });
 
     it('should accept object and add all properties as dependencies', function() {
@@ -95,62 +95,59 @@ describe('SuperPipe', function() {
         b: 2
       };
       sp.setDep(obj);
-      sp.getDep('a').should.be.equal(obj.a);
-      sp.getDep('b').should.be.equal(obj.b);
+      assume(sp.getDep('a')).equals(obj.a);
+      assume(sp.getDep('b')).equals(obj.b);
     });
 
     it('should add all properties except functions as dependencies if props is *$', function() {
       sp.setDep(depObject, '*$');
-      sp.getDep('x').should.be.equal(depObject.x);
-      sp.getDep('y').should.be.equal(depObject.y);
-      sp.getDep('z').should.be.equal(depObject.z);
-      should.not.exist(sp.getDep('fn1'));
-      should.not.exist(sp.getDep('fn2'));
+      assume(sp.getDep('x')).equals(depObject.x);
+      assume(sp.getDep('y')).equals(depObject.y);
+      assume(sp.getDep('z')).equals(depObject.z);
+      assume(sp.getDep('fn1')).is.not.exist();
+      assume(sp.getDep('fn2')).is.not.exist();
     });
 
     it('should add all functions as dependencies if props is *^', function() {
       sp.setDep(depObject, '*^');
-      sp.getDep('fn1').should.be.equal(depObject.fn1);
-      sp.getDep('fn2').should.be.equal(depObject.fn2);
-      should.not.exist(sp.getDep('x'));
-      should.not.exist(sp.getDep('y'));
-      should.not.exist(sp.getDep('z'));
+      assume(sp.getDep('fn1')).equals(depObject.fn1);
+      assume(sp.getDep('fn2')).equals(depObject.fn2);
+      assume(sp.getDep('x')).is.not.exist();
+      assume(sp.getDep('y')).is.not.exist();
+      assume(sp.getDep('z')).is.not.exist();
     });
 
     it('should use name as prefix', function() {
       sp.setDep('prefix', depObject, '*^');
-      sp.getDep('prefix:fn1').should.be.equal(depObject.fn1);
-      sp.getDep('prefix:fn2').should.be.equal(depObject.fn2);
-      should.not.exist(sp.getDep('prefix:x'));
-      should.not.exist(sp.getDep('prefix:y'));
-      should.not.exist(sp.getDep('prefix:z'));
+      assume(sp.getDep('prefix:fn1')).equals(depObject.fn1);
+      assume(sp.getDep('prefix:fn2')).equals(depObject.fn2);
+      assume(sp.getDep('prefix:x')).is.not.exist();
+      assume(sp.getDep('prefix:y')).is.not.exist();
+      assume(sp.getDep('prefix:z')).is.not.exist();
     });
 
     it('should add all properties as dependencies if props is *', function() {
       sp.setDep('name', depObject, '*');
-      sp.getDep('name:x').should.be.equal(depObject.x);
-      sp.getDep('name:y').should.be.equal(depObject.y);
-      sp.getDep('name:z').should.be.equal(depObject.z);
-      sp.getDep('name:fn1').should.be.equal(depObject.fn1);
-      sp.getDep('name:fn2').should.be.equal(depObject.fn2);
-
+      assume(sp.getDep('name:x')).equals(depObject.x);
+      assume(sp.getDep('name:y')).equals(depObject.y);
+      assume(sp.getDep('name:z')).equals(depObject.z);
+      assume(sp.getDep('name:fn1')).equals(depObject.fn1);
+      assume(sp.getDep('name:fn2')).equals(depObject.fn2);
     });
 
     it('should not register dependencies start with _ when props is any of */*$/*^', function() {
       sp.setDep('name', depObject, '*');
-      should(sp.getDep('_x')).be.equal(undefined);
-      should(sp.getDep('_fn')).be.equal(undefined);
+      assume(sp.getDep('_x')).equals(undefined);
+      assume(sp.getDep('_fn')).equals(undefined);
 
       sp = new SuperPipe();
       sp.setDep('name', depObject, '*^');
-      should(sp.getDep('_fn')).be.equal(undefined);
+      assume(sp.getDep('_fn')).equals(undefined);
 
       sp = new SuperPipe();
       sp.setDep('name', depObject, '*$');
-      should(sp.getDep('_x')).be.equal(undefined);
+      assume(sp.getDep('_x')).equals(undefined);
     });
-
-
   });
 
   describe('#autoBind', function() {
@@ -158,12 +155,12 @@ describe('SuperPipe', function() {
       var sp = new SuperPipe();
       var context = {
         fn1: function() {
-          this.should.be.equal(context);
+          assume(this).equals(context);
           this.fn1Called = true;
         },
         fn2: function() {
-          context.fn1Called.should.be.equal(true);
-          this.should.not.be.equal(context);
+          assume(context.fn1Called).equals(true);
+          assume(this).is.not.equal(context);
           done();
         }
       };
@@ -180,15 +177,14 @@ describe('SuperPipe', function() {
   describe('#pipeline', function() {
     var sp = new SuperPipe();
     it('should return an instance of Pipeline', function() {
-      sp.pipeline().should.be.an.instanceOf(Pipeline);
+      assume(sp.pipeline()).is.instanceOf(Pipeline);
     });
   });
 
   describe('#listenTo', function() {
     var sp = new SuperPipe();
     it('should return an instance of Pipeline', function() {
-      sp.listenTo('click').should.be.an.instanceOf(Pipeline);
+      assume(sp.listenTo('click')).is.instanceOf(Pipeline);
     });
   });
-
 });
