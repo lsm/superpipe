@@ -1,6 +1,6 @@
 'use strict';
 /* globals describe, it */
-var SuperPipe = require('../test_index');
+var SuperPipe = require('../');
 var Pipeline = SuperPipe.Pipeline;
 var Injector = SuperPipe.Injector;
 var EventEmitter = require('events').EventEmitter;
@@ -48,9 +48,9 @@ describe('Pipeline', function() {
 
     it('should accept object as hashed dependencies', function() {
       sp.setDep('hashedDeps', function hashedDeps(obj, fn) {
-          obj.myFn.should.be.equal(hashedDeps);
-          fn.should.be.equal(hashedDeps);
-        })
+        obj.myFn.should.be.equal(hashedDeps);
+        fn.should.be.equal(hashedDeps);
+      })
         .listenTo(emitter, 'keydown')
         .pipe('hashedDeps', {
           myFn: 'hashedDeps'
@@ -90,7 +90,8 @@ describe('Pipeline', function() {
   });
 
   describe('#pipe', function() {
-    function clickHandler() {}
+    function clickHandler() {
+    }
 
     var value = 1;
 

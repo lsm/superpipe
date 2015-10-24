@@ -1,5 +1,5 @@
 /* globals describe, beforeEach, it*/
-var SuperPipe = require('../test_index');
+var SuperPipe = require('../');
 var should = require('should');
 var Pipeline = SuperPipe.Pipeline;
 
@@ -25,24 +25,16 @@ describe('SuperPipe', function() {
   describe('#setDep/#getDep', function() {
     var sp;
     var depStr = 'example';
-    var DepClass = function() {
-
-    };
+    var DepClass = function() {};
 
     DepClass.prototype = {
       x: 1,
       y: 2,
       z: 'z',
-      fn1: function fn1() {
-
-      },
-      fn2: function fn2() {
-
-      },
+      fn1: function fn1() {},
+      fn2: function fn2() {},
       _x: 10,
-      _fn: function() {
-
-      }
+      _fn: function() {}
     };
 
     var depObject = new DepClass();

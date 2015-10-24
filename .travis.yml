@@ -6,7 +6,7 @@ matrix:
     - node_js: "4"
       env: TASK=test-browser
     - node_js: "4"
-      env: TASK=test-coverage
+      env: TASK=test-coverage REPORT=yes
     - node_js: "3"
       env: TASK=unit
     - node_js: "2"
