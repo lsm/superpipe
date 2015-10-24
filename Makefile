@@ -8,4 +8,4 @@ coverage:
 	npm run coverage
 
 browser:
-	zuul -- test/*
+	zuul --no-coverage -- test/*
