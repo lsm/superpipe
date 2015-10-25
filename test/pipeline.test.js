@@ -47,10 +47,11 @@ describe('Pipeline', function() {
     });
 
     it('should accept object as hashed dependencies', function() {
-      sp.setDep('hashedDeps', function hashedDeps(obj, fn) {
+      var hashedDeps = function(obj, fn) {
         assume(obj.myFn).equals(hashedDeps);
         assume(fn).equals(hashedDeps);
-      })
+      }
+      sp.setDep('hashedDeps', hashedDeps)
         .listenTo(emitter, 'keydown')
         .pipe('hashedDeps', {
           myFn: 'hashedDeps'
