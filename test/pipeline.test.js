@@ -4,7 +4,7 @@ var assume = require('assume');
 var SuperPipe = require('../');
 var Pipeline = SuperPipe.Pipeline;
 var Injector = SuperPipe.Injector;
-var EventEmitter = require('events').EventEmitter;
+var EventEmitter = require('EventEmitter3');
 
 
 describe('Pipeline', function() {
