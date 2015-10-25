@@ -17,9 +17,9 @@ matrix:
       env: TASK=unit
     - node_js: "0.10"
       env: TASK=unit
-cache:
-  directories:
-  - node_modules
+# cache:
+#   directories:
+#   - node_modules
 script:
   - make ${TASK}
 after_script:
