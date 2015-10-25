@@ -2,6 +2,7 @@
 var SuperPipe = require('../');
 var assume = require('assume')
 var Pipeline = SuperPipe.Pipeline;
+var forEach = require('lodash.foreach')
 
 
 describe('SuperPipe', function() {
@@ -71,7 +72,7 @@ describe('SuperPipe', function() {
           setDep: 1
         });
       }).throws(/The name of your dependency is reserved:/);
-      sp.reservedDeps.forEach(function(reserved) {
+      forEach(sp.reservedDeps, function(reserved) {
         assume(function() {
           sp.setDep(reserved, {});
         }).throws(/The name of your dependency is reserved:/);
