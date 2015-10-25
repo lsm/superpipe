@@ -1,3 +1,7 @@
+0.6.0 2015-10-25
+================
+- Fully compatible with IE 6/7/8/9.
+
 0.5.0 2015-10-13
 ================
 - `Pipeline.trigger`, `Pipeline.toTrigger` and `Pipeline.emitter` have been removed
