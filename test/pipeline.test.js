@@ -207,4 +207,22 @@ describe('Pipeline', function() {
       emitter.emit('normal', normalMessage);
     });
   });
+
+  describe('events', function() {
+    var sp = new SuperPipe()
+    it('should get `emit` as dependency and trigger the event', function(done) {
+      sp
+        .listenTo('eventA')
+        .pipe(function(emit) {
+          emit('eventB', 'data of eventB');
+        }, 'emit')
+      sp
+        .listenTo('eventB')
+        .pipe(function(data) {
+          assume(data).equals('data of eventB');
+          done()
+        })
+      sp.emit('eventA')
+    });
+  });
 });
