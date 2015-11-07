@@ -53,9 +53,9 @@ describe('Pipeline', function() {
       }
       sp.setDep('hashedDeps', hashedDeps)
         .listenTo(emitter, 'keydown')
-        .pipe('hashedDeps', {
+        .pipe('hashedDeps', [{
           myFn: 'hashedDeps'
-        }, 'hashedDeps');
+        }, 'hashedDeps']);
       emitter.emit('keydown');
     });
   });
@@ -115,7 +115,7 @@ describe('Pipeline', function() {
     });
 
     it('should accept mutiple arguments string as dependencies', function() {
-      pipeline.pipe(processer, 'handleClick', 'setDep');
+      pipeline.pipe(processer, ['handleClick', 'setDep']);
       emitter.emit('click');
     });
 
@@ -135,7 +135,7 @@ describe('Pipeline', function() {
         .pipe(function(event, next) {
           assume(event.target).equals('a');
           next();
-        }, null, 'next');
+        }, [null, 'next']);
       emitter.emit('click', {
         target: 'a'
       });
@@ -198,7 +198,7 @@ describe('Pipeline', function() {
         assume(err).equals(errMessage);
         assume(arg1).equals(1);
         done();
-      }, null, 'dep1');
+      }, [null, 'dep1']);
       emitter.emit('normal', normalMessage);
     });
   });
