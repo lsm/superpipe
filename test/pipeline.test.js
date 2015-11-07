@@ -111,7 +111,7 @@ describe('Pipeline', function() {
     it('should throw if fn is not a function or name of a dependency function', function() {
       assume(function() {
         pipeline.pipe({});
-      }).throws(/^fn should be a function or name of registered function dependency/);
+      }).throws(/^fn should be a function, got/);
     });
 
     it('should accept mutiple arguments string as dependencies', function() {
@@ -121,11 +121,6 @@ describe('Pipeline', function() {
 
     it('should accept array as dependencies', function() {
       pipeline.pipe(processer, ['handleClick', 'setDep']);
-      emitter.emit('click');
-    });
-
-    it('should accept array as argument', function() {
-      pipeline.pipe([processer, 'handleClick', 'setDep']);
       emitter.emit('click');
     });
 
@@ -172,7 +167,7 @@ describe('Pipeline', function() {
     });
 
     it('should call the piped stream functions for the correct times', function() {
-      assume(value).equals(13);
+      assume(value).equals(8);
     });
   });
 
