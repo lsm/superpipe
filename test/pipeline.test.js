@@ -90,7 +90,7 @@ describe('Pipeline', function() {
     });
   });
 
-  describe('#pipe', function() {
+  describe('#pipe(function, dependencies)', function() {
     function clickHandler() {
     }
 
@@ -169,6 +169,81 @@ describe('Pipeline', function() {
     it('should call the piped stream functions for the correct times', function() {
       assume(value).equals(8);
     });
+  });
+
+  describe('#pipe(function, dependencies, supplies)', function() {
+    var superpipe = new SuperPipe(injector)
+
+    it('should go next pipe when all supplies are fulfilled.', function(done) {
+      superpipe.setDep('key1', 'value1')
+        .listenTo('deps supplies')
+        .pipe(function(key1, setDep) {
+          assume(key1).equals('value1')
+          setDep('key2', 'value2')
+          setTimeout(function() {
+            setDep('key3', 'value3')
+          }, 10)
+        }, ['key1', 'setDep'], ['key2', 'key3'])
+        .pipe(function(setDep) {
+          setDep({
+            key4: 'value4',
+            key5: 'value5'
+          })
+        }, 'setDep', ['key4', 'key5'])
+        .pipe(function(setDep) {
+          setTimeout(function() {
+            setDep('key6', 'value6')
+          })
+          return true
+        }, 'setDep', 'key6')
+        .pipe(function(key2, key3, key4, key5) {
+          assume(key2).equals('value2')
+          assume(key3).equals('value3')
+          assume(key4).equals('value4')
+          assume(key5).equals('value5')
+          done()
+        }, ['key2', 'key3', 'key4', 'key5'])
+
+      superpipe.emit('deps supplies')
+    })
+
+    it('should not go next automatically if `next` is provided as dependency', function() {
+      superpipe.listenTo('next')
+        .pipe(function(setDep, next) {
+          setDep('abc', 'xyz')
+        }, ['setDep', 'next'], ['abc'])
+        .pipe(function(abc) {
+          throw new Error('This pipe should not be executed.')
+        }, 'abc')
+
+      superpipe.emit('next')
+    })
+
+    it('should not go next if has `err`', function() {
+      superpipe.listenTo('err')
+        .pipe(function(setDep, next) {
+          setDep('abc', 'xyz')
+          next('error!')
+        }, ['setDep', 'next'], ['abc'])
+        .pipe(function(abc) {
+          throw new Error('This pipe should not be executed.')
+        }, 'abc')
+
+      superpipe.emit('xyz')
+    })
+
+    it('should not go next if false is returned', function() {
+      superpipe.listenTo('false')
+        .pipe(function(setDep) {
+          setDep('abc', 'xyz')
+          return false
+        }, 'setDep', ['abc'])
+        .pipe(function(abc) {
+          throw new Error('This pipe should not be executed.')
+        }, 'abc')
+
+      superpipe.emit('false')
+    })
   });
 
   describe('#error', function() {
