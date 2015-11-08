@@ -13,6 +13,7 @@
     "insider": "0.3.0",
     "lodash.assign": "3.2.0",
     "lodash.bind": "3.1.0",
+    "lodash.every": "3.2.3",
     "lodash.filter": "3.1.1",
     "lodash.foreach": "3.0.3",
     "lodash.indexof": "3.0.3",
