@@ -13,7 +13,7 @@ describe('Pipeline', function() {
   var injector = new Injector();
 
 
-  describe('#listenTo', function() {
+  describe('#listenTo(emitter, name)', function() {
     var sp = new SuperPipe(injector);
     var pipeline = new Pipeline(sp);
     it('should return an instance of Pipeline', function() {
@@ -24,6 +24,46 @@ describe('Pipeline', function() {
       assume(function() {
         pipeline.listenTo({}, 'click');
       }).throws(/^emitter has no listening funciton "on, addEventListener or addListener"/);
+    });
+  });
+
+  describe('#listenTo("emitterName", eventName)', function() {
+    it('should listen to the event if the named emitter is available', function(done) {
+      var injector = new Injector();
+      var sp = new SuperPipe(injector);
+      var pipeline = new Pipeline(sp);
+
+      var emitter = new EventEmitter()
+      sp.setDep('myEmitter', emitter)
+      emitter.emit('click', 'other event')
+
+      pipeline
+        .listenTo('myEmitter', 'click')
+        .pipe(function(event) {
+          assume(event).equals('my event')
+          done()
+        });
+
+      emitter.emit('click', 'my event')
+    });
+
+    it('should listen to the event once the named emitter becomes available', function(done) {
+      var injector = new Injector();
+      var sp = new SuperPipe(injector);
+      var pipeline = new Pipeline(sp);
+
+      pipeline
+        .listenTo('myEmitter', 'click')
+        .pipe(function(event) {
+          assume(event).equals('my event')
+          done()
+        });
+
+      var emitter = new EventEmitter()
+      emitter.emit('click', 'other event')
+
+      sp.setDep('myEmitter', emitter)
+      emitter.emit('click', 'my event')
     });
   });
 
