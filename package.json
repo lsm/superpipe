@@ -29,10 +29,10 @@
     "coveralls": "2.11.4",
     "istanbul": "0.4.0",
     "jscoverage": "0.6.0",
-    "mocha": "2.3.3",
+    "mocha": "2.3.4",
     "mocha-lcov-reporter": "1.0.0",
-    "nodemon": "1.7.1",
-    "zuul": "3.6.0"
+    "nodemon": "1.8.1",
+    "zuul": "3.7.2"
   },
   "repository": {
     "type": "git",
