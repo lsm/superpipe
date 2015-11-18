@@ -67,10 +67,9 @@ describe('Pipeline', function() {
     });
   });
 
-  describe('#pipe("fnName")', function() {
+  describe('#pipe("name of function in deps")', function() {
     var emitter = new EventEmitter();
-    var injector = new Injector();
-    var sp = new SuperPipe(injector);
+    var sp = new SuperPipe();
     var pipeline = sp
       .listenTo(emitter, 'click');
 
@@ -98,6 +97,30 @@ describe('Pipeline', function() {
         }, 'hashedDeps']);
       emitter.emit('keydown');
     });
+  });
+
+  describe('#pipe("emit")', function() {
+
+    it('should use deps as event name and use supplies as deps for "emit" pipe', function(done) {
+      var sp = new SuperPipe()
+      sp.setDep({
+        obj: 'obj 1',
+        event: 'data 1'
+      })
+
+      sp.listenTo('event 1')
+        .pipe(function(event, obj) {
+          assume(event).equals('data 1')
+          assume(obj).equals('obj 1')
+          done()
+        })
+
+      sp.listenTo(sp, 'event 2')
+        .pipe('emit', 'event 1', ['event', 'obj'])
+
+      sp.emit('event 2')
+    });
+
   });
 
   describe('#pipe(number)', function() {
