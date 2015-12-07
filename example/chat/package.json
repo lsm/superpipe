@@ -19,7 +19,8 @@
   "author": "Anton Nikolenko <nikolenkoanton92@gmail.com> (http://antonnikolenko.com/)",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.13.3",
-    "socket.io": "^1.3.7"
+    "express": "4.13.3",
+    "socket.io": "1.3.7",
+    "superpipe": "0.7.1"
   }
 }

@@ -3,9 +3,11 @@ var app = express()
 var http = require('http').Server(app)
 var io = require('socket.io')(http)
 var path = require('path')
+var SuperPipe = require('superpipe')
+var superpipe = new SuperPipe()
+require('./pipeline')(superpipe)
 
 app.set('views', path.join(__dirname, 'views'));
-// app.set('view engine', 'html');
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', function(req, res) {
@@ -13,7 +15,15 @@ app.get('/', function(req, res) {
 })
 
 io.on('connection', function(socket) {
-  console.log('user connected')
+
+  superpipe
+    .setDep('socket', socket)
+
+  superpipe.emit('chat:new_message', 'New User connected')
+
+  socket.on('chat:new_message', function(data) {
+    superpipe.emit('chat:new_message', data)
+  })
 })
 
 http.listen(3000, function() {
