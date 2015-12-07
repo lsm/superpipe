@@ -1,7 +1,8 @@
 var express = require('express')
 var app = express()
-var http = require('http').Server(app)
-var io = require('socket.io')(http)
+var http = require('http')
+var server = http.createServer(app)
+var io = require('socket.io')(server)
 var path = require('path')
 var SuperPipe = require('superpipe')
 var superpipe = new SuperPipe()
@@ -11,12 +12,13 @@ var bodyParser = require('body-parser')
 var cookieParser = require('cookie-parser')
 require('./pipeline')(superpipe)
 var fakeUser = require('./fake-users')
+var cookie = require('cookie')
 
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({
   extended: false
 }))
-app.use(cookieParser())
+app.use(cookieParser('keyboard cat'))
 app.use(require('express-session')({
   secret: 'keyboard cat',
   resave: false,
@@ -29,18 +31,17 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', function(req, res, next) {
-  if (req.user) {
+  if (req.isAuthenticated()) {
     next()
   } else {
     res.redirect('/login')
   }
 }, function(req, res) {
-  console.log(req.user)
   res.sendFile(__dirname + '/views/index.html')
 })
 
 app.get('/login', function(req, res, next) {
-  if (req.user) {
+  if (req.isAuthenticated()) {
     res.redirect('/')
   } else {
     next()
@@ -51,6 +52,9 @@ app.get('/login', function(req, res, next) {
 
 app.post('/login', passport.authenticate('local'), function(req, res, next) {
   req.session.save(function(err) {
+    res.cookie('username', req.user.username, {
+      maxAge: 2592000000
+    })
     if (err) {
       return next(err)
     }
@@ -96,18 +100,26 @@ passport.deserializeUser(function(id, done) {
   }
 })
 
+io.use(function(socket, next) {
+  var cookies = cookie.parse(socket.request.headers.cookie)
+  var username = cookieParser.signedCookie(cookies.username, 'keyboard cat')
+  socket.request.username = username
+  next()
+})
+
 io.on('connection', function(socket) {
 
+  var username = socket.request.username
   superpipe
     .setDep('socket', socket)
-
-  superpipe.emit('chat:new_message', 'New User connected')
-
+  if (username) {
+    superpipe.emit('chat:new_message', 'user ' + username + ' connected')
+  }
   socket.on('chat:new_message', function(data) {
     superpipe.emit('chat:new_message', data)
   })
 })
 
-http.listen(3000, function() {
+server.listen(3000, function() {
   console.log('listening on *:3000')
 })
