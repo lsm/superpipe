@@ -149,7 +149,7 @@ describe('Pipeline', function() {
 
       setTimeout(function() {
         sp.emit('fast')
-      }, 110)
+      }, 200)
     })
   })
 
