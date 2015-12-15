@@ -1,3 +1,9 @@
+0.8.0 2015-12-15
+================
+- Upgrade `insider@0.4.0`
+- Put number as the first element of dependencies array to indicate the number of
+default arguments you want to feed to the piped function.
+
 0.7.1 2015-11-17
 ================
 - Use `#pipe('emit', 'event name', deps)` to emit events.
