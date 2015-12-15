@@ -307,7 +307,31 @@ describe('Pipeline', function() {
 
       superpipe.emit('false')
     })
-  });
+  })
+
+  describe('#pipe(function, [3, "dep1", "dep2"])', function() {
+    it('should skip dependencies by number and get the default values by position.', function() {
+      var sp = new SuperPipe();
+      sp.setDep('dep1', 'value1')
+      sp.setDep('dep2', 'value2')
+
+      sp.listenTo('skip')
+        .pipe(function(data, dep1, dep2) {
+          assume(data).equals('event data')
+          assume(dep1).equals('value1')
+          assume(dep2).equals('value2')
+        }, [1, 'dep1', 'dep2'])
+        .pipe(function(data, data2, data3, dep1, dep2) {
+          assume(data).equals('event data')
+          assume(data2).equals('event data2')
+          assume(data3).equals('event data3')
+          assume(dep1).equals('value1')
+          assume(dep2).equals('value2')
+        }, [3, 'dep1', 'dep2'])
+
+      sp.emit('skip', 'event data', 'event data2', 'event data3')
+    })
+  })
 
   describe('#error', function() {
     var sp = new SuperPipe(injector);
