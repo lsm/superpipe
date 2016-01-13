@@ -1,4 +1,5 @@
 {
+  "indent_size": 2,
   "indent_with_tabs": false,
   "max_preserve_newlines": 4,
   "preserve_newlines": true,
