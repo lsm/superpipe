@@ -19,6 +19,7 @@
     "lodash.indexof": "3.0.3",
     "lodash.isarray": "3.0.4",
     "lodash.isobject": "3.0.2",
+    "lodash.isplainobject": "3.2.0",
     "lodash.keys": "3.1.2",
     "lodash.map": "3.1.4",
     "lodash.slice": "3.0.0",
