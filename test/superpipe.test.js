@@ -1,9 +1,7 @@
 /* globals describe, beforeEach, it*/
 var SuperPipe = require('../')
 var assume = require('assume')
-var Pipeline = SuperPipe.Pipeline
 var forEach = require('lodash.foreach')
-
 
 describe('SuperPipe', function() {
 
@@ -177,15 +175,15 @@ describe('SuperPipe', function() {
 
   describe('#pipeline', function() {
     var sp = new SuperPipe()
-    it('should return an instance of Pipeline', function() {
-      assume(sp.pipeline()).is.instanceOf(Pipeline)
+    it('should return a function whic is instance of Pipeline', function() {
+      assume(sp.pipeline()).is.a('function')
     })
   })
 
   describe('#listenTo', function() {
     var sp = new SuperPipe()
-    it('should return an instance of Pipeline', function() {
-      assume(sp.listenTo('click')).is.instanceOf(Pipeline)
+    it('should return a function whic is instance of Pipeline', function() {
+      assume(sp.listenTo('click')).is.a('function')
     })
   })
 })

@@ -16,8 +16,8 @@ describe('Pipeline', function() {
   describe('#listenTo(emitter, name)', function() {
     var sp = new SuperPipe(injector)
     var pipeline = new Pipeline(sp)
-    it('should return an instance of Pipeline', function() {
-      assume(pipeline.listenTo('click')).is.instanceOf(Pipeline)
+    it('should return a function as instance', function() {
+      assume(pipeline.listenTo('click')).is.a('function')
     })
 
     it('should throw if listenFn is not a function', function() {
