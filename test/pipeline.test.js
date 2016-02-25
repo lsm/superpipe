@@ -342,10 +342,10 @@ describe('Pipeline', function() {
 
     it('should call error handler when next is called with truthy first argument', function(done) {
       pipeline
-        .pipe(function(msg) {
+        .pipe(function normalFunction(msg) {
           assume(msg).equals(normalMessage)
         })
-        .pipe(function(next) {
+        .pipe(function functionWithError(next) {
           next(errMessage)
         }, 'next')
       pipeline.error(function(err) {
@@ -356,11 +356,12 @@ describe('Pipeline', function() {
     })
 
     it('should call error handler with requested dependencies', function(done) {
-      pipeline.error(function(err, arg1) {
+      pipeline.error(function(err, arg1, errPipeName) {
         assume(err).equals(errMessage)
         assume(arg1).equals(1)
+        assume(errPipeName).equals('functionWithError')
         done()
-      }, [null, 'dep1'])
+      }, [null, 'dep1', 'errPipeName'])
       emitter.emit('normal', normalMessage)
     })
   })
