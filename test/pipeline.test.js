@@ -307,6 +307,20 @@ describe('Pipeline', function() {
 
       superpipe.emit('false')
     })
+
+    it('should be able to call setDep through next', function(done) {
+      superpipe.listenTo('setDep')
+        .pipe(function(next) {
+          next.setDep('abc', 'xyz')
+          next()
+        }, 'next', ['abc'])
+        .pipe(function(abc) {
+          assume(abc).equals('xyz')
+          done()
+        }, 'abc')
+
+      superpipe.emit('setDep')
+    })
   })
 
   describe('#pipe(function, [3, "dep1", "dep2"])', function() {
