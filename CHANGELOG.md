@@ -1,3 +1,21 @@
+0.10.0 2016-02-25
+=================
+- Name of error pipe can be retrived by dependency `errPipeName` in the error handler.
+- `setDep` can be called through `next.setDep` to reduce the number of arguments
+needed for pipe functions when both function are required.
+
+
+0.9.0 2016-01-12
+================
+- Call `Superpipe` constructor directly returns a new Pipeline instance.
+- Class `Pipeline` can be used without Superpipe.
+- New prototype methods for Pipeline:
+  - `push` is a unified interface for adding pipes to pipeline.
+  - `seal` can seal the pipeline which prevent adding more pipes to it.
+  - `toCurriedPipe` converts a pipeline into a curry function which connect an
+  instance of Superpipe or Injector with the pipeline and returns it. (Later binding)
+- Pipeline now returns a function as its instance when initialized/called.
+
 0.8.0 2015-12-15
 ================
 - Upgrade `insider@0.4.0`
