@@ -2,7 +2,7 @@
 =================
 - Name of error pipe can be retrived by dependency `errPipeName` in the error handler.
 - `setDep` can be called through `next.setDep` to reduce the number of arguments
-needed for pipe functions when both function are required.
+needed for pipe functions when both `next` and `setDep` are required.
 
 
 0.9.0 2016-01-12
