@@ -85,6 +85,32 @@ describe('Pipeline', function() {
       })
     })
 
+    it('should go next if false is returned in `NOT` pipe', function(done) {
+      sp.setDep('returnFalse', function(setDep, next) {
+        setDep('abc', 'xyz')
+        return false
+      })
+      sp.listenTo('not false')
+        .pipe('!returnFalse', ['setDep', 'next'], ['abc'])
+        .pipe(function(abc) {
+          assume(abc).equals('xyz')
+          done()
+        }, 'abc')
+
+      sp.emit('not false')
+    })
+
+    it('should not go next if true is the value of the `NOT` pipe', function() {
+      sp.setDep('iamtrue', true)
+      sp.listenTo('is true')
+        .pipe('!iamtrue')
+        .pipe(function() {
+          throw new Error('This pipe should not be executed.')
+        })
+
+      sp.emit('is true')
+    })
+
     it('should accept object as hashed dependencies', function() {
       var hashedDeps = function(obj, fn) {
         assume(obj.myFn).equals(hashedDeps)
