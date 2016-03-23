@@ -13,3 +13,5 @@ browsers:
     version: [5.1, 6.0]
   - name: safari
     version: oldest..latest
+  - name: microsoftedge
+    version: 13
