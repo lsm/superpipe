@@ -1,3 +1,21 @@
+0.10.3 2016-03-23
+=================
+- Superpipe instance is completely optional when executing pipelines.
+- Call pipeline instance with superpipe instance equals to clone and connect to
+that superpipe before pipeline execution.
+- Reorganize dependency management functions to `lib/dep.js`.
+- Add support for `NOT` pipe:
+  `.pipe('!willStopWhenReturnsTrue')`
+
+0.10.0 2016-02-29
+=================
+- Add `clone` method to Pipeline instance.
+
+0.10.1 2016-02-27
+=================
+- Do not catch exceptions for pipeline executions.
+- Put error function body to dependency `errPipeBody` if possible.
+
 0.10.0 2016-02-25
 =================
 - Name of error pipe can be retrived by dependency `errPipeName` in the error handler.
