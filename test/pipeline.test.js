@@ -404,6 +404,19 @@ describe('Pipeline', function() {
       }, [null, 'dep1', 'errPipeName'])
       emitter.emit('normal', normalMessage)
     })
+
+    it('should throw if no error handler is provided', function() {
+      var pl = SuperPipe()
+      pl.pipe(function(value) {
+        assume(value).equals(1)
+      }, 'dep1')
+        .pipe(function(next) {
+          next('no error handler')
+        }, 'next')
+      assume(function() {
+        pl(sp)
+      }).throws(/^no error handler/)
+    })
   })
 
   describe('events', function() {
