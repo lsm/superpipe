@@ -118,20 +118,20 @@ describe('SuperPipe', function() {
 
     it('should use name as prefix', function() {
       sp.setDep('prefix', depObject, '*^')
-      assume(sp.getDep('prefix:fn1')).equals(depObject.fn1)
-      assume(sp.getDep('prefix:fn2')).equals(depObject.fn2)
-      assume(sp.getDep('prefix:x')).is.not.exist()
-      assume(sp.getDep('prefix:y')).is.not.exist()
-      assume(sp.getDep('prefix:z')).is.not.exist()
+      assume(sp.getDep('prefix::fn1')).equals(depObject.fn1)
+      assume(sp.getDep('prefix::fn2')).equals(depObject.fn2)
+      assume(sp.getDep('prefix::x')).is.not.exist()
+      assume(sp.getDep('prefix::y')).is.not.exist()
+      assume(sp.getDep('prefix::z')).is.not.exist()
     })
 
     it('should add all properties as dependencies if props is *', function() {
       sp.setDep('name', depObject, '*')
-      assume(sp.getDep('name:x')).equals(depObject.x)
-      assume(sp.getDep('name:y')).equals(depObject.y)
-      assume(sp.getDep('name:z')).equals(depObject.z)
-      assume(sp.getDep('name:fn1')).equals(depObject.fn1)
-      assume(sp.getDep('name:fn2')).equals(depObject.fn2)
+      assume(sp.getDep('name::x')).equals(depObject.x)
+      assume(sp.getDep('name::y')).equals(depObject.y)
+      assume(sp.getDep('name::z')).equals(depObject.z)
+      assume(sp.getDep('name::fn1')).equals(depObject.fn1)
+      assume(sp.getDep('name::fn2')).equals(depObject.fn2)
     })
 
     it('should not register dependencies start with _ when props is any of */*$/*^', function() {
