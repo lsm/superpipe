@@ -86,7 +86,7 @@ describe('Pipeline', function() {
     })
 
     it('should go next if false is returned in `NOT` pipe', function(done) {
-      sp.setDep('returnFalse', function(setDep, next) {
+      sp.setDep('returnFalse', function(setDep) {
         setDep('abc', 'xyz')
         return false
       })
@@ -163,15 +163,14 @@ describe('Pipeline', function() {
         .pipe(100)
         .pipe(function() {
           throttledCounter++
-          if (throttledCounter === 2) {
+          if (2 === throttledCounter) {
             assume(normalCounter).equals(11)
             done()
           }
         })
 
-      for (var i = 0; i < 10; i++) {
+      for (var i = 0; i < 10; i++)
         sp.emit('fast')
-      }
 
       setTimeout(function() {
         sp.emit('fast')
@@ -332,6 +331,27 @@ describe('Pipeline', function() {
         }, 'abc')
 
       superpipe.emit('false')
+    })
+
+    it('should set dependencies using next', function() {
+      superpipe.listenTo('setDepsThroughNext')
+        .pipe(function(next) {
+          next(null, 'nextDep1', 'nextValue1')
+        }, 'next', ['nextDep1'])
+        .pipe(function(next, nextDep1) {
+          assume(nextDep1).equals('nextValue1')
+          next(null, {
+            nextDep2: 'nextValue2',
+            nextDep3: 'nextValue3'
+          })
+        }, ['next', 'nextDep1'], ['nextDep2', 'nextDep3'])
+        .pipe(function(nextDep1, nextDep2, nextDep3) {
+          assume(nextDep1).equals('nextValue1')
+          assume(nextDep2).equals('nextValue2')
+          assume(nextDep3).equals('nextValue3')
+        }, ['nextDep1', 'nextDep2', 'nextDep3'])
+
+      superpipe.emit('setDepsThroughNext')
     })
   })
 
