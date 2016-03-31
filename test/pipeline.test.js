@@ -297,10 +297,10 @@ describe('Pipeline', function() {
 
     it('should not go next automatically if `next` is provided as dependency', function() {
       superpipe.listenTo('next')
-        .pipe(function(setDep, next) {
+        .pipe(function(setDep) {
           setDep('abc', 'xyz')
         }, ['setDep', 'next'], ['abc'])
-        .pipe(function(abc) {
+        .pipe(function() {
           throw new Error('This pipe should not be executed.')
         }, 'abc')
 
@@ -313,7 +313,7 @@ describe('Pipeline', function() {
           setDep('abc', 'xyz')
           next('error!')
         }, ['setDep', 'next'], ['abc'])
-        .pipe(function(abc) {
+        .pipe(function() {
           throw new Error('This pipe should not be executed.')
         }, 'abc')
 
@@ -326,7 +326,7 @@ describe('Pipeline', function() {
           setDep('abc', 'xyz')
           return false
         }, 'setDep', ['abc'])
-        .pipe(function(abc) {
+        .pipe(function() {
           throw new Error('This pipe should not be executed.')
         }, 'abc')
 
@@ -352,6 +352,29 @@ describe('Pipeline', function() {
         }, ['nextDep1', 'nextDep2', 'nextDep3'])
 
       superpipe.emit('setDepsThroughNext')
+    })
+
+    it('should stop go next if setDep with `error`', function() {
+      var pl = SuperPipe()
+      pl.pipe(function(setDep) {
+        setDep('theKey1', 'the value1')
+        setDep({
+          'error': 'do not go next',
+          'theKey3': 'the value3'
+        })
+        setDep('theKey2', 'the value2')
+      }, 'setDep', ['theKey1', 'theKey2', 'theKey3'])
+        .pipe(function() {
+          throw new Error('This should be never called.')
+        })
+        .error(function(error, theKey1, theKey2, theKey3) {
+          assume(error).equals('do not go next')
+          assume(theKey1).equals('the value1')
+          assume(theKey2).equals(undefined)
+          assume(theKey3).equals('the value3')
+        }, ['error', 'theKey1', 'theKey2', 'theKey3'])
+
+      pl(superpipe)
     })
   })
 
