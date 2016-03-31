@@ -354,7 +354,7 @@ describe('Pipeline', function() {
       superpipe.emit('setDepsThroughNext')
     })
 
-    it('should stop go next if setDep with `error`', function() {
+    it('should not go next if setDep with `error`', function() {
       var pl = SuperPipe()
       pl.pipe(function(setDep) {
         setDep('theKey1', 'the value1')
@@ -376,6 +376,27 @@ describe('Pipeline', function() {
 
       pl(superpipe)
     })
+
+    it('should map the dependency names correctly', function(done) {
+      var pl = SuperPipe()
+      pl.pipe(function(setDep) {
+        setDep('myKey1', 'my value1')
+      }, 'setDep', 'myKey1:yourKey1')
+        .pipe(function(setDep, yourKey1) {
+          assume(yourKey1).equals('my value1')
+          setDep({
+            myKey2: 'my value2',
+            myKey3: 'my value3'
+          })
+        }, ['setDep', 'yourKey1'], ['myKey2:yourKey2', 'myKey3'])
+        .pipe(function(yourKey2, myKey3) {
+          assume(yourKey2).equals('my value2')
+          assume(myKey3).equals('my value3')
+          done()
+        }, ['yourKey2', 'myKey3'])
+      pl()
+    })
+
   })
 
   describe('#pipe(function, [3, "dep1", "dep2"])', function() {
