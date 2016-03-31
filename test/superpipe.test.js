@@ -175,14 +175,14 @@ describe('SuperPipe', function() {
 
   describe('#pipeline', function() {
     var sp = new SuperPipe()
-    it('should return a function whic is instance of Pipeline', function() {
+    it('should return a function which is instance of Pipeline', function() {
       assume(sp.pipeline()).is.a('function')
     })
   })
 
   describe('#listenTo', function() {
     var sp = new SuperPipe()
-    it('should return a function whic is instance of Pipeline', function() {
+    it('should return a function which is instance of Pipeline', function() {
       assume(sp.listenTo('click')).is.a('function')
     })
   })
