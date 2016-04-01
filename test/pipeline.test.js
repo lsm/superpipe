@@ -123,6 +123,34 @@ describe('Pipeline', function() {
         }, 'hashedDeps'])
       emitter.emit('keydown')
     })
+
+    it('should bypass optional pipes when dependencies are not satisfied', function(done) {
+      var injector = new Injector()
+
+      injector.set('arg1', 'arg1 value')
+      injector.set('func1', function(arg1) {
+        assume(arg1).equals('arg1 value')
+        return {
+          arg2: 'arg2 value'
+        }
+      })
+      injector.set('func2', function() {
+        throw new Error('This function should be never called')
+      })
+      injector.set('func3', function(arg2) {
+        assume(arg2).equals('arg2 value')
+        done()
+      })
+
+      var pl = SuperPipe()
+        .pipe('func1', 'arg1', 'arg2')
+        .pipe('missingFunction?', 'arg2')
+        .pipe('func2?', 'no such argument')
+        .pipe('func3', 'arg2')
+
+      pl(injector)
+    })
+
   })
 
   describe('#pipe("emit")', function() {
