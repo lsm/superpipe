@@ -12,7 +12,7 @@
   "nonew": false,
   "quotmark": "single",
   "noempty": true,
-  "curly": true,
+  "curly": false,
   "expr": true,
   "trailing": true,
   "undef": true,
