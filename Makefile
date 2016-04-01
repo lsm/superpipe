@@ -9,3 +9,9 @@ coverage:
 
 browser:
 	zuul --no-coverage -- test/*
+
+zuul-local:
+	zuul --no-coverage --local 8080 -- test/*
+
+sauce-connect:
+	node .sc.js
