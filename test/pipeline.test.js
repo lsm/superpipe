@@ -435,6 +435,20 @@ describe('Pipeline', function() {
       pl()
     })
 
+    it('should throw if type of deps/supplies are not correct', function() {
+      var injector = new Injector()
+      injector.set('func', function() {
+        throw new Error('This function should be never called.')
+      })
+      assume(function() {
+        SuperPipe().pipe('func', {})(injector)
+      }).throws('deps should be either string or array of dependency names if present')
+
+      assume(function() {
+        SuperPipe().pipe('func', null, true)(injector)
+      }).throws('supplies should be either string or array of dependency names if present')
+    })
+
   })
 
   describe('#pipe(function, [3, "dep1", "dep2"])', function() {
