@@ -151,6 +151,16 @@ describe('Pipeline', function() {
       pl(injector)
     })
 
+    it('should throw if pipe function loaded is not a function or boolean', function() {
+      var injector = new Injector()
+      injector.set('func', {})
+      var pl = SuperPipe().pipe('func')
+
+      assume(function() {
+        pl(injector)
+      }).throws(/^Dependency func is not a function or boolean./)
+    })
+
   })
 
   describe('#pipe("emit")', function() {
