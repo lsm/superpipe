@@ -13,5 +13,8 @@ browser:
 zuul-local:
 	zuul --no-coverage --local 8080 -- test/*
 
+tunnel:
+	zuul --no-coverage --local 8080 --tunnel -- test/*
+
 sauce-connect:
 	node .sc.js
