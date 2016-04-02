@@ -538,4 +538,56 @@ describe('Pipeline', function() {
       sp.emit('eventA')
     })
   })
+
+  describe('#debug', function() {
+    it('should output debug info on execution', function(done) {
+      var injector = new Injector()
+      injector.set('step1', function(input1, input2, input3) {
+        assume(input1).equals('input1')
+        assume(input2).equals('input2')
+        assume(input3).equals(undefined)
+        return {
+          dep1: 'dep1 value'
+        }
+      })
+      injector.set('step2', function(dep1, next) {
+        assume(dep1).equals('dep1 value')
+        setTimeout(function() {
+          next(null, {
+            dep2: 'dep2 value',
+            dep3: 'dep3 value'
+          })
+        })
+      })
+      injector.set('step3', function(dep2, dep3, setDep) {
+        assume(dep2).equals('dep2 value')
+        assume(dep3).equals('dep3 value')
+        setDep({
+          result: 'step3 result is here'
+        })
+      })
+      function debug(tpl, idx, fnName) {
+        switch (idx) {
+          case 0:
+            assume(fnName).equals('step1')
+            break
+          case 1:
+            assume(fnName).equals('step2')
+            break
+          case 2:
+            assume(fnName).equals('step3')
+            break
+        }
+        if (2 === idx)
+          done()
+      }
+      var pl = SuperPipe()
+      pl.pipe('step1', 2, 'dep1')
+        .pipe('step2', ['dep1', 'next'], ['dep2', 'dep3'])
+        .pipe('step3', ['dep2', 'dep3', 'setDep'], 'result')
+        .debug(debug)
+      var pipe = pl.toPipe(injector)
+      pipe('input1', 'input2', 'input3')
+    })
+  })
 })
