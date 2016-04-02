@@ -566,7 +566,8 @@ describe('Pipeline', function() {
           result: 'step3 result is here'
         })
       })
-      function debug(tpl, idx, fnName) {
+      function debug(tpl, pipelineName, idx, fnName, result) {
+        assume(pipelineName).equals('debugPipeline')
         switch (idx) {
           case 0:
             assume(fnName).equals('step1')
@@ -578,7 +579,7 @@ describe('Pipeline', function() {
             assume(fnName).equals('step3')
             break
         }
-        if (2 === idx)
+        if (2 === idx && '"step3 result is here"' === result)
           done()
       }
       var pl = SuperPipe()
@@ -586,7 +587,7 @@ describe('Pipeline', function() {
         .pipe('step2', ['dep1', 'next'], ['dep2', 'dep3'])
         .pipe('step3', ['dep2', 'dep3', 'setDep'], 'result')
         .debug(debug)
-      var pipe = pl.toPipe(injector)
+      var pipe = pl.toPipe(injector, 'debugPipeline')
       pipe('input1', 'input2', 'input3')
     })
   })
