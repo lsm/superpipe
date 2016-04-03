@@ -435,6 +435,26 @@ describe('Pipeline', function() {
       pl()
     })
 
+    it('should set mapped dependency names through next', function(done) {
+      var pl = SuperPipe()
+      pl.pipe(function(next) {
+        next(null, 'myKey1', 'my value1')
+      }, 'next', 'myKey1:yourKey1')
+        .pipe(function(next, yourKey1) {
+          assume(yourKey1).equals('my value1')
+          next(null, {
+            myKey2: 'my value2',
+            myKey3: 'my value3'
+          })
+        }, ['next', 'yourKey1'], ['myKey2:yourKey2', 'myKey3'])
+        .pipe(function(yourKey2, myKey3) {
+          assume(yourKey2).equals('my value2')
+          assume(myKey3).equals('my value3')
+          done()
+        }, ['yourKey2', 'myKey3'])
+      pl()
+    })
+
     it('should throw if type of deps/supplies are not correct', function() {
       var injector = new Injector()
       injector.set('func', function() {
