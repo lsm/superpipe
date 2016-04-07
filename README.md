@@ -88,6 +88,81 @@ var loginPipeline = superpipe
   .toPipe()
 ```
 
+#### .setDep(name,dep,[props])
+The `setDep` can take 3 parameters.
+* `name` - Required {String} Name of the dependency to set or prefix if props is present.
+* `dep`  - Required {String,Object,Array,Number,Boolean,Function}
+* `props` - Optional {String} Name(s) of properties to set as dependencies or shortcuts.
+  You can set props in 3 ways :
+   * '*' - set all the properties of the object as dependencies.
+   * '*^' - set all the function properties of the object as dependencies.
+   * '*$' - set all non-function properties of the object as dependencies.
+
+Example without `props`
+
+```javascript
+var SuperPipe = require('superpipe')
+var superpipe = new SuperPipe()
+
+var secret = 'secret-key'
+var x = 5
+
+superpipe
+  .setDep('secret',secret)
+  .setDep('y',x)  // you can make another name of dep then your variable or function
+
+
+```
+
+Example with 'props'
+
+```javascript
+
+// For example we have a module that does math operations
+// name of file math.js
+
+module.exports = {
+  add: function(x,y,setDep){
+    ...
+  },
+  sub: function(x,y,setDep){
+    ...
+  },
+  z: 10
+}
+
+```
+
+```javascript
+var SuperPipe = require('superpipe')
+var superpipe = new SuperPipe()
+var math = require('./math')
+
+superpipe
+  .setDep('math1',math,'*')  // you can get add,sub,z
+  .setDep('math2',math,'*^') // you can get just add and sub (func)
+  .setDep('math3',math,'*$') // you can get just z (non-func)
+
+```
+
+#### .getDep(name)
+
+The `getDep` can take 1 parameter
+ * `name` - Required {String} Name of the dependency
+
+```javascript
+
+var SuperPipe = require('superpipe')
+var superpipe = new SuperPipe()
+
+var x = 5
+
+superpipe
+  .setDep('x',x)
+
+var z = superpipe.getDep('x') // z = 5
+
+```
 
 ##  Bug Reports [here](https://github.com/lsm/superpipe/issues)
 
