@@ -155,9 +155,9 @@ describe('Pipeline', function() {
         .pipe(function() {
           start = (new Date()).getTime()
         })
-        .wait(200)
+        .wait(1000)
         .pipe(function() {
-          assume((new Date()).getTime() - start > 200).equals(true)
+          assume((new Date()).getTime() - start > 500).equals(true)
           done()
         })()
     })
