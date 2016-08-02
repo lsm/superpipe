@@ -1,5 +1,6 @@
 'use strict'
 /* globals describe, it */
+var bind = require('lodash.bind')
 var assume = require('assume')
 var SuperPipe = require('../')
 var Injector = SuperPipe.Injector
@@ -102,11 +103,12 @@ describe('Pipeline', function() {
 
     it('should use deps as event name and use supplies as deps for "emit" pipe', function(done) {
       var sp = SuperPipe()
-      sp.set({
-        obj: 'obj 1',
-        event: 'data 1'
-      })
-        .set('emit', emitter.emit.bind(emitter))
+      sp
+        .set({
+          obj: 'obj 1',
+          event: 'data 1'
+        })
+        .set('emit', bind(emitter.emit, emitter))
 
       emitter.on('event 1', sp()
         .pipe(function(event, obj) {
