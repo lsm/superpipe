@@ -2,7 +2,6 @@
 /* globals describe, it */
 var assume = require('assume')
 var SuperPipe = require('../')
-var Pipeline = SuperPipe.Pipeline
 var Injector = SuperPipe.Injector
 var EventEmitter = require('events').EventEmitter
 
@@ -12,103 +11,41 @@ describe('Pipeline', function() {
   var emitter = new EventEmitter()
   var injector = new Injector()
 
-
-  describe('#listenTo(emitter, name)', function() {
-    var sp = new SuperPipe(injector)
-    var pipeline = new Pipeline(sp)
-    it('should return a function as instance', function() {
-      assume(pipeline.listenTo('click')).is.a('function')
-    })
-
-    it('should throw if listenFn is not a function', function() {
-      assume(function() {
-        pipeline.listenTo({}, 'click')
-      }).throws(/^emitter has no listening funciton "on, addEventListener or addListener"/)
-    })
-  })
-
-  describe('#listenTo("emitterName", eventName)', function() {
-    it('should listen to the event if the named emitter is available', function(done) {
-      var injector = new Injector()
-      var sp = new SuperPipe(injector)
-      var pipeline = new Pipeline(sp)
-
-      var emitter = new EventEmitter()
-      sp.setDep('myEmitter', emitter)
-      emitter.emit('click', 'other event')
-
-      pipeline
-        .listenTo('myEmitter', 'click')
-        .pipe(function(event) {
-          assume(event).equals('my event')
-          done()
-        })
-
-      emitter.emit('click', 'my event')
-    })
-
-    it('should listen to the event once the named emitter becomes available', function(done) {
-      var injector = new Injector()
-      var sp = new SuperPipe(injector)
-      var pipeline = new Pipeline(sp)
-
-      pipeline
-        .listenTo('myEmitter', 'click')
-        .pipe(function(event) {
-          assume(event).equals('my event')
-          done()
-        })
-
-      var emitter = new EventEmitter()
-      emitter.emit('click', 'other event')
-
-      sp.setDep('myEmitter', emitter)
-      emitter.emit('click', 'my event')
-    })
-  })
-
   describe('#pipe("name of function in deps")', function() {
-    var emitter = new EventEmitter()
-    var sp = new SuperPipe()
-    var pipeline = sp
-      .listenTo(emitter, 'click')
+    var sp = SuperPipe()
 
     it('should accept string as first argument and get the pipe function use the value of the string and call it', function(done) {
-      pipeline
-        .pipe('setDep')
+      var pipe = sp()
+        .pipe('set')
         .pipe(function(target) {
           assume(target).equals('x')
           done()
-        }, 'target')
-      emitter.emit('click', {
+        }, 'target').toPipe()
+      pipe({
         target: 'x'
       })
     })
 
     it('should go next if false is returned in `NOT` pipe', function(done) {
-      sp.setDep('returnFalse', function(setDep) {
-        setDep('abc', 'xyz')
+      sp.set('returnFalse', function(set) {
+        set('abc', 'xyz')
         return false
       })
-      sp.listenTo('not false')
-        .pipe('!returnFalse', ['setDep', 'next'], ['abc'])
+      sp()
+        .pipe('!returnFalse', ['set', 'next'], ['abc'])
         .pipe(function(abc) {
           assume(abc).equals('xyz')
           done()
-        }, 'abc')
-
-      sp.emit('not false')
+        }, 'abc')()
     })
 
     it('should not go next if true is the value of the `NOT` pipe', function() {
-      sp.setDep('iamtrue', true)
-      sp.listenTo('is true')
+      sp.set('iamtrue', true)
+      sp()
         .pipe('!iamtrue')
         .pipe(function() {
           throw new Error('This pipe should not be executed.')
-        })
-
-      sp.emit('is true')
+        })()
     })
 
     it('should accept object as hashed dependencies', function() {
@@ -116,12 +53,10 @@ describe('Pipeline', function() {
         assume(obj.myFn).equals(hashedDeps)
         assume(fn).equals(hashedDeps)
       }
-      sp.setDep('hashedDeps', hashedDeps)
-        .listenTo(emitter, 'keydown')
-        .pipe('hashedDeps', [{
-          myFn: 'hashedDeps'
-        }, 'hashedDeps'])
-      emitter.emit('keydown')
+      sp.set('hashedDeps', hashedDeps)
+      sp().pipe('hashedDeps', [{
+        myFn: 'hashedDeps'
+      }, 'hashedDeps'])()
     })
 
     it('should bypass optional pipes when dependencies are not satisfied', function(done) {
@@ -142,23 +77,23 @@ describe('Pipeline', function() {
         done()
       })
 
-      var pl = SuperPipe()
+      var pl = SuperPipe.pipeline()
         .pipe('func1', 'arg1', 'arg2')
         .pipe('missingFunction?', 'arg2')
         .pipe('func2?', 'no such argument')
         .pipe('func3', 'arg2')
 
-      pl(injector)
+      pl.toPipe(injector)()
     })
 
     it('should throw if pipe function loaded is not a function or boolean', function() {
       var injector = new Injector()
       injector.set('func', {})
-      var pl = SuperPipe().pipe('func')
+      var pl = SuperPipe.pipeline().pipe('func')
 
       assume(function() {
         pl(injector)
-      }).throws(/^Dependency func is not a function or boolean./)
+      }).throws(/^Dependency `func` is not a function\./)
     })
 
   })
@@ -166,35 +101,34 @@ describe('Pipeline', function() {
   describe('#pipe("emit")', function() {
 
     it('should use deps as event name and use supplies as deps for "emit" pipe', function(done) {
-      var sp = new SuperPipe()
-      sp.setDep({
+      var sp = SuperPipe()
+      sp.set({
         obj: 'obj 1',
         event: 'data 1'
       })
+        .set('emit', emitter.emit.bind(emitter))
 
-      sp.listenTo('event 1')
+      emitter.on('event 1', sp()
         .pipe(function(event, obj) {
           assume(event).equals('data 1')
           assume(obj).equals('obj 1')
           done()
-        })
+        }).toPipe()
+      )
 
-      sp.listenTo(sp, 'event 2')
-        .pipe('emit', 'event 1', ['event', 'obj'])
-
-      sp.emit('event 2')
+      sp().pipe('emit', 'event 1', ['event', 'obj'])()
     })
 
   })
 
   describe('#pipe(number)', function() {
-    var sp = new SuperPipe(injector)
-    var pipeline = sp.listenTo('fast')
+    var sp = SuperPipe(injector)
+    var pipeline = sp()
 
     it('should throttle the events emitted', function(done) {
       var normalCounter = 0
       var throttledCounter = 0
-      pipeline
+      var pipe = pipeline
         .pipe(function() {
           normalCounter++
         })
@@ -205,14 +139,27 @@ describe('Pipeline', function() {
             assume(normalCounter).equals(11)
             done()
           }
-        })
+        }).toPipe()
 
       for (var i = 0; i < 10; i++)
-        sp.emit('fast')
+        pipe()
 
-      setTimeout(function() {
-        sp.emit('fast')
-      }, 200)
+      setTimeout(pipe, 200)
+    })
+  })
+
+  describe('#wait(msec)', function() {
+    it('should wait for x msec and continue', function(done) {
+      var start
+      SuperPipe.pipeline()
+        .pipe(function() {
+          start = (new Date()).getTime()
+        })
+        .wait(200)
+        .pipe(function() {
+          assume((new Date()).getTime() - start > 200).equals(true)
+          done()
+        })()
     })
   })
 
@@ -220,108 +167,98 @@ describe('Pipeline', function() {
     function clickHandler() {
     }
 
-    var value = 1
-
-    function processer(handlerFn, setDep) {
+    function processer(handlerFn, done) {
       assume(handlerFn).equals(clickHandler)
-      setDep('valueFromProcesserA', value)
-      value++
+      done()
       return true
     }
 
-    var sp = new SuperPipe(injector)
-    var pipeline = sp
-      .setDep('handleClick', clickHandler)
-      .listenTo(emitter, 'click')
+    var sp = SuperPipe(injector)
+    sp.set('handleClick', clickHandler)
 
     it('should throw if fn is not a function or name of a dependency function', function() {
       assume(function() {
-        pipeline.pipe({})
+        sp().pipe({})
       }).throws(/^fn should be a function, got/)
     })
 
-    it('should accept mutiple arguments string as dependencies', function() {
-      pipeline.pipe(processer, ['handleClick', 'setDep'])
-      emitter.emit('click')
+    it('should accept array as dependencies', function(done) {
+      sp.set('done', done)
+      sp().pipe(processer, ['handleClick', 'done'])()
     })
 
-    it('should accept array as dependencies', function() {
-      pipeline.pipe(processer, ['handleClick', 'setDep'])
-      emitter.emit('click')
-    })
-
-    it('should has 0 or null as context for each pipeline functions', function() {
-      pipeline.pipe(function() {
+    it('should has 0 or null as context for each pipeline functions', function(done) {
+      sp().pipe(function() {
         assume(+this).equals(0)
-      })
+        done()
+      })()
     })
 
-    it('should keep the original argument if null is provided while still provide the right dependency need to be injected', function() {
-      pipeline
+    it('should keep the original argument if null is provided while still provide the right dependency need to be injected', function(done) {
+      sp.set('done', done)
+      var pipe = sp()
         .pipe(function(event, next) {
           assume(event.target).equals('a')
           next()
         }, [null, 'next'])
-      emitter.emit('click', {
+        .pipe('done', 'error').toPipe()
+      pipe({
         target: 'a'
       })
-
     })
 
-    it('should not register getDep as a dependency', function() {
-      pipeline.pipe(function(getDep) {
-        assume(getDep).equals(undefined)
-      }, 'getDep')
+    it('should not register get as a dependency', function(done) {
+      sp().pipe(function(get) {
+        assume(get).equals(undefined)
+        done()
+      }, 'get')()
     })
 
-    it('should register setDep as dependencies and bind with dependencies of current pipeline', function(done) {
-      pipeline
-        .pipe(function(setDep) {
-          assume(sp.setDep).not.equals(setDep)
-          sp.setDep('key', 'old value')
-          setDep('key', 'new value')
-        }, 'setDep')
+    it('should register set as dependencies and bind with dependencies of current pipeline', function(done) {
+      sp.set('done', done)
+      var pipe = sp()
+        .pipe(function(set) {
+          assume(sp.set).not.equals(set)
+          sp.set('key', 'old value')
+          set('key', 'new value')
+        }, 'set')
         .pipe(function(key) {
           assume(key).equals('new value')
-          assume(sp.getDep('key')).equals('old value')
+          assume(sp.get('key')).equals('old value')
           done()
-        }, 'key')
+        }, 'key').toPipe()
 
-      emitter.emit('click', {
+      pipe({
         target: 'a'
       })
-    })
-
-    it('should call the piped stream functions for the correct times', function() {
-      assume(value).equals(8)
     })
   })
 
   describe('#pipe(function, dependencies, supplies)', function() {
-    var superpipe = new SuperPipe(injector)
+    var superpipe = SuperPipe(injector)
 
     it('should go next pipe when all supplies are fulfilled.', function(done) {
-      superpipe.setDep('key1', 'value1')
-        .listenTo('deps supplies')
-        .pipe(function(key1, setDep) {
+      superpipe.set('key1', 'value1')
+      emitter.on('deps supplies', superpipe()
+        .pipe(function(key1, set) {
           assume(key1).equals('value1')
-          setDep('key2', 'value2')
+          set('key2', 'value2')
           setTimeout(function() {
-            setDep('key3', 'value3')
+            set('key3', 'value3')
           }, 10)
-        }, ['key1', 'setDep'], ['key2', 'key3'])
-        .pipe(function(setDep) {
-          setDep({
+        }, ['key1', 'set'], ['key2', 'key3'])
+        .pipe(function(set) {
+          set({
             key4: 'value4',
             key5: 'value5'
           })
-        }, 'setDep', ['key4', 'key5'])
-        .pipe(function(setDep) {
+        }, 'set', ['key4', 'key5'])
+        .pipe(function(set) {
           setTimeout(function() {
-            setDep('key6', 'value6')
+            set('key6', 'value6')
           })
           return true
-        }, 'setDep', 'key6')
+        }, 'set', 'key6')
         .pipe(function(key2, key3, key4, key5) {
           assume(key2).equals('value2')
           assume(key3).equals('value3')
@@ -329,50 +266,50 @@ describe('Pipeline', function() {
           assume(key5).equals('value5')
           done()
         }, ['key2', 'key3', 'key4', 'key5'])
+        .toPipe())
 
-      superpipe.emit('deps supplies')
+      emitter.emit('deps supplies')
     })
 
     it('should not go next automatically if `next` is provided as dependency', function() {
-      superpipe.listenTo('next')
-        .pipe(function(setDep) {
-          setDep('abc', 'xyz')
-        }, ['setDep', 'next'], ['abc'])
+      emitter.on('next', superpipe()
+        .pipe(function(set) {
+          set('abc', 'xyz')
+        }, ['set', 'next'], ['abc'])
         .pipe(function() {
           throw new Error('This pipe should not be executed.')
-        }, 'abc')
+        }, 'abc'))
 
-      superpipe.emit('next')
+      emitter.emit('next')
     })
 
     it('should not go next if has `err`', function() {
-      superpipe.listenTo('err')
-        .pipe(function(setDep, next) {
-          setDep('abc', 'xyz')
+      emitter.on('err', superpipe()
+        .pipe(function(set, next) {
+          set('abc', 'xyz')
           next('error!')
-        }, ['setDep', 'next'], ['abc'])
+        }, ['set', 'next'], ['abc'])
         .pipe(function() {
           throw new Error('This pipe should not be executed.')
         }, 'abc')
+      )
 
-      superpipe.emit('xyz')
+      emitter.emit('xyz')
     })
 
     it('should not go next if false is returned', function() {
-      superpipe.listenTo('false')
-        .pipe(function(setDep) {
-          setDep('abc', 'xyz')
+      superpipe()
+        .pipe(function(set) {
+          set('abc', 'xyz')
           return false
-        }, 'setDep', ['abc'])
+        }, 'set', ['abc'])
         .pipe(function() {
           throw new Error('This pipe should not be executed.')
-        }, 'abc')
-
-      superpipe.emit('false')
+        }, 'abc')()
     })
 
     it('should set dependencies using next', function() {
-      superpipe.listenTo('setDepsThroughNext')
+      superpipe()
         .pipe(function(next) {
           next(null, 'nextDep1', 'nextValue1')
         }, 'next', ['nextDep1'])
@@ -387,21 +324,19 @@ describe('Pipeline', function() {
           assume(nextDep1).equals('nextValue1')
           assume(nextDep2).equals('nextValue2')
           assume(nextDep3).equals('nextValue3')
-        }, ['nextDep1', 'nextDep2', 'nextDep3'])
-
-      superpipe.emit('setDepsThroughNext')
+        }, ['nextDep1', 'nextDep2', 'nextDep3'])()
     })
 
-    it('should not go next if setDep with `error`', function() {
-      var pl = SuperPipe()
-      pl.pipe(function(setDep) {
-        setDep('theKey1', 'the value1')
-        setDep({
+    it('should not go next if set with `error`', function() {
+      var pl = SuperPipe.pipeline()
+      pl.pipe(function(set) {
+        set('theKey1', 'the value1')
+        set({
           'error': 'do not go next',
           'theKey3': 'the value3'
         })
-        setDep('theKey2', 'the value2')
-      }, 'setDep', ['theKey1', 'theKey2', 'theKey3'])
+        set('theKey2', 'the value2')
+      }, 'set', ['theKey1', 'theKey2', 'theKey3'])
         .pipe(function() {
           throw new Error('This should be never called.')
         })
@@ -416,17 +351,17 @@ describe('Pipeline', function() {
     })
 
     it('should map the dependency names correctly', function(done) {
-      var pl = SuperPipe()
-      pl.pipe(function(setDep) {
-        setDep('myKey1', 'my value1')
-      }, 'setDep', 'myKey1:yourKey1')
-        .pipe(function(setDep, yourKey1) {
+      var pl = SuperPipe.pipeline()
+      pl.pipe(function(set) {
+        set('myKey1', 'my value1')
+      }, 'set', 'myKey1:yourKey1')
+        .pipe(function(set, yourKey1) {
           assume(yourKey1).equals('my value1')
-          setDep({
+          set({
             myKey2: 'my value2',
             myKey3: 'my value3'
           })
-        }, ['setDep', 'yourKey1'], ['myKey2:yourKey2', 'myKey3'])
+        }, ['set', 'yourKey1'], ['myKey2:yourKey2', 'myKey3'])
         .pipe(function(yourKey2, myKey3) {
           assume(yourKey2).equals('my value2')
           assume(myKey3).equals('my value3')
@@ -436,7 +371,7 @@ describe('Pipeline', function() {
     })
 
     it('should set mapped dependency names through next', function(done) {
-      var pl = SuperPipe()
+      var pl = SuperPipe.pipeline()
       pl.pipe(function(next) {
         next(null, 'myKey1', 'my value1')
       }, 'next', 'myKey1:yourKey1')
@@ -461,11 +396,11 @@ describe('Pipeline', function() {
         throw new Error('This function should be never called.')
       })
       assume(function() {
-        SuperPipe().pipe('func', {})(injector)
+        SuperPipe.pipeline().pipe('func', {})(injector)
       }).throws('deps should be either string or array of dependency names if present')
 
       assume(function() {
-        SuperPipe().pipe('func', null, true)(injector)
+        SuperPipe.pipeline().pipe('func', null, true)(injector)
       }).throws('supplies should be either string or array of dependency names if present')
     })
 
@@ -473,11 +408,11 @@ describe('Pipeline', function() {
 
   describe('#pipe(function, [3, "dep1", "dep2"])', function() {
     it('should skip dependencies by number and get the default values by position.', function() {
-      var sp = new SuperPipe()
-      sp.setDep('dep1', 'value1')
-      sp.setDep('dep2', 'value2')
+      var sp = SuperPipe()
+      sp.set('dep1', 'value1')
+      sp.set('dep2', 'value2')
 
-      sp.listenTo('skip')
+      sp()
         .pipe(function(data, dep1, dep2) {
           assume(data).equals('event data')
           assume(dep1).equals('value1')
@@ -489,16 +424,14 @@ describe('Pipeline', function() {
           assume(data3).equals('event data3')
           assume(dep1).equals('value1')
           assume(dep2).equals('value2')
-        }, [3, 'dep1', 'dep2'])
-
-      sp.emit('skip', 'event data', 'event data2', 'event data3')
+        }, [3, 'dep1', 'dep2'])('event data', 'event data2', 'event data3')
     })
   })
 
   describe('#error', function() {
-    var sp = new SuperPipe(injector)
-    sp.setDep('dep1', 1)
-    var pipeline = sp.listenTo(emitter, 'normal')
+    var sp = SuperPipe(injector)
+    sp.set('dep1', 1)
+    var pipeline = sp()
     var errMessage = 'Error message'
     var normalMessage = 'Normal message'
 
@@ -514,7 +447,7 @@ describe('Pipeline', function() {
         assume(err).equals(errMessage)
         done()
       })
-      emitter.emit('normal', normalMessage)
+      pipeline.toPipe()(normalMessage)
     })
 
     it('should call error handler with requested dependencies', function(done) {
@@ -524,11 +457,11 @@ describe('Pipeline', function() {
         assume(errPipeName).equals('functionWithError')
         done()
       }, [null, 'dep1', 'errPipeName'])
-      emitter.emit('normal', normalMessage)
+      pipeline(normalMessage)
     })
 
     it('should throw if no error handler is provided', function() {
-      var pl = SuperPipe()
+      var pl = SuperPipe.pipeline()
       pl.pipe(function(value) {
         assume(value).equals(1)
       }, 'dep1')
@@ -536,26 +469,8 @@ describe('Pipeline', function() {
           next('no error handler')
         }, 'next')
       assume(function() {
-        pl(sp)
+        pl.toPipe(sp)()
       }).throws(/^no error handler/)
-    })
-  })
-
-  describe('events', function() {
-    var sp = new SuperPipe()
-    it('should get `emit` as dependency and trigger the event', function(done) {
-      sp
-        .listenTo('eventA')
-        .pipe(function(emit) {
-          emit('eventB', 'data of eventB')
-        }, 'emit')
-      sp
-        .listenTo('eventB')
-        .pipe(function(data) {
-          assume(data).equals('data of eventB')
-          done()
-        })
-      sp.emit('eventA')
     })
   })
 
@@ -579,10 +494,10 @@ describe('Pipeline', function() {
           })
         })
       })
-      injector.set('step3', function(dep2, dep3, setDep) {
+      injector.set('step3', function(dep2, dep3, set) {
         assume(dep2).equals('dep2 value')
         assume(dep3).equals('dep3 value')
-        setDep({
+        set({
           result: 'step3 result is here'
         })
       })
@@ -602,11 +517,11 @@ describe('Pipeline', function() {
         if (2 === idx && '"step3 result is here"' === result)
           done()
       }
-      var pl = SuperPipe()
+      var pl = SuperPipe.pipeline()
       var pipe = pl.debug(debug)
         .pipe('step1', 2, 'dep1')
         .pipe('step2', ['dep1', 'next'], ['dep2', 'dep3'])
-        .pipe('step3', ['dep2', 'dep3', 'setDep'], 'result')
+        .pipe('step3', ['dep2', 'dep3', 'set'], 'result')
         .toPipe(injector, 'debugPipeline')
       assume(pl.debug()).equals(debug)
       pipe('input1', 'input2', 'input3')
