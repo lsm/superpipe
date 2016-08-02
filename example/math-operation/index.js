@@ -1,17 +1,25 @@
-var SuperPipe = require('../../lib/plumber');
+var SuperPipe = require('superpipe');
+var superpipe = new SuperPipe()
 var operation = require('./operation');
 
+superpipe
+  .setDep('add', operation.addition)
+  .setDep('sub', operation.substraction)
+  .setDep('mul', operation.multiplication)
+  .setDep('div', operation.division)
+  .setDep('result', operation.result)
 
-var sp = new SuperPipe();
-var pipeline = sp
+
+
+superpipe
   .listenTo('math operation')
-  .pipe(operation.addition, null, null, 'setDep')
-  .pipe(operation.substraction, 'x', 'y', 'setDep')
-  .pipe(operation.multiplication, 'x', 'y', 'setDep')
-  .pipe(operation.division, 'x', 'y', 'setDep')
-  .pipe(operation.result, 'addition', 'substraction', 'mul', 'div');
+  .pipe('add', [null, null, 'setDep'], ['addition', 'x', 'y'])
+  .pipe('sub', ['x', 'y', 'setDep'], ['substraction'])
+  .pipe('mul', ['x', 'y', 'setDep'], ['multiplication'])
+  .pipe('div', ['x', 'y', 'setDep'], ['division'])
+  .pipe('result', ['addition', 'substraction', 'multiplication', 'division']);
 
 var x = 5;
 var y = 6;
 
-pipeline.trigger('math operation', x, y);
+superpipe.emit('math operation', x, y);

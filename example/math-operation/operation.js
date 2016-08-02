@@ -4,35 +4,28 @@ module.exports = {
 
     var addition = x + y;
 
-    setDep({
-      addition: addition,
-      y: y,
-      x: x
-    });
+    setDep('addition', addition)
+    setDep('x', x)
+    setDep('y', y)
+
   },
   substraction: function(x, y, setDep) {
 
     var substraction = x - y;
 
-    setDep({
-      substraction: substraction
-    });
+    setDep('substraction', substraction);
   },
   multiplication: function(x, y, setDep) {
 
-    var mul = x * y;
+    var multiplication = x * y;
 
-    setDep({
-      mul: mul
-    });
+    setDep('multiplication', multiplication);
   },
   division: function(x, y, setDep) {
 
-    var div = x / y;
+    var division = x / y;
 
-    setDep({
-      div: div
-    });
+    setDep('division', division);
   },
   result: function(addition, substraction, mul, div) {
 
