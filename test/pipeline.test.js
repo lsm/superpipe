@@ -398,8 +398,8 @@ describe('Pipeline', function() {
         throw new Error('This function should be never called.')
       })
       assume(function() {
-        SuperPipe.pipeline().pipe('func', {})(injector)
-      }).throws('deps should be either string or array of dependency names if present')
+        SuperPipe.pipeline().pipe('func', function() {})(injector)
+      }).throws('`dependencies` should be either string, array or object of dependency names if present')
 
       assume(function() {
         SuperPipe.pipeline().pipe('func', null, true)(injector)
@@ -428,6 +428,74 @@ describe('Pipeline', function() {
           assume(dep2).equals('value2')
         }, [3, 'dep1', 'dep2'])('event data', 'event data2', 'event data3')
     })
+  })
+
+  describe('#pipe("set", dependencies, supplies)', function() {
+    it('should set all dependencies to the pipeline', function(done) {
+      var input = {
+        setdep1: 'value1',
+        setdep2: 'value2'
+      }
+      SuperPipe.pipeline()
+        .pipe('set')
+        .pipe(function(setdep1, setdep2) {
+          assume(setdep1).equals(input.setdep1)
+          assume(setdep2).equals(input.setdep2)
+          done()
+        }, ['setdep1', 'setdep2']).toPipe()(input)
+    })
+
+    it('should set dependencies by supplies to the pipeline', function(done) {
+      var input = {
+        setdep1: 'value1',
+        setdep2: 'value2',
+        setdep3: 'value3'
+      }
+      SuperPipe.pipeline()
+        .pipe('set', null, ['setdep2', 'setdep1'])
+        .pipe(function(setdep1, setdep2) {
+          assume(setdep1).equals(input.setdep1)
+          assume(setdep2).equals(input.setdep2)
+          done()
+        }, ['setdep1', 'setdep2']).toPipe()(input)
+    })
+
+    it('should set dependencies by positions of arguments to pipeline', function(done) {
+      var setdep1 = 'value1'
+      var setdep2 = 'value2'
+      var setdep3 = 'value3'
+      SuperPipe.pipeline()
+        .pipe('set', 2, ['posdep2', 'posdep1'])
+        .pipe(function(posdep1, posdep2) {
+          assume(posdep1).equals(setdep1)
+          assume(posdep2).equals(setdep2)
+        }, ['posdep1', 'posdep2']).toPipe()(setdep2, setdep1, setdep3)
+
+      SuperPipe.pipeline()
+        .pipe('set', null, ['posdep1', 'posdep2'])
+        .pipe(function(posdep1, posdep2) {
+          assume(posdep1).equals(setdep1)
+          assume(posdep2).equals(setdep2)
+          done()
+        }, ['posdep1', 'posdep2']).toPipe()(setdep1, setdep2, setdep3)
+    })
+
+    it('should set dependencies by mapping of arguments to pipeline', function(done) {
+      var setdep1 = 'value1'
+      var setdep2 = 'value2'
+      var setdep3 = 'value3'
+      SuperPipe.pipeline()
+        .pipe('set', {
+          'mappeddep2': 0,
+          'mappeddep1': 1
+        })
+        .pipe(function(mappeddep1, mappeddep2) {
+          assume(mappeddep1).equals(setdep1)
+          assume(mappeddep2).equals(setdep2)
+          done()
+        }, ['mappeddep1', 'mappeddep2']).toPipe()(setdep2, setdep1, setdep3)
+    })
+
   })
 
   describe('#error', function() {
