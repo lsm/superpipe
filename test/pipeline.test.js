@@ -597,4 +597,13 @@ describe('Pipeline', function() {
       pipe('input1', 'input2', 'input3')
     })
   })
+
+  describe('#Name([name])', function() {
+    it('should set/get name for the pipeline', function() {
+      var pl = SuperPipe.pipeline()
+      assume(pl.Name()).equals(undefined)
+      pl.Name('the pipeline')
+      assume(pl.Name()).equals('the pipeline')
+    })
+  })
 })
