@@ -177,5 +177,9 @@ describe('SuperPipe', function() {
     it('should return a function which is instance of Pipeline', function() {
       assume(sp()).is.a('function')
     })
+    it('should return an instance of Pipeline and set name for the pipeline', function() {
+      var pl = sp('myPipeline')
+      assume(pl.Name()).equals('myPipeline')
+    })
   })
 })
