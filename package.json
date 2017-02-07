@@ -27,13 +27,13 @@
   },
   "devDependencies": {
     "assume": "1.4.1",
-    "coveralls": "2.11.12",
-    "istanbul": "0.4.4",
-    "mocha": "2.4.5",
+    "coveralls": "2.11.16",
+    "istanbul": "0.4.5",
+    "mocha": "3.2.0",
     "mocha-lcov-reporter": "1.2.0",
-    "nodemon": "1.10.0",
-    "sauce-connect-launcher": "0.15.1",
-    "zuul": "3.10.3"
+    "nodemon": "1.11.0",
+    "sauce-connect-launcher": "1.2.0",
+    "zuul": "3.11.1"
   },
   "repository": {
     "type": "git",
