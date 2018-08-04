@@ -129,5 +129,60 @@ describe('Pipeline', function() {
         ])
       }).to.throw('Each pipeline could only have one error handler.')
     })
+
+    it('should trigger error when calling set with key "error"', function() {
+      let pl = sp('call set with error')
+        .pipe(
+          function(set, arg1) {
+            set('arg2', arg1)
+            set('error', 'error from set')
+          },
+          ['set', 'arg1'],
+          'arg2'
+        )
+        .pipe(() => {
+          throw new Error('This pipeline should not be called')
+        })
+        .error(
+          function(arg2, arg1, error) {
+            expect(arg2).to.equal(arg1)
+            expect(error).to.equal('error from set')
+          },
+          ['arg2', 'arg1', 'error']
+        )
+        .end()
+      pl()
+    })
+
+    it('should only trigger error handler once when calling set with key "error"', function() {
+      let count = 0
+      let pl = sp('call set with error')
+        .pipe(
+          function(set, arg1) {
+            set('arg2', arg1)
+            set('error', 'error from set1')
+            set('error', 'error from set2')
+            set('error', 'error from set3')
+          },
+          ['set', 'arg1'],
+          'arg2'
+        )
+        .pipe(() => {
+          throw new Error('This pipeline should not be called')
+        })
+        .error(
+          function(arg2, arg1, error) {
+            count++
+            if (count > 1) {
+              throw new Error('Error handler called more than once.')
+            }
+            expect(arg2).to.equal(arg1)
+            expect(error).to.equal('error from set1')
+          },
+          ['arg2', 'arg1', 'error']
+        )
+        .end()
+      pl()
+    })
   })
 })
