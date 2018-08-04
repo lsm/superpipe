@@ -22,7 +22,7 @@ export function createPipe(fn, input, output) {
         return createInputPipe(input)
       case FN_ERROR:
         // .pipe('error', 'theErrorHandler', ['input1', 'input2'])
-        return createInjectionPipe(input, output)
+        return createErrorPipe(input, output)
       default:
         return createInjectionPipe(fn, input, output)
     }
@@ -44,6 +44,26 @@ function createInputPipe(input) {
     fnName: FN_INPUT,
     input: input
   }
+}
+
+function createErrorPipe(errorFn, input) {
+  input = normalizeInput(input || 'error')
+
+  if ('string' === typeof errorFn) {
+    return {
+      fn: null,
+      fnName: errorFn,
+      input
+    }
+  } else if ('function' === typeof errorFn) {
+    return {
+      fn: errorFn,
+      fnName: errorFn.name || FN_ERROR,
+      input
+    }
+  }
+
+  throw new Error('Error handler must be a string or function')
 }
 
 /**
