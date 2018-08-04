@@ -1,5 +1,5 @@
 import { FN_ERROR, FN_INPUT, createPipe } from './pipe'
-import { executePipe } from './executor'
+import { executePipe, setWithPipeState } from './execution'
 
 export function createPipeline(name, defs, deps) {
   var { pipes, errorHandler } = createPipes(defs)
@@ -84,7 +84,7 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
    */
   var store = {
     set: function(key, value) {
-      set(store, key, value)
+      store[key] = value
     }
   }
 
@@ -112,7 +112,8 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
       // We have more than one argument which means the previous pipe produced
       // some output by calling `next`.  We need to merge this output with the
       // store before executing the next pipe.
-      set(store, key, value)
+      // set(store, key, value)
+      setWithPipeState(store, previousPipeState, key, value)
     }
 
     // Save error to the store or get one from it.  This will make sure
@@ -174,23 +175,6 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
 
   // Start executing the pipeline.
   next()
-}
-
-/**
- * The `set` function can only modify the internal raw store and will
- * not trigger any listening functions.
- *
- * @param {String|Object}   key   Name of the value in store.  Or object of
- * key/value pairs to merge into the store.
- */
-function set(store, key, value) {
-  if (typeof key === 'string') {
-    store[key] = value
-  } else {
-    for (var k in key) {
-      store[k] = key[k]
-    }
-  }
 }
 
 /**
