@@ -158,13 +158,14 @@ describe('Pipeline', function() {
       let count = 0
       let pl = sp('call set with error')
         .pipe(
-          function(set, arg1) {
+          function(set, arg1, next) {
             set('arg2', arg1)
             set('error', 'error from set1')
             set('error', 'error from set2')
             set('error', 'error from set3')
+            next()
           },
-          ['set', 'arg1'],
+          ['set', 'arg1', 'next'],
           'arg2'
         )
         .pipe(() => {

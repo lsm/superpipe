@@ -89,6 +89,12 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
   }
 
   /**
+   * Error has triggered or not.
+   * @type {Boolean}
+   */
+  let errorTriggered = false
+
+  /**
    * Execution state of previous pipe.
    * @type {Object}
    */
@@ -104,6 +110,12 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
    */
   var next = function next(err, key, value) {
     if (previousPipeState && arguments.length > 1) {
+    if (errorTriggered) {
+      // Any subsiquential calls to next should be ignored if error handler is
+      // triggered.
+      return
+    }
+
       // `next` could be called before the return of previous pipe so we need
       // to set the `autoNext` flag of previous pipe state to false to avoid
       // `double next`.
@@ -164,6 +176,10 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
        * @type {Object}
        */
       previousPipeState = pipeState
+
+      if (err) {
+        errorTriggered = true
+      }
 
       // Excute the pipe.
       executePipe(err, args, dep, store, pipeState)
