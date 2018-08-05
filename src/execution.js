@@ -13,6 +13,18 @@ export function executePipe(err, args, dep, store, pipeState) {
     _inputArgs = args
   } else {
     _inputArgs = input.map(key => {
+      if (key === 'next') {
+        let called = false
+        return function next(err, key, value) {
+          if (called) {
+            throw new Error(
+              '"next" should not be called more than once in a pipe.'
+            )
+          }
+          called = true
+          return store.next(err, key, value)
+        }
+      }
       return store.hasOwnProperty(key) ? store[key] : dep[key]
     })
   }
