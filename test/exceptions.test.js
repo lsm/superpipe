@@ -231,7 +231,6 @@ describe('Exceptions', function() {
         sp('call next twice')
           .pipe(
             function(next) {
-              console.log(next.toString())
               next()
               next()
             },
