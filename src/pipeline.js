@@ -2,9 +2,9 @@ import { FN_ERROR, FN_INPUT, createPipe } from './pipe'
 import { executePipe, setWithPipeState } from './execution'
 
 export function createPipeline(name, defs, deps) {
-  var { pipes, errorHandler } = createPipes(defs)
+  let { pipes, errorHandler } = createPipes(defs)
 
-  var pipeline = {
+  const pipeline = {
     input: function(input) {
       pipes.push(createPipe(FN_INPUT, input))
       return pipeline
@@ -29,7 +29,7 @@ export function createPipeline(name, defs, deps) {
          *
          * @type {Array}
          */
-        var args = Array.prototype.slice.call(arguments)
+        const args = Array.prototype.slice.call(arguments)
 
         execPipeline(name, pipeline, pipes, args, deps || {}, errorHandler)
       }
@@ -76,13 +76,13 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
    * Start from the first pipe of the pipeline.
    * @type {Number}
    */
-  var step = 0
+  let step = 0
 
   /**
    * We start with a fresh store rach time we execute the pipeline.
    * @type {Object}
    */
-  var store = {
+  const store = {
     set: function(key, value) {
       store[key] = value
     }
@@ -98,7 +98,7 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
    * Execution state of previous pipe.
    * @type {Object}
    */
-  var previousPipeState
+  let previousPipeState
 
   /**
    * The function which helps executing functions in the pipeline one by one.
@@ -108,8 +108,7 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
    *                                key/value maps.
    * @param  {Any}            value Value to store.
    */
-  var next = function next(err, key, value) {
-    if (previousPipeState && arguments.length > 1) {
+  let next = function next(err, key, value) {
     if (errorTriggered) {
       // Any subsiquential calls to next should be ignored if error handler is
       // triggered.
@@ -140,7 +139,7 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
     }
 
     // The placeholder for the pipe function which will be executed below.
-    var pipe
+    let pipe
 
     if (err) {
       if (!errorHandler) {
@@ -160,7 +159,7 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
        *
        * @type {Object}
        */
-      var pipeState = {
+      const pipeState = {
         fn: pipe.fn,
         not: pipe.not,
         input: pipe.input,
@@ -201,9 +200,9 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
  */
 
 function throwError(error, name, step, pipe) {
-  var ex = error
+  let ex = error
 
-  var pipeName = (pipe && pipe.fnName) || pipe.fn.name || 'function'
+  let pipeName = (pipe && pipe.fnName) || pipe.fn.name || 'function'
 
   if ('string' === typeof error) {
     ex = new Error()

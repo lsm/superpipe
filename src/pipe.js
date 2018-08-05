@@ -12,7 +12,7 @@ export const FN_INPUT = 'input'
  * @return {Object}           Pipe object.
  */
 export function createPipe(fn, input, output) {
-  var fnType = typeof fn
+  const fnType = typeof fn
 
   if ('string' === fnType && fn) {
     switch (fn) {
@@ -77,7 +77,7 @@ function createErrorPipe(errorFn, input) {
  */
 function createInjectionPipe(name, input, output) {
   // Build the pipe.
-  var pipe = buildPipe(null, input, output)
+  const pipe = buildPipe(null, input, output)
 
   // It's a `not` pipe if the pipe name is started with `!`.
   // Although the actual function name is the value without the exclamation mark.
@@ -171,15 +171,15 @@ function normalizeOutput(output) {
 
   // Detect any mapped output. Use the format `theOriginalName:theNewName` in
   // `output` array will map the output `theOriginalName` to `theNewName`.
-  var i = 0
-  var len = output.length
-  var outputMap
+  let i = 0
+  const len = output.length
+  let outputMap
 
   while (i < len) {
-    var item = output[i++]
+    const item = output[i++]
     if (/:/.test(item)) {
       outputMap = outputMap || {}
-      var mapping = item.split(':')
+      const mapping = item.split(':')
       outputMap[mapping[0]] = mapping[1]
     }
   }

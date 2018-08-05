@@ -1,13 +1,13 @@
 import { FN_INPUT } from './pipe'
 
 export function executePipe(err, args, dep, store, pipeState) {
-  var fn = pipeState.fn
-  var next = pipeState.next
-  var input = pipeState.input
-  var output = pipeState.output
-  var fnName = pipeState.fnName
-  var _inputArgs
-  var injectedFn
+  const fn = pipeState.fn
+  const next = pipeState.next
+  const input = pipeState.input
+  const output = pipeState.output
+  const fnName = pipeState.fnName
+  let _inputArgs
+  let injectedFn
 
   if (input.length === 0) {
     _inputArgs = args
@@ -56,7 +56,7 @@ export function executePipe(err, args, dep, store, pipeState) {
       pipeState.autoNext = false
     }
     // Call customized set function instead.
-    var indexOfSet = input.indexOf('set')
+    const indexOfSet = input.indexOf('set')
     if (indexOfSet > -1) {
       _inputArgs[indexOfSet] = localSet
     }
@@ -94,12 +94,12 @@ export function setWithPipeState(store, pipeState, key, value) {
     return
   }
 
-  var next = pipeState.next
-  var result = pipeState.result
-  var output = pipeState.output
-  var outputMap = pipeState.outputMap
-  var fulfilled = pipeState.fulfilled
-  var fnReturned = pipeState.fnReturned
+  const next = pipeState.next
+  const result = pipeState.result
+  const output = pipeState.output
+  const outputMap = pipeState.outputMap
+  const fulfilled = pipeState.fulfilled
+  const fnReturned = pipeState.fnReturned
 
   if ('string' === typeof key) {
     let nameTOCheck = key
@@ -174,7 +174,7 @@ function executeInjectedFunc(args, injectedFn, pipeState) {
     // Call it with the arguments passed in when it's a function.
     // We call it with `0` to prevent some JS engines injecting the
     // default `this`.
-    var result = injectedFn.apply(0, args)
+    const result = injectedFn.apply(0, args)
     // When the result is boolean we will need to consider if it's a `not`
     // pipe and alter the value based on that.
     if ('boolean' === typeof result) {
