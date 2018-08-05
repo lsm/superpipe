@@ -116,15 +116,18 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
       return
     }
 
+    if (previousPipeState && previousPipeState.fnReturned === false) {
       // `next` could be called before the return of previous pipe so we need
       // to set the `autoNext` flag of previous pipe state to false to avoid
       // `double next`.
       previousPipeState.autoNext = false
+    }
 
-      // We have more than one argument which means the previous pipe produced
-      // some output by calling `next`.  We need to merge this output with the
-      // store before executing the next pipe.
-      // set(store, key, value)
+    // We have the `key` which means the previous pipe produced
+    // some output by calling `next`.  We need to merge this output with the
+    // store before executing the next pipe.
+    // set(store, key, value)
+    if (key) {
       setWithPipeState(store, previousPipeState, key, value)
     }
 
@@ -140,11 +143,11 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
     var pipe
 
     if (err) {
-      pipe = errorHandler
-      if (!pipe) {
+      if (!errorHandler) {
         // Throw the error if we don't have error handling function.
         throwError(err, name, step, previousPipeState)
       }
+      pipe = errorHandler
     } else {
       // Get current pipe and add 1 to the step.
       pipe = pipes[step++]
