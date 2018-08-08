@@ -28,3 +28,8 @@ node_modules
 .lock-wscript
 
 .coveralls.yml
+
+lib
+es
+dist
+.nyc_output
