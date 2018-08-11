@@ -10,21 +10,21 @@ build-watch:
 
 unit:
 	npm test
+
 watch:
 	npm run watch
 
-coverage:
-	@echo TRAVIS_JOB_ID $(TRAVIS_JOB_ID)
+# Run test and report coverage reports to coveralls.
+coveralls: test
 	npm run coverage
 
+# Test on the saucelabs cloud.
 browser:
-	zuul --no-coverage -- test/*
+	TEST_ENV=browser ./node_modules/.bin/karma start karma.conf.js
 
-zuul-local:
-	zuul --no-coverage --local 8080 -- test/*
-
-tunnel:
-	zuul --no-coverage --local 8080 --tunnel -- test/*
+# Test on local browsers.
+local-browser:
+	./node_modules/.bin/karma start karma.conf.js
 
 sauce-connect:
 	node .sc.js
