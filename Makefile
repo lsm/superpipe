@@ -15,7 +15,7 @@ watch:
 	npm run watch
 
 # Run test and report coverage reports to coveralls.
-coveralls: test
+coveralls: unit
 	npm run coverage
 
 # Test on the saucelabs cloud.
