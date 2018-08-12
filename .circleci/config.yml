@@ -5,7 +5,7 @@
 
 workflows:
   version: 2
-  node-multi-build:
+  multi-test:
     jobs:
       - browser
       - node-v6
@@ -34,7 +34,7 @@ jobs:
             - node_modules
           key: v1-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
       # run tests!
-      - run: make unit
+      - run: make coveralls
   node-v6:
     <<: *node-base
     docker:
@@ -68,4 +68,4 @@ jobs:
             - node_modules
           key: v1-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
       # run tests!
-      - run: make unit
+      - run: make browser
