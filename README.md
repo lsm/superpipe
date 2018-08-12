@@ -172,7 +172,7 @@ var z = superpipe.getDep('x') // z = 5
 [license-url]: http://opensource.org/licenses/MIT
 [npm-img]: http://img.shields.io/npm/v/superpipe.svg
 [npm-url]: https://npmjs.org/package/superpipe
-[ci-img]: https://circleci.com/gh/lsm/superpipe/tree/master.svg?style=svg
+[ci-img]: https://circleci.com/gh/lsm/superpipe/tree/master.svg?style=shield
 [ci-url]: https://circleci.com/gh/lsm/superpipe/tree/master
 [coverage-img]: https://coveralls.io/repos/lsm/superpipe/badge.svg?branch=master&service=github
 [coverage-url]: https://coveralls.io/github/lsm/superpipe?branch=master
