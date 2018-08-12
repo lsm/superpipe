@@ -25,14 +25,14 @@ jobs:
       # Download and cache dependencies
       - restore_cache:
           keys:
-          - v1-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
+          - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
           # fallback to using the latest cache if no exact match is found
           - v1-dependencies-
       - run: npm install
       - save_cache:
           paths:
             - node_modules
-          key: v1-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
+          key: v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
       # run tests!
       - run: make coveralls
   node-v6:
@@ -59,13 +59,13 @@ jobs:
       # Download and cache dependencies
       - restore_cache:
           keys:
-          - v1-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
+          - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
           # fallback to using the latest cache if no exact match is found
           - v1-dependencies-
       - run: npm install
       - save_cache:
           paths:
             - node_modules
-          key: v1-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
+          key: v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
       # run tests!
       - run: make browser
