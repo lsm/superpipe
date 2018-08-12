@@ -25,6 +25,3 @@ browser:
 # Test on local browsers.
 local-browser:
 	./node_modules/.bin/karma start karma.conf.js
-
-sauce-connect:
-	node .sc.js
