@@ -84,22 +84,22 @@ module.exports = function(config) {
     logLevel: config.LOG_INFO,
 
     // enable / disable watching file and executing tests whenever any file changes
-    autoWatch: true,
+    autoWatch: false,
 
     // start these browsers
     // available browser launchers: https://npmjs.org/browse/keyword/karma-launcher
     // browsers: ['Chrome'],
     sauceLabs: {
       public: 'public',
-      testName: 'Superpipe browser tests',
-      idleTimeout: 180,
-      commandTimeout: 180,
+      testName: 'Superpipe Browser Test',
+      idleTimeout: 60,
+      commandTimeout: 90,
       recordVideo: local,
       recordScreenshots: local
     },
-    captureTimeout: 360 * 1000,
-    browserNoActivityTimeout: 600 * 1000,
-    browserDisconnectTimeout: 60 * 1000,
+    captureTimeout: 480 * 1000,
+    browserNoActivityTimeout: 30 * 1000,
+    browserDisconnectTimeout: 3 * 1000,
     browserDisconnectTolerance: 3,
     browsers: browsers,
     customLaunchers: !local && customLaunchers,
@@ -124,13 +124,6 @@ var customLaunchers = {
     deviceName: 'iPhone 6s Simulator',
     deviceOrientation: 'portrait'
   },
-  sl_iphone_112: {
-    base: 'SauceLabs',
-    browserName: 'iphone',
-    version: '11.2',
-    deviceName: 'iPhone X Simulator',
-    deviceOrientation: 'portrait'
-  },
   sl_chrome_26: {
     base: 'SauceLabs',
     browserName: 'chrome',
@@ -141,6 +134,13 @@ var customLaunchers = {
     browserName: 'chrome',
     platform: 'OS X 10.12',
     version: 'latest'
+  },
+  sl_android_44: {
+    base: 'SauceLabs',
+    browserName: 'android',
+    version: '4.4',
+    deviceName: 'Android Emulator',
+    deviceType: 'phone'
   },
   sl_firefox_4: {
     base: 'SauceLabs',
@@ -153,20 +153,6 @@ var customLaunchers = {
     platform: 'OS X 10.12',
     version: 'latest'
   },
-  sl_ipad_93: {
-    base: 'SauceLabs',
-    browserName: 'ipad',
-    version: '9.3',
-    deviceName: 'iPad Air Simulator',
-    deviceOrientation: 'portrait'
-  },
-  sl_ipad_112: {
-    base: 'SauceLabs',
-    browserName: 'ipad',
-    version: '11.2',
-    deviceName: 'iPad Pro (12.9 inch) (2nd generation) Simulator',
-    deviceOrientation: 'portrait'
-  },
   sl_ie_10: {
     base: 'SauceLabs',
     browserName: 'internet explorer',
@@ -175,8 +161,15 @@ var customLaunchers = {
   sl_ie_11: {
     base: 'SauceLabs',
     browserName: 'internet explorer',
-    platform: 'Windows 8.1',
+    platform: 'Windows 10',
     version: '11'
+  },
+  sl_iphone_112: {
+    base: 'SauceLabs',
+    browserName: 'iphone',
+    version: '11.2',
+    deviceName: 'iPhone X Simulator',
+    deviceOrientation: 'portrait'
   },
   sl_edge_13: {
     base: 'SauceLabs',
@@ -200,20 +193,11 @@ var customLaunchers = {
     browserName: 'safari',
     version: 'latest'
   },
-  sl_android_44: {
-    base: 'SauceLabs',
-    browserName: 'android',
-    version: '4.4',
-    deviceName: 'Android Emulator',
-    deviceType: 'phone',
-    deviceOrientation: 'portrait'
-  },
   sl_android_71: {
     base: 'SauceLabs',
     browserName: 'android',
     version: '7.1',
     deviceName: 'Android GoogleAPI Emulator',
-    deviceType: 'phone',
-    deviceOrientation: 'portrait'
+    deviceType: 'phone'
   }
 }
