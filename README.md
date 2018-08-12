@@ -1,9 +1,9 @@
 # SuperPipe
 
+[![CI status][ci-img]][ci-url]
 [![License MIT][license-img]][license-url]
 [![NPM version][npm-img]][npm-url]
 [![Dependencies][dep-image]][dep-url]
-[![build status][travis-img]][travis-url]
 [![Coverage Status][coverage-img]][coverage-url]
 [![Code Climate][climate-img]][climate-url]
 
@@ -172,8 +172,8 @@ var z = superpipe.getDep('x') // z = 5
 [license-url]: http://opensource.org/licenses/MIT
 [npm-img]: http://img.shields.io/npm/v/superpipe.svg
 [npm-url]: https://npmjs.org/package/superpipe
-[travis-img]: https://travis-ci.org/lsm/superpipe.svg?branch=master
-[travis-url]: http://travis-ci.org/lsm/superpipe
+[ci-img]: https://circleci.com/gh/lsm/superpipe/tree/master.svg?style=svg
+[ci-url]: https://circleci.com/gh/lsm/superpipe/tree/master
 [coverage-img]: https://coveralls.io/repos/lsm/superpipe/badge.svg?branch=master&service=github
 [coverage-url]: https://coveralls.io/github/lsm/superpipe?branch=master
 [climate-img]: https://codeclimate.com/github/lsm/superpipe/badges/gpa.svg
