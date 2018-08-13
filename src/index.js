@@ -1,7 +1,7 @@
-import { createPipeline } from './pipeline'
+import { createAPI } from './pipeline'
 
 export default function(deps) {
   return function(name, defs) {
-    return createPipeline(name, defs, deps)
+    return createAPI(name, defs, deps)
   }
 }

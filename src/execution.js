@@ -1,80 +1,38 @@
 import { FN_INPUT } from './pipe'
 
-export function executePipe(err, args, dep, store, pipeState) {
-  const fn = pipeState.fn
-  const next = pipeState.next
-  const input = pipeState.input
-  const output = pipeState.output
-  const fnName = pipeState.fnName
-  let _inputArgs
+export function executePipe(args, store, pipeState) {
+  const { fn, deps, fnName } = pipeState
+  const inputArgs = getInputArgs(store, pipeState, args, deps)
   let injectedFn
 
-  if (input.length === 0) {
-    _inputArgs = args
-  } else {
-    _inputArgs = input.map(key => {
-      if (key === 'next') {
-        let called = false
-        return function next(err, key, value) {
-          if (called) {
-            throw new Error(
-              '"next" should not be called more than once in a pipe.'
-            )
-          }
-          called = true
-          return store.next(err, key, value)
-        }
-      }
-      return store.hasOwnProperty(key) ? store[key] : dep[key]
-    })
-  }
-
-  // An injection pipe. Get the pipe function demanded from dependency container.
+  // An injection pipe. Get the pipe function from dependency container.
   if (fn === null && 'string' === typeof fnName) {
-    injectedFn = store.hasOwnProperty(fnName) ? store[fnName] : dep[fnName]
+    injectedFn = store.hasOwnProperty(fnName) ? store[fnName] : deps[fnName]
 
     if (
       pipeState.optional &&
-      (-1 < _inputArgs.indexOf(undefined) || 'undefined' === typeof injectedFn)
+      (inputArgs.indexOf(undefined) > -1 || 'undefined' === typeof injectedFn)
     ) {
       // Optional pipe, go next if any of the dependencies or the function
       // itself is undefined.
-      next()
+      store.next()
       return
-    }
-  }
-
-  let localSet = function(key, value) {
-    setWithPipeState(store, pipeState, key, value)
-  }
-
-  if (output && output.length > 0) {
-    if (true === pipeState.autoNext) {
-      // Only track output when autoNext is true.
-      pipeState.fulfilled = []
-      // We will handle the auto next behaviour in setWithPipeState function.
-      pipeState.autoNext = false
-    }
-    // Call customized set function instead.
-    const indexOfSet = input.indexOf('set')
-    if (indexOfSet > -1) {
-      _inputArgs[indexOfSet] = localSet
     }
   }
 
   if (FN_INPUT === fnName) {
     pipeState.result = fn.call(0, args, store)
   } else if (injectedFn || false === injectedFn) {
-    pipeState.result = executeInjectedFunc(_inputArgs, injectedFn, pipeState)
+    pipeState.result = executeInjectedFunc(inputArgs, injectedFn, pipeState)
   } else {
-    pipeState.result = fn.apply(0, _inputArgs)
+    pipeState.result = fn.apply(0, inputArgs)
   }
 
   pipeState.fnReturned = true
 
   // Call set if a plain object was returned
   if (isPlainObject(pipeState.result)) {
-    localSet(pipeState.result)
+    pipeState.set(pipeState.result)
   }
 
   // Check if we need to run next automatically when:
@@ -82,70 +40,42 @@ export function executePipe(err, args, dep, store, pipeState) {
   // 2. autoNext is true and no error and result is not false
   if (
     true === pipeState.result ||
-    (pipeState.autoNext && !err && false !== pipeState.result)
+    (pipeState.autoNext && !pipeState.error && false !== pipeState.result)
   ) {
-    next()
+    store.next()
   }
 }
 
 export function setWithPipeState(store, pipeState, key, value) {
   // Error happens in previous `set` call, return to avoid call error handler twice.
-  if (pipeState.hasError) {
+  if (pipeState.error) {
     return
   }
 
-  const next = pipeState.next
   const result = pipeState.result
   const output = pipeState.output
-  const outputMap = pipeState.outputMap
-  const fulfilled = pipeState.fulfilled
   const fnReturned = pipeState.fnReturned
 
   if ('string' === typeof key) {
-    let nameTOCheck = key
-    let mappedName = outputMap && outputMap[key]
-
-    if (mappedName) {
-      // Check against the mapping name
-      nameTOCheck = key + ':' + mappedName
-      // Set the mappedName as the real dependency name
-      key = mappedName
-    }
-    checkFulfillment(nameTOCheck, pipeState, output, fulfilled)
-    store.set(key, value)
+    setAndCheck(store, pipeState, key, value)
   } else if (isPlainObject(key)) {
-    Object.keys(key).forEach(function(propName) {
-      let value = key[propName]
-      let nameTOCheck = propName
-      let mappedName = outputMap && outputMap[propName]
-      if (mappedName) {
-        // Check against the mapping name
-        nameTOCheck = propName + ':' + mappedName
-        // Set the original propName to mappedName so we set `mappedName` as
-        // depenency name instead of `propName`
-        propName = mappedName
-      }
-      checkFulfillment(nameTOCheck, pipeState, output, fulfilled)
-      store.set(propName, value)
+    Object.keys(key).forEach(function(prop) {
+      setAndCheck(store, pipeState, prop, key[prop])
     })
   } else {
     throw new Error('Unsupported output key type.')
   }
 
-  // Call next immediately if there is an error
-  if (pipeState.hasError) {
-    pipeState.autoNext = false
-    next()
-  } else if (fulfilled && fulfilled.length === output.length) {
+  if (pipeState.fulfilled && pipeState.fulfilled.length === output.length) {
     // Set the auto next to true or call next when all required
     // supplies are fulfilled.
     if (fnReturned && ('undefined' === typeof result || false !== result)) {
       // Function has been returned.
       // We should call next when the returned value is either
       // undefined or not false.
-      next()
+      store.next()
     } else {
-      // `setWithPipeState` will only be called when autoNext was true
+      // `setWithPipeState` will only get called when autoNext was true
       // so set it back to true when we are not sure what to do and
       // let other part of the code to handle when to call next.
       pipeState.autoNext = true
@@ -153,10 +83,72 @@ export function setWithPipeState(store, pipeState, key, value) {
   }
 }
 
-function checkFulfillment(key, pipeState, output, fulfilled) {
-  if ('error' === key) {
-    pipeState.hasError = true
-  } else if (-1 === output.indexOf(key)) {
+function getInputArgs(store, pipeState, args, deps) {
+  const { input, output } = pipeState
+
+  if (input.length === 0) {
+    // Use original function arguments as input if we don't have one.
+    return args
+  }
+
+  const inputArgs = input.map(key => {
+    if (key === 'next') {
+      let called = false
+      return function next(err, key, value) {
+        if (called) {
+          throw new Error(
+            '"next" should not be called more than once in a pipe.'
+          )
+        }
+        called = true
+        return store.next(err, key, value)
+      }
+    }
+    return store.hasOwnProperty(key) ? store[key] : deps[key]
+  })
+
+  if (output && output.length > 0) {
+    if (pipeState.autoNext === true) {
+      // Only track output when autoNext is true.
+      pipeState.fulfilled = []
+      // We will handle the auto next behaviour in setWithPipeState function.
+      pipeState.autoNext = false
+    }
+    // `set` is only useful when output is defined. And in this case we need to
+    // call customized set function instead.
+    const indexOfSet = input.indexOf('set')
+    if (indexOfSet > -1) {
+      inputArgs[indexOfSet] = pipeState.set
+    }
+  }
+
+  return inputArgs
+}
+
+function setAndCheck(store, pipeState, key, value) {
+  const { output, fulfilled, outputMap } = pipeState
+  let nameTOCheck = key
+  let mappedName = outputMap && outputMap[key]
+
+  if (mappedName) {
+    // Check against the mapping name
+    nameTOCheck = key + ':' + mappedName
+    // Set the mappedName as the real dependency name
+    key = mappedName
+  }
+
+  if (key === 'error') {
+    pipeState.error = value
+  } else {
+    checkFulfillment(nameTOCheck, pipeState, output, fulfilled)
+  }
+
+  store[key] = value
+}
+
+function checkFulfillment(key, pipeState) {
+  const { output, fulfilled } = pipeState
+  if (-1 === output.indexOf(key)) {
     throw new Error(`Dependency "${key}" is not defined in output.`)
   }
   if (fulfilled && -1 === fulfilled.indexOf(key)) {
@@ -170,28 +162,33 @@ function checkFulfillment(key, pipeState, output, fulfilled) {
  * Or return the result directly for case like `boolean` value.
  */
 function executeInjectedFunc(args, injectedFn, pipeState) {
+  let result
+
   if ('function' === typeof injectedFn) {
     // Call it with the arguments passed in when it's a function.
     // We call it with `0` to prevent some JS engines injecting the
     // default `this`.
-    const result = injectedFn.apply(0, args)
-    // When the result is boolean we will need to consider if it's a `not`
-    // pipe and alter the value based on that.
-    if ('boolean' === typeof result) {
-      return pipeState.not ? !result : result
-    } else {
-      return result
-    }
+    result = injectedFn.apply(0, args)
   } else if ('boolean' === typeof injectedFn) {
     // Directly return the value when it is a boolean for flow control.
-    return pipeState.not ? !injectedFn : injectedFn
+    result = injectedFn
   } else {
     // Throw an exception when the original function is not something
     // we understand.
     throw new Error(
-      `Dependency "${pipeState.fnName}" is not a function or boolean.`
+      `Pipeline [${pipeState.name}]: Dependency "${
+        pipeState.fnName
+      }" is not a function or boolean.`
     )
   }
+
+  if ('boolean' === typeof result) {
+    // When the result is boolean we will need to consider if it's a `not`
+    // pipe and alter the value based on that.
+    return pipeState.not ? !result : result
+  }
+
+  return result
 }
 
 function isPlainObject(obj) {

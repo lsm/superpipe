@@ -1,37 +1,30 @@
 import { FN_ERROR, FN_INPUT, createPipe } from './pipe'
 import { executePipe, setWithPipeState } from './execution'
 
-export function createPipeline(name, defs, deps) {
-  let { pipes, errorHandler } = createPipes(defs)
+export function createAPI(name, defs, deps) {
+  const pipeline = createPipeline(name, defs, deps)
 
-  const pipeline = {
+  const api = {
     input: function(input) {
-      pipes.push(createPipe(FN_INPUT, input))
-      return pipeline
+      pipeline.pipes.push(createPipe(FN_INPUT, input))
+      return api
     },
 
     pipe: function(fn, input, output) {
-      pipes.push(createPipe(fn, input, output))
-      return pipeline
+      pipeline.pipes.push(createPipe(fn, input, output))
+      return api
     },
 
     // .error('theErrorHandler', ['input1', 'input2'])
     error: function(fn, input) {
-      onlyOneErrorHandlerIsAllowed(errorHandler)
-      errorHandler = createPipe(FN_ERROR, fn, input)
-      return pipeline
+      onlyOneErrorHandlerIsAllowed(pipeline.errorHandler)
+      pipeline.errorHandler = createPipe(FN_ERROR, fn, input)
+      return api
     },
 
     end: function() {
       return function() {
-        /**
-         * Convert original function arguments to array.
-         *
-         * @type {Array}
-         */
-        const args = Array.prototype.slice.call(arguments)
-
-        execPipeline(name, pipeline, pipes, args, deps || {}, errorHandler)
+        execPipeline(arguments, pipeline)
       }
     }
   }
@@ -39,13 +32,19 @@ export function createPipeline(name, defs, deps) {
   if (defs) {
     // Automatically end the pipeline if `defs` is provided. So we should
     // chose either the declarative interface or the programmatic one.
-    return pipeline.end()
+    return api.end()
   }
 
-  return pipeline
+  return api
 }
 
-function createPipes(defs) {
+function execPipeline(args, pipeline) {
+  const store = createStore(Object.values(args), pipeline)
+  // Start executing the pipeline.
+  store.next()
+}
+
+function createPipeline(name, defs, deps) {
   let pipes = []
   let errorHandler
   if (Array.isArray(defs)) {
@@ -59,7 +58,7 @@ function createPipes(defs) {
       }
     })
   }
-  return { pipes, errorHandler }
+  return { name, pipes, errorHandler, deps: deps || {} }
 }
 
 function onlyOneErrorHandlerIsAllowed(errorHandler) {
@@ -68,31 +67,12 @@ function onlyOneErrorHandlerIsAllowed(errorHandler) {
   }
 }
 
-/**
- * The function which triggers the execution of the pipeline.
- */
-function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
+function createStore(args, pipeline) {
   /**
    * Start from the first pipe of the pipeline.
    * @type {Number}
    */
   let step = 0
-
-  /**
-   * We start with a fresh store rach time we execute the pipeline.
-   * @type {Object}
-   */
-  const store = {
-    set: function(key, value) {
-      store[key] = value
-    }
-  }
-
-  /**
-   * Error has triggered or not.
-   * @type {Boolean}
-   */
-  let errorTriggered = false
 
   /**
    * Execution state of previous pipe.
@@ -101,103 +81,109 @@ function execPipeline(name, pipeline, pipes, args, dep, errorHandler) {
   let previousPipeState
 
   /**
-   * The function which helps executing functions in the pipeline one by one.
-   *
-   * @param  {Object|null}    err   Error object if any.
-   * @param  {String|Object}  key   Key of value to store or object of
-   *                                key/value maps.
-   * @param  {Any}            value Value to store.
+   * We start with a fresh store each time we execute the pipeline.
+   * @type {Object}
    */
-  let next = function next(err, key, value) {
-    if (errorTriggered) {
-      // Any subsiquential calls to next should be ignored if error handler is
-      // triggered.
-      return
-    }
-
-    if (previousPipeState && previousPipeState.fnReturned === false) {
-      // `next` could be called before the return of previous pipe so we need
-      // to set the `autoNext` flag of previous pipe state to false to avoid
-      // `double next`.
-      previousPipeState.autoNext = false
-    }
-
-    // We have the `key` which means the previous pipe produced
-    // some output by calling `next`.  We need to merge this output with the
-    // store before executing the next pipe.
-    // set(store, key, value)
-    if (key) {
-      setWithPipeState(store, previousPipeState, key, value)
-    }
-
-    // Save error to the store or get one from it.  This will make sure
-    // error will be handled properly no matter how it was set.
-    if (err) {
-      store.error = err
-    } else {
-      err = store.error
-    }
-
-    // The placeholder for the pipe function which will be executed below.
-    let pipe
-
-    if (err) {
-      if (!errorHandler) {
-        // Throw the error if we don't have error handling function.
-        throwError(err, name, step, previousPipeState)
-      }
-      pipe = errorHandler
-    } else {
-      // Get current pipe and add 1 to the step.
-      pipe = pipes[step++]
-    }
-
-    if (pipe) {
-      /**
-       * Object for holding execution state, result and other references
-       * of current pipe for executing pipeline continously.
-       *
-       * @type {Object}
-       */
-      const pipeState = {
-        fn: pipe.fn,
-        not: pipe.not,
-        input: pipe.input,
-        output: pipe.output,
-        fnName: pipe.fnName,
-        autoNext: pipe.autoNext,
-        optional: pipe.optional,
-        outputMap: pipe.outputMap,
-        next: next,
-        result: undefined,
-        fnReturned: false
+  const store = {
+    /**
+     * The function which helps executing functions in the pipeline one by one.
+     * Save next to the store so pipes could retrieve it as input.
+     *
+     * @param  {Object|null}    err   Error object if any.
+     * @param  {String|Object}  key   Key of value to store or object of
+     *                                key/value maps.
+     * @param  {Any}            value Value to store.
+     */
+    next(err, key, value) {
+      if (previousPipeState) {
+        if (previousPipeState.error) {
+          // Any subsiquential calls to next should be ignored if error handler is
+          // triggered.
+          return
+        }
+        // `next` could be called before the return of previous pipe so we need
+        // to set the `autoNext` flag of previous pipe state to false to avoid
+        // `double next`.
+        previousPipeState.autoNext = previousPipeState.fnReturned
       }
 
-      /**
-       * Keep a reference to pipeState for better error handling.
-       * @type {Object}
-       */
-      previousPipeState = pipeState
+      // We have the `key` which means the previous pipe produced
+      // some output by calling `next`.  We need to set this output to the store
+      // before executing the next pipe.
+      if (key) {
+        previousPipeState.set(key, value)
+      }
+
+      // Save error to the store or get one from it.  This will make sure
+      // error will be handled properly no matter how it was set.
+      if (err) {
+        store.error = err
+      } else {
+        err = store.error
+      }
+
+      // The placeholder for the pipe function which will be executed below.
+      let pipe
 
       if (err) {
-        errorTriggered = true
+        if (!pipeline.errorHandler) {
+          // Throw the error if we don't have error handling function.
+          throwError(err, pipeline.name, step, previousPipeState)
+        }
+        pipe = pipeline.errorHandler
+      } else {
+        // Get current pipe and add 1 to the step.
+        pipe = pipeline.pipes[step++]
       }
 
-      // Excute the pipe.
-      executePipe(err, args, dep, store, pipeState)
+      if (pipe) {
+        /**
+         * Keep a reference to pipeState for better error handling.
+         * @type {Object}
+         */
+        previousPipeState = createPipeState(err, pipeline, pipe, store)
+
+        // Execute the pipe.
+        executePipe(args, store, previousPipeState)
+      }
     }
   }
 
-  // Save next to the store so pipes could retrieve it as input.
-  store.next = next
-
-  // Start executing the pipeline.
-  next()
+  return store
 }
 
 /**
- * Pipeline instance functions
+ * Create an object for holding execution state, result and other references
+ * of current pipe which allows executing pipeline continously.
+ *
+ * @param  {Any} error        The error object.
+ * @param  {String} name      Name of the pipeline.
+ * @param  {Object} pipe      Pipe definition object.
+ * @param  {Object} store     The store object which holds all the execution data.
+ * @return {Object}           The pipe execution state object.
  */
+function createPipeState(error, pipeline, pipe, store) {
+  const state = {
+    fn: pipe.fn,
+    not: pipe.not,
+    deps: pipeline.deps,
+    input: pipe.input,
+    output: pipe.output,
+    fnName: pipe.fnName,
+    autoNext: pipe.autoNext,
+    optional: pipe.optional,
+    outputMap: pipe.outputMap,
+    set(key, value) {
+      setWithPipeState(store, state, key, value)
+    },
+    name: pipeline.name,
+    error,
+    result: undefined,
+    fnReturned: false
+  }
+
+  return state
+}
 
 function throwError(error, name, step, pipe) {
   let ex = error
