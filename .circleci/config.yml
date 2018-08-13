@@ -32,7 +32,7 @@ jobs:
             - node_modules
           key: v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
       # run tests!
-      - run: make coveralls
+      - run: make report-coverage
   node-v6:
     <<: *node-base
     docker:

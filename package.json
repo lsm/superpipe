@@ -14,9 +14,12 @@
     "README.md"
   ],
   "scripts": {
-    "test": "nyc mocha --require babel-core/register",
-    "watch": "nodemon -w ./src -w ./test -x 'npm test'",
-    "coverage": "nyc report --reporter=text-lcov | coveralls",
+    "test": "mocha --require babel-core/register",
+    "watch": "nodemon -w ./src -w ./test -x 'npm run coverage'",
+    "browser": "TEST_ENV=browser karma start karma.conf.js",
+    "local-browser": "karma start karma.conf.js",
+    "coverage": "nyc npm test",
+    "report-coverage": "nyc report --reporter=text-lcov | coveralls",
     "build:es": "cross-env BABEL_ENV=es babel src --out-dir es",
     "build:cjs": "cross-env BABEL_ENV=commonjs babel src --out-dir lib",
     "build:umd": "cross-env BABEL_ENV=rollup NODE_ENV=development rollup -c -o dist/alfa.js",

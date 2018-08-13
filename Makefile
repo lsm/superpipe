@@ -14,14 +14,17 @@ unit:
 watch:
 	npm run watch
 
-# Run test and report coverage reports to coveralls.
-coveralls: unit
+coverage:
 	npm run coverage
+
+# Run test and report coverage reports to coveralls.
+report-coverage: coverage
+	npm run report-coverage
 
 # Test on the saucelabs cloud.
 browser:
-	TEST_ENV=browser ./node_modules/.bin/karma start karma.conf.js
+	npm run browser
 
 # Test on local browsers.
 local-browser:
-	./node_modules/.bin/karma start karma.conf.js
+	npm run local-browser
