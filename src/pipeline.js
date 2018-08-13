@@ -39,7 +39,7 @@ export function createAPI(name, defs, deps) {
 }
 
 function execPipeline(args, pipeline) {
-  const store = createStore(Object.values(args), pipeline)
+  const store = createStore(Array.prototype.slice.apply(args), pipeline)
   // Start executing the pipeline.
   store.next()
 }
