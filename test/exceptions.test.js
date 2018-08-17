@@ -25,6 +25,7 @@ describe('Exceptions', function() {
           .pipe('func1')
           .end()('abc')
       }).to.throw('Dependency "func1" is not a function or boolean.')
+
       expect(function() {
         sp('throw undefined key')
           .pipe(
@@ -34,6 +35,7 @@ describe('Exceptions', function() {
           .pipe('func1')
           .end()(1)
       }).to.throw('Dependency "func1" is not a function or boolean.')
+
       expect(function() {
         sp('throw undefined key')
           .pipe(

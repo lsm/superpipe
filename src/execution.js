@@ -28,56 +28,38 @@ export function executePipe(args, store, pipeState) {
   }
 
   // Check if we need to run next automatically when:
-  // 1. result is true
-  // 2. autoNext is true and no error and result is not false
-  if (
-    true === pipeState.result ||
-    (pipeState.autoNext && !pipeState.error && false !== pipeState.result)
-  ) {
+  // autoNext is true, no error and result is not false.
+  if (pipeState.autoNext && !pipeState.error && pipeState.result !== false) {
     store.next()
   }
 }
 
 function getInputArgs(store, pipeState, args, deps) {
-  const { input, output } = pipeState
+  const { input } = pipeState
 
   if (input.length === 0) {
     // Use original function arguments as input if we don't have one.
     return args
-  }
-
-  const inputArgs = input.map(key => {
-    if (key === 'next') {
-      let called = false
-      return function next(err, key, value) {
-        if (called) {
-          throw new Error(
-            '"next" should not be called more than once in a pipe.'
-          )
+  } else {
+    return input.map(key => {
+      if (key === 'next') {
+        let called = false
+        return function next(err, key, value) {
+          if (called) {
+            throw new Error(
+              '"next" should not be called more than once in a pipe.'
+            )
+          }
+          called = true
+          return store.next(err, key, value)
         }
-        called = true
-        return store.next(err, key, value)
+      } else if (key === 'set') {
+        // Set function is local to a praticular execution state.
+        return pipeState.set
       }
-    }
-    return store.hasOwnProperty(key) ? store[key] : deps[key]
-  })
-
-  if (output && output.length > 0) {
-    if (pipeState.autoNext === true) {
-      // Only track output when autoNext is true.
-      pipeState.fulfilled = []
-      // We will handle the auto next behaviour in setWithPipeState function.
-      pipeState.autoNext = false
-    }
-    // `set` is only useful when output is defined. And in this case we need to
-    // call customized set function instead.
-    const indexOfSet = input.indexOf('set')
-    if (indexOfSet > -1) {
-      inputArgs[indexOfSet] = pipeState.set
-    }
+      return store.hasOwnProperty(key) ? store[key] : deps[key]
+    })
   }
-
-  return inputArgs
 }
 
 function getInjectedFunction(store, pipeState, inputArgs) {
@@ -96,8 +78,6 @@ function getInjectedFunction(store, pipeState, inputArgs) {
       // Optional pipe, go next if any of the dependencies or the function
       // itself is undefined.
 
-  store[key] = value
-}
       return 0
     }
 

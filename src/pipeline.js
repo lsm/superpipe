@@ -1,5 +1,6 @@
+import { executePipe } from './execution'
+import { setWithPipeState } from './set'
 import { FN_ERROR, FN_INPUT, createPipe } from './pipe'
-import { executePipe, setWithPipeState } from './execution'
 
 export function createAPI(name, defs, deps) {
   const pipeline = createPipeline(name, defs, deps)
@@ -95,16 +96,10 @@ function createStore(args, pipeline) {
      * @param  {Any}            value Value to store.
      */
     next(err, key, value) {
-      if (previousPipeState) {
-        if (previousPipeState.error) {
-          // Any subsiquential calls to next should be ignored if error handler is
-          // triggered.
-          return
-        }
-        // `next` could be called before the return of previous pipe so we need
-        // to set the `autoNext` flag of previous pipe state to false to avoid
-        // `double next`.
-        previousPipeState.autoNext = previousPipeState.fnReturned
+      if (previousPipeState && previousPipeState.error) {
+        // Any subsiquential calls to next should be ignored if error handler is
+        // triggered.
+        return
       }
 
       // We have the `key` which means the previous pipe produced
@@ -163,18 +158,18 @@ function createStore(args, pipeline) {
  * @return {Object}           The pipe execution state object.
  */
 function createPipeState(error, pipeline, pipe, store) {
-  const state = {
+  const pipeState = {
     fn: pipe.fn,
     not: pipe.not,
     deps: pipeline.deps,
     input: pipe.input,
     output: pipe.output,
     fnName: pipe.fnName,
-    autoNext: pipe.autoNext,
+    autoNext: true,
     optional: pipe.optional,
     outputMap: pipe.outputMap,
     set(key, value) {
-      setWithPipeState(store, state, key, value)
+      setWithPipeState(store, pipeState, key, value)
     },
     name: pipeline.name,
     error,
@@ -182,7 +177,19 @@ function createPipeState(error, pipeline, pipe, store) {
     fnReturned: false
   }
 
-  return state
+  if (pipe.output && pipe.output.length > 0) {
+    // Keep track of output fulfilment.
+    pipeState.fulfilled = []
+    // We will handle the auto next behaviour in setWithPipeState function.
+    pipeState.autoNext = pipeState.input.indexOf('set') === -1 ? true : 0
+  }
+
+  if (~pipe.input.indexOf('next')) {
+    // Auto next is disabled when next is present.
+    pipeState.autoNext = false
+  }
+
+  return pipeState
 }
 
 function throwError(error, name, step, pipe) {
