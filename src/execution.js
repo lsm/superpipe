@@ -3,21 +3,12 @@ import { FN_INPUT } from './pipe'
 export function executePipe(args, store, pipeState) {
   const { fn, deps, fnName } = pipeState
   const inputArgs = getInputArgs(store, pipeState, args, deps)
-  let injectedFn
+  const injectedFn = getInjectedFunction(store, pipeState, inputArgs)
 
-  // An injection pipe. Get the pipe function from dependency container.
-  if (fn === null && 'string' === typeof fnName) {
-    injectedFn = store.hasOwnProperty(fnName) ? store[fnName] : deps[fnName]
-
-    if (
-      pipeState.optional &&
-      (inputArgs.indexOf(undefined) > -1 || 'undefined' === typeof injectedFn)
-    ) {
-      // Optional pipe, go next if any of the dependencies or the function
-      // itself is undefined.
-      store.next()
-      return
-    }
+  if (injectedFn === 0) {
+    // Ignored optional pipe, go to next pipe.
+    store.next()
+    return
   }
 
   if (FN_INPUT === fnName) {
@@ -136,15 +127,31 @@ function setAndCheck(store, pipeState, key, value) {
     // Set the mappedName as the real dependency name
     key = mappedName
   }
+function getInjectedFunction(store, pipeState, inputArgs) {
+  const { fn, deps, fnName } = pipeState
+  // An injection pipe. Get the pipe function from the store or the dependency
+  // container.
+  if (fn === null && 'string' === typeof fnName) {
+    const injectedFn = store.hasOwnProperty(fnName)
+      ? store[fnName]
+      : deps[fnName]
 
   if (key === 'error') {
     pipeState.error = value
   } else {
     checkFulfillment(nameTOCheck, pipeState, output, fulfilled)
   }
+    if (
+      pipeState.optional &&
+      (inputArgs.indexOf(undefined) > -1 || typeof injectedFn === 'undefined')
+    ) {
+      // Optional pipe, go next if any of the dependencies or the function
+      // itself is undefined.
 
   store[key] = value
 }
+      return 0
+    }
 
 function checkFulfillment(key, pipeState) {
   const { output, fulfilled } = pipeState
@@ -153,6 +160,7 @@ function checkFulfillment(key, pipeState) {
   }
   if (fulfilled && -1 === fulfilled.indexOf(key)) {
     fulfilled.push(key)
+    return injectedFn
   }
 }
 
