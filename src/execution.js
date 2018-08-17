@@ -1,4 +1,5 @@
 import { FN_INPUT } from './pipe'
+import { isPlainObject } from './set'
 
 export function executePipe(args, store, pipeState) {
   const { fn, deps, fnName } = pipeState
@@ -34,43 +35,6 @@ export function executePipe(args, store, pipeState) {
     (pipeState.autoNext && !pipeState.error && false !== pipeState.result)
   ) {
     store.next()
-  }
-}
-
-export function setWithPipeState(store, pipeState, key, value) {
-  // Error happens in previous `set` call, return to avoid call error handler twice.
-  if (pipeState.error) {
-    return
-  }
-
-  const result = pipeState.result
-  const output = pipeState.output
-  const fnReturned = pipeState.fnReturned
-
-  if ('string' === typeof key) {
-    setAndCheck(store, pipeState, key, value)
-  } else if (isPlainObject(key)) {
-    Object.keys(key).forEach(function(prop) {
-      setAndCheck(store, pipeState, prop, key[prop])
-    })
-  } else {
-    throw new Error('Unsupported output key type.')
-  }
-
-  if (pipeState.fulfilled && pipeState.fulfilled.length === output.length) {
-    // Set the auto next to true or call next when all required
-    // supplies are fulfilled.
-    if (fnReturned && ('undefined' === typeof result || false !== result)) {
-      // Function has been returned.
-      // We should call next when the returned value is either
-      // undefined or not false.
-      store.next()
-    } else {
-      // `setWithPipeState` will only get called when autoNext was true
-      // so set it back to true when we are not sure what to do and
-      // let other part of the code to handle when to call next.
-      pipeState.autoNext = true
-    }
   }
 }
 
@@ -116,17 +80,6 @@ function getInputArgs(store, pipeState, args, deps) {
   return inputArgs
 }
 
-function setAndCheck(store, pipeState, key, value) {
-  const { output, fulfilled, outputMap } = pipeState
-  let nameTOCheck = key
-  let mappedName = outputMap && outputMap[key]
-
-  if (mappedName) {
-    // Check against the mapping name
-    nameTOCheck = key + ':' + mappedName
-    // Set the mappedName as the real dependency name
-    key = mappedName
-  }
 function getInjectedFunction(store, pipeState, inputArgs) {
   const { fn, deps, fnName } = pipeState
   // An injection pipe. Get the pipe function from the store or the dependency
@@ -136,11 +89,6 @@ function getInjectedFunction(store, pipeState, inputArgs) {
       ? store[fnName]
       : deps[fnName]
 
-  if (key === 'error') {
-    pipeState.error = value
-  } else {
-    checkFulfillment(nameTOCheck, pipeState, output, fulfilled)
-  }
     if (
       pipeState.optional &&
       (inputArgs.indexOf(undefined) > -1 || typeof injectedFn === 'undefined')
@@ -153,13 +101,6 @@ function getInjectedFunction(store, pipeState, inputArgs) {
       return 0
     }
 
-function checkFulfillment(key, pipeState) {
-  const { output, fulfilled } = pipeState
-  if (-1 === output.indexOf(key)) {
-    throw new Error(`Dependency "${key}" is not defined in output.`)
-  }
-  if (fulfilled && -1 === fulfilled.indexOf(key)) {
-    fulfilled.push(key)
     return injectedFn
   }
 }
@@ -197,8 +138,4 @@ function executeInjectedFunc(args, injectedFn, pipeState) {
   }
 
   return result
-}
-
-function isPlainObject(obj) {
-  return 'object' === typeof obj ? obj && !Array.isArray(obj) : false
 }
