@@ -137,10 +137,7 @@ function normalizeInput(input) {
     input = input || []
   }
 
-  if (
-    !Array.isArray(input) ||
-    !input.every(item => 'string' === typeof item && item)
-  ) {
+  if (!Array.isArray(input) || !input.every(mustBeNonEmptyString)) {
     throw new Error(
       'Pipe requires non-empty string or array of non-empty strings as input.'
     )
@@ -152,37 +149,34 @@ function normalizeInput(input) {
 function normalizeOutput(output) {
   if ('string' === typeof output) {
     output = [output]
+  } else {
+    output = output || []
   }
 
-  if (
-    output &&
-    (!Array.isArray(output) ||
-      !output.every(item => 'string' === typeof item && item))
-  ) {
+  if (!Array.isArray(output) || !output.every(mustBeNonEmptyString)) {
     throw new Error(
       'Pipe requires non-empty string or array of non-empty strings as output.'
     )
   }
 
-  output = output || []
-
   // Detect any mapped output. Use the format `theOriginalName:theNewName` in
   // `output` array will map the output `theOriginalName` to `theNewName`.
-  let i = 0
-  const len = output.length
   let outputMap
 
-  while (i < len) {
-    const item = output[i++]
+  output.forEach(item => {
     if (/:/.test(item)) {
       outputMap = outputMap || {}
       const mapping = item.split(':')
       outputMap[mapping[0]] = mapping[1]
     }
-  }
+  })
 
   return {
     output: output,
     outputMap: outputMap
   }
+}
+
+function mustBeNonEmptyString(item) {
+  return item && 'string' === typeof item
 }
