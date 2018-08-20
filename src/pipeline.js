@@ -172,8 +172,7 @@ function createPipeState(error, pipeline, pipe, store) {
       setWithPipeState(store, pipeState, key, value)
     },
     name: pipeline.name,
-    error,
-    fnReturned: false
+    error
   }
 
   if (pipe.output && pipe.output.length > 0) {
