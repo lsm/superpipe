@@ -14,20 +14,7 @@ export function setWithPipeState(store, pipeState, key, value) {
     throw new Error('Unsupported output key type.')
   }
 
-  const { output, result, autoNext, fulfilled, fnReturned } = pipeState
-  // We should only check if we need to go next when all the conditions below
-  // are satisfied:
-  // 1. function is returned.
-  // 2. result is not true.
-  // 3. auto next is controlled by set.
-  const checkNext = fnReturned && result !== false && autoNext === 0
-
-  if (checkNext && fulfilled && fulfilled.length === output.length) {
-    // Set auto next to false so the other part of the execution won't call
-    // next again.
-    pipeState.autoNext = false
-    store.next()
-  }
+  checkSetAutoNext(store, pipeState)
 }
 
 export function isPlainObject(obj) {
@@ -62,5 +49,22 @@ function checkFulfillment(key, pipeState) {
   }
   if (fulfilled.indexOf(key) === -1) {
     fulfilled.push(key)
+  }
+}
+
+function checkSetAutoNext(store, pipeState) {
+  const { output, result, autoNext, fulfilled, fnReturned } = pipeState
+  // We should only check if we need to go next when all the conditions below
+  // are satisfied:
+  // 1. function is returned.
+  // 2. result is not true.
+  // 3. auto next is controlled by set.
+  const checkNext = fnReturned && result !== false && autoNext === 0
+
+  if (checkNext && fulfilled && fulfilled.length === output.length) {
+    // Set auto next to false so the other part of the execution won't call
+    // next again.
+    pipeState.autoNext = false
+    store.next()
   }
 }
