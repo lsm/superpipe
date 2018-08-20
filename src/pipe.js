@@ -39,7 +39,7 @@ function createInputPipe(input) {
   return {
     fn: function inputPipe(args, store) {
       input.forEach((item, idx) => (store[item] = args[idx]))
-      return true
+      store.next()
     },
     fnName: FN_INPUT,
     input: input

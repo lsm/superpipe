@@ -2,8 +2,11 @@ import { FN_INPUT } from './pipe'
 import { isPlainObject } from './set'
 
 export function executePipe(args, store, pipeState) {
-  const { fn, deps, fnName } = pipeState
-  const inputArgs = getInputArgs(store, pipeState, args, deps)
+  const { fn, fnName } = pipeState
+
+  if (FN_INPUT === fnName) {
+    return fn.call(0, args, store)
+  }
   const injectedFn = getInjectedFunction(store, pipeState, inputArgs)
 
   if (injectedFn === 0) {
