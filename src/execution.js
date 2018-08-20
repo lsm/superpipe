@@ -64,25 +64,25 @@ function getInputArgs(store, pipeState, args, deps) {
 
 function getInjectedFunction(store, pipeState, inputArgs) {
   const { fn, deps, fnName } = pipeState
+
+  if (fn !== null || 'string' !== typeof fnName) {
+    return
+  }
+
   // An injection pipe. Get the pipe function from the store or the dependency
   // container.
-  if (fn === null && 'string' === typeof fnName) {
-    const injectedFn = store.hasOwnProperty(fnName)
-      ? store[fnName]
-      : deps[fnName]
+  const injectedFn = store.hasOwnProperty(fnName) ? store[fnName] : deps[fnName]
 
-    if (
-      pipeState.optional &&
-      (inputArgs.indexOf(undefined) > -1 || typeof injectedFn === 'undefined')
-    ) {
-      // Optional pipe, go next if any of the dependencies or the function
-      // itself is undefined.
-
-      return 0
-    }
-
-    return injectedFn
+  if (
+    pipeState.optional &&
+    (inputArgs.indexOf(undefined) > -1 || typeof injectedFn === 'undefined')
+  ) {
+    // Optional pipe, go next if any of the dependencies or the function
+    // itself is undefined.
+    return 0
   }
+
+  return injectedFn
 }
 
 /**
@@ -92,23 +92,28 @@ function getInjectedFunction(store, pipeState, inputArgs) {
  */
 function executeInjectedFunc(args, injectedFn, pipeState) {
   let result
+  /* istanbul ignore next */
+  const fnType = typeof injectedFn
 
-  if ('function' === typeof injectedFn) {
-    // Call it with the arguments passed in when it's a function.
-    // We call it with `0` to prevent some JS engines injecting the
-    // default `this`.
-    result = injectedFn.apply(0, args)
-  } else if ('boolean' === typeof injectedFn) {
-    // Directly return the value when it is a boolean for flow control.
-    result = injectedFn
-  } else {
-    // Throw an exception when the original function is not something
-    // we understand.
-    throw new Error(
-      `Pipeline [${pipeState.name}]: Dependency "${
-        pipeState.fnName
-      }" is not a function or boolean.`
-    )
+  switch (fnType) {
+    case 'function':
+      // Call it with the arguments passed in when it's a function.
+      // We call it with `0` to prevent some JS engines injecting the
+      // default `this`.
+      result = injectedFn.apply(0, args)
+      break
+    case 'boolean':
+      // Directly return the value when it is a boolean for flow control.
+      result = injectedFn
+      break
+    default:
+      // Throw an exception when the original function is not something
+      // we understand.
+      throw new Error(
+        `Pipeline [${pipeState.name}]: Dependency "${
+          pipeState.fnName
+        }" is not a function or boolean.`
+      )
   }
 
   if ('boolean' === typeof result) {

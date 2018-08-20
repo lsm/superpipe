@@ -123,7 +123,7 @@ function createStore(args, pipeline) {
       if (err) {
         if (!pipeline.errorHandler) {
           // Throw the error if we don't have error handling function.
-          throwError(err, pipeline.name, step, previousPipeState)
+          throwError(err, step, previousPipeState)
         }
         pipe = pipeline.errorHandler
       } else {
@@ -173,7 +173,6 @@ function createPipeState(error, pipeline, pipe, store) {
     },
     name: pipeline.name,
     error,
-    result: undefined,
     fnReturned: false
   }
 
@@ -192,10 +191,10 @@ function createPipeState(error, pipeline, pipe, store) {
   return pipeState
 }
 
-function throwError(error, name, step, pipe) {
+function throwError(error, step, pipe) {
   let ex = error
-
-  let pipeName = (pipe && pipe.fnName) || pipe.fn.name || 'function'
+  const { name } = pipe
+  const pipeName = pipe.fnName || (pipe.fn && pipe.fn.name) || 'function'
 
   if ('string' === typeof error) {
     ex = new Error()
