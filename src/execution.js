@@ -7,17 +7,16 @@ export function executePipe(args, store, pipeState) {
   if (FN_INPUT === fnName) {
     return fn.call(0, args, store)
   }
+
+  const inputArgs = getInputArgs(store, pipeState, args)
   const injectedFn = getInjectedFunction(store, pipeState, inputArgs)
 
   if (injectedFn === 0) {
     // Ignored optional pipe, go to next pipe.
-    store.next()
-    return
+    return store.next()
   }
 
-  if (FN_INPUT === fnName) {
-    pipeState.result = fn.call(0, args, store)
-  } else if (injectedFn || false === injectedFn) {
+  if (injectedFn || false === injectedFn) {
     pipeState.result = executeInjectedFunc(inputArgs, injectedFn, pipeState)
   } else {
     pipeState.result = fn.apply(0, inputArgs)
@@ -37,32 +36,31 @@ export function executePipe(args, store, pipeState) {
   }
 }
 
-function getInputArgs(store, pipeState, args, deps) {
-  const { input } = pipeState
-
-  if (input.length === 0) {
-    // Use original function arguments as input if we don't have one.
+function getInputArgs(store, pipeState, args) {
+  if (pipeState.input.length === 0) {
     return args
-  } else {
-    return input.map(key => {
-      if (key === 'next') {
-        let called = false
-        return function next(err, key, value) {
-          if (called) {
-            throw new Error(
-              '"next" should not be called more than once in a pipe.'
-            )
-          }
-          called = true
-          return store.next(err, key, value)
-        }
-      } else if (key === 'set') {
-        // Set function is local to a praticular execution state.
-        return pipeState.set
-      }
-      return store.hasOwnProperty(key) ? store[key] : deps[key]
-    })
   }
+
+  const { deps } = pipeState
+  return pipeState.input.map(key => {
+    if (key === 'next') {
+      let called = false
+      return function next(err, key, value) {
+        if (called) {
+          throw new Error(
+            '"next" should not be called more than once in a pipe.'
+          )
+        }
+        called = true
+        return store.next(err, key, value)
+      }
+    } else if (key === 'set') {
+      // Set function is local to a praticular execution state.
+      return pipeState.set
+    }
+
+    return getProp(key, store, deps)
+  })
 }
 
 function getInjectedFunction(store, pipeState, inputArgs) {
@@ -74,7 +72,7 @@ function getInjectedFunction(store, pipeState, inputArgs) {
 
   // An injection pipe. Get the pipe function from the store or the dependency
   // container.
-  const injectedFn = store.hasOwnProperty(fnName) ? store[fnName] : deps[fnName]
+  const injectedFn = getProp(fnName, store, deps)
 
   if (
     pipeState.optional &&
@@ -126,4 +124,8 @@ function executeInjectedFunc(args, injectedFn, pipeState) {
   }
 
   return result
+}
+
+function getProp(key, store, deps) {
+  return store.hasOwnProperty(key) ? store[key] : deps[key]
 }
