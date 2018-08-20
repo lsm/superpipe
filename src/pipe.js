@@ -115,6 +115,7 @@ function buildPipe(fn, input, output) {
   return {
     // Original function or null for injection pipe. It should never be changed.
     fn: fn,
+    fnName: fn && fn.name,
     // loading/generating pipe functions dynamically.
     input: input,
     // `output` contains `output` array and `outputMap` object.

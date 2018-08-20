@@ -192,8 +192,8 @@ function createPipeState(error, pipeline, pipe, store) {
 
 function throwError(error, step, pipe) {
   let ex = error
-  const { name } = pipe
-  const pipeName = pipe.fnName || (pipe.fn && pipe.fn.name) || 'function'
+  const { name, fnName } = pipe
+  const pipeName = fnName || 'function'
 
   if ('string' === typeof error) {
     ex = new Error()
