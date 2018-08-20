@@ -2,7 +2,12 @@
   "presets": [
     ["env", {
       "targets": {
-        "browsers": ["> 1%"]
+        "browsers": [
+          "last 1 version",
+          "> 1%",
+          "maintained node versions",
+          "not dead"
+        ]
       }
     }]
   ],
