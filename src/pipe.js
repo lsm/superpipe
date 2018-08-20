@@ -81,15 +81,13 @@ function createInjectionPipe(name, input, output) {
 
   // It's a `not` pipe if the pipe name is started with `!`.
   // Although the actual function name is the value without the exclamation mark.
-  if (/^!/.test(name)) {
-    pipe.not = true
-    name = name.slice(1)
-  }
+  pipe.not = /^!/.test(name)
 
   // It's an `optional` pipe if the name is started with `?`.
   // The actual function name is the value without the question mark.
-  if (/^\?/.test(name)) {
-    pipe.optional = true
+  pipe.optional = /^\?/.test(name)
+
+  if (pipe.not || pipe.optional) {
     name = name.slice(1)
   }
 
