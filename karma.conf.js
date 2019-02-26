@@ -164,39 +164,39 @@ var customLaunchers = {
     platform: 'Windows 10',
     version: '11'
   },
-  sl_iphone_112: {
+  sl_iphone_113: {
     base: 'SauceLabs',
     browserName: 'iphone',
-    version: '11.2',
+    version: '11.3',
     deviceName: 'iPhone X Simulator',
     deviceOrientation: 'portrait'
   },
   sl_edge_13: {
     base: 'SauceLabs',
     browserName: 'microsoftedge',
-    platform: 'Windows 10',
     version: '13'
   },
-  sl_edge_17: {
+  sl_edge_18: {
     base: 'SauceLabs',
     browserName: 'microsoftedge',
     platform: 'Windows 10',
-    version: '17'
+    version: '18'
   },
-  sl_safari_7: {
+  sl_safari_8: {
     base: 'SauceLabs',
     browserName: 'safari',
-    version: '7'
+    version: '8'
   },
   sl_safari_latest: {
     base: 'SauceLabs',
     browserName: 'safari',
-    version: 'latest'
+    version: 'latest',
+    platform: 'OS X 10.13'
   },
-  sl_android_71: {
+  sl_android_81: {
     base: 'SauceLabs',
     browserName: 'android',
-    version: '7.1',
+    version: '8.1',
     deviceName: 'Android GoogleAPI Emulator',
     deviceType: 'phone'
   }
