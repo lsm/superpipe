@@ -14,7 +14,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "mocha --require babel-core/register",
+    "test": "mocha --recursive --require @babel/register",
     "watch": "nodemon -w ./src -w ./test -x 'npm run coverage'",
     "browser": "TEST_ENV=browser karma start karma.conf.js",
     "local-browser": "karma start karma.conf.js",
