@@ -11,6 +11,7 @@ workflows:
       - node-v6
       - node-v8
       - node-v10
+      - node-v11
 
 version: 2
 jobs:
@@ -45,10 +46,14 @@ jobs:
     <<: *node-base
     docker:
       - image: circleci/node:10
+  node-v11:
+    <<: *node-base
+    docker:
+      - image: circleci/node:11
 
   browser:
     docker:
-      - image: circleci/node:8
+      - image: circleci/node:10
     working_directory: ~/repo
     steps:
       - run: node --version
