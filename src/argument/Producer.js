@@ -18,6 +18,8 @@ export default class Producer {
     } else if (isValidArrayArgs(args)) {
       this.keys = args
       this._produce = this.produceFromArray
+    } else if (typeof args === 'undefined') {
+      this._produce = this.produceNothing
     } else {
       throw new Error('Pipe output argument must be string or array of strings')
     }
@@ -25,6 +27,10 @@ export default class Producer {
 
   produce(result) {
     return this._produce(result)
+  }
+
+  produceNothing() {
+    return {}
   }
 
   produceSingle(result) {

@@ -10,6 +10,14 @@ describe('Producer', () => {
 
   const arrayResult = ['myArg value', 'second arg value']
 
+  describe('allow empty input/output', () => {
+    it('should okay with no input and product empty object as output', () => {
+      const producer = new Producer()
+      const output = producer.produce('value')
+      expect(Object.keys(output).length).to.equal(0)
+    })
+  })
+
   describe('parse single string argument', () => {
     it('should produce output as an object', () => {
       const producer = new Producer('myArg')
@@ -51,7 +59,7 @@ describe('Producer', () => {
   })
 
   describe('invalid inputs', () => {
-    it('should throw when using object string in an array', function name() {
+    it('should throw when using object string in an array', () => {
       expect(() => new Producer(['{myArg}'])).to.throw(
         'Object string {myArg} is not allowed in array argument'
       )

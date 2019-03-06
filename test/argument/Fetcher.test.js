@@ -8,6 +8,14 @@ describe('Fetcher', () => {
     mySecondArg: 'second arg value'
   }
 
+  describe('allow empty input', () => {
+    it('should okay with no input and produce null as output', () => {
+      const fetcher = new Fetcher()
+      const result = fetcher.fetch({ key: 'value' })
+      expect(result).to.deep.equal(result)
+    })
+  })
+
   describe('parse single string argument', () => {
     it('should fetch the variable and return it in an array', () => {
       const fetcher = new Fetcher('myArg')
@@ -51,7 +59,7 @@ describe('Fetcher', () => {
   })
 
   describe('invalid inputs', () => {
-    it('should throw when using object string in an array', function name() {
+    it('should throw when using object string in an array', () => {
       expect(() => new Fetcher(['{myArg}'])).to.throw(
         'Object string {myArg} is not allowed in array argument'
       )
@@ -62,9 +70,6 @@ describe('Fetcher', () => {
         'Pipe input argument must be non-empty string or array of non-empty strings'
       )
       expect(() => new Fetcher({})).to.throw(
-        'Pipe input argument must be non-empty string or array of non-empty strings'
-      )
-      expect(() => new Fetcher()).to.throw(
         'Pipe input argument must be non-empty string or array of non-empty strings'
       )
       expect(() => new Fetcher('')).to.throw(

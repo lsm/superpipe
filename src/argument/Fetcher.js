@@ -5,7 +5,7 @@ import {
 } from './common'
 
 export default class Fetcher {
-  constructor(args, flag) {
+  constructor (args, flag) {
     if (typeof args === 'string') {
       if (RE_IS_OBJ_STRING.test(args)) {
         this.keys = objectStringToArray(args)
@@ -24,6 +24,9 @@ export default class Fetcher {
       if (isValidArrayArgs(args)) {
         this.keys = args
         this._fetch = this.fetchAsArray
+      } else if (args == null) {
+        this.keys = []
+        this._fetch = this.fetchNothing
       } else {
         throw new Error(
           'Pipe input argument must be non-empty string or array of non-empty strings'
@@ -34,19 +37,23 @@ export default class Fetcher {
     this.hasNext = this.keys.indexOf('next') > -1
   }
 
-  fetch(container) {
+  fetch (container) {
     return this._fetch(container)
   }
 
-  fetchSingle(container) {
+  fetchNothing () {
+    return null
+  }
+
+  fetchSingle (container) {
     return container[this._key]
   }
 
-  fetchAsArray(container) {
+  fetchAsArray (container) {
     return this.keys.map(key => container[key])
   }
 
-  fetchAsObject(container) {
+  fetchAsObject (container) {
     const result = {}
 
     for (const key of this.keys) {
