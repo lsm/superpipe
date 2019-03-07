@@ -2,6 +2,7 @@
 
 [![CI status][ci-img]][ci-url]
 [![License MIT][license-img]][license-url]
+[![JavaScript Style Guide][standard-img]][standard-url]
 [![NPM version][npm-img]][npm-url]
 [![Dependencies][dep-image]][dep-url]
 [![Coverage Status][coverage-img]][coverage-url]
@@ -176,3 +177,5 @@ var z = superpipe.getDep('x') // z = 5
 [coverage-url]: https://coveralls.io/github/lsm/superpipe?branch=master
 [climate-img]: https://codeclimate.com/github/lsm/superpipe/badges/gpa.svg
 [climate-url]: https://codeclimate.com/github/lsm/superpipe
+[standard-img]: https://img.shields.io/badge/code_style-standard-brightgreen.svg
+[standard-url]: https://standardjs.com
