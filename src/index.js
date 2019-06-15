@@ -2,16 +2,10 @@ import {
   createPipe,
   createInputPipe,
   createErrorPipe,
-  createPipesFromDefs
+  createPipesFromDefs,
 } from './pipeline/builder'
 import { runPipeline } from './pipeline/executor'
 import Fetcher from './argument/Fetcher'
-
-export default function (functions) {
-  return function (name, defs) {
-    return new Pipeline(name, defs, functions)
-  }
-}
 
 class Pipeline {
   constructor (name, definitions, functions) {
@@ -54,9 +48,9 @@ class Pipeline {
     // Make shallow copies of pipeline properties.
     const pipeline = {
       name: this.name,
-      pipes: [...this._pipes],
+      pipes: [ ...this._pipes ],
       functions: { ...this.functions },
-      errorHandler: this.errorHandler
+      errorHandler: this.errorHandler,
     }
 
     return function (arg) {
@@ -74,3 +68,10 @@ class Pipeline {
     }
   }
 }
+
+export default function (functions) {
+  return function (name, defs) {
+    return new Pipeline(name, defs, functions)
+  }
+}
+
