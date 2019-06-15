@@ -5,9 +5,8 @@
   "main": "lib/index.js",
   "module": "es/index.js",
   "files": [
-    "es",
-    "lib",
-    "src",
+    "es/**/*",
+    "lib/**/*",
     "dist",
     "LICENSE",
     "CHANGELOG.md",
