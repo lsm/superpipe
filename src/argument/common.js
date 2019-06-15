@@ -1,4 +1,12 @@
 export const RE_IS_OBJ_STRING = /^{.+}$/
+
+function objectStringIsNotAllowed(item) {
+  if (RE_IS_OBJ_STRING.test(item)) {
+    throw new Error(`Object string ${item} is not allowed in array argument`)
+  }
+  return item
+}
+
 export const objectStringToArray = function(objString) {
   return objString
     .slice(1, -1)
@@ -16,11 +24,4 @@ export function isValidArrayArgs(array) {
     array.length > 0 &&
     array.map(objectStringIsNotAllowed).every(isNonEmptyString)
   )
-}
-
-function objectStringIsNotAllowed(item) {
-  if (RE_IS_OBJ_STRING.test(item)) {
-    throw new Error(`Object string ${item} is not allowed in array argument`)
-  }
-  return item
 }

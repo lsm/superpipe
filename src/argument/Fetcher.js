@@ -1,7 +1,7 @@
 import {
   RE_IS_OBJ_STRING,
   isValidArrayArgs,
-  objectStringToArray
+  objectStringToArray,
 } from './common'
 
 export default class Fetcher {
@@ -12,12 +12,12 @@ export default class Fetcher {
         this._fetch = this.fetchAsObject
       } else if (flag === 'raw') {
         this._key = args
-        this.keys = [args]
+        this.keys = [ args ]
         this._fetch = this.fetchSingle
       }
       // Normalize string as array.
       // When it's not object string or flag equals raw.
-      args = [args]
+      args = [ args ]
     }
 
     if (!this._fetch) {
@@ -28,9 +28,7 @@ export default class Fetcher {
         this.keys = []
         this._fetch = this.fetchNothing
       } else {
-        throw new Error(
-          'Pipe input argument must be non-empty string or array of non-empty strings'
-        )
+        throw new Error('Pipe input argument must be non-empty string or array of non-empty strings')
       }
     }
 
@@ -60,6 +58,6 @@ export default class Fetcher {
       result[key] = container[key]
     }
 
-    return [result]
+    return [ result ]
   }
 }

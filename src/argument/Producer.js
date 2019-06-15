@@ -1,7 +1,7 @@
 import {
   RE_IS_OBJ_STRING,
   isValidArrayArgs,
-  objectStringToArray
+  objectStringToArray,
 } from './common'
 
 export default class Producer {
@@ -12,7 +12,7 @@ export default class Producer {
         this._produce = this.produceFromObject
       } else {
         this.key = args
-        this.keys = [args]
+        this.keys = [ args ]
         this._produce = this.produceSingle
       }
     } else if (isValidArrayArgs(args)) {

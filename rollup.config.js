@@ -10,7 +10,7 @@ const config = {
   input: 'src/index.js',
   output: {
     format: 'umd',
-    name: 'Superpipe'
+    name: 'Superpipe',
   },
 
   plugins: [
@@ -26,34 +26,30 @@ const config = {
                 'last 1 version',
                 '> 1%',
                 'maintained node versions',
-                'not dead'
-              ]
+                'not dead',
+              ],
             },
-            modules: false
-          }
-        ]
+            modules: false,
+          },
+        ],
       ],
-      plugins: ['external-helpers', 'transform-object-rest-spread'],
-      exclude: '**/node_modules/**'
+      plugins: [ 'external-helpers', 'transform-object-rest-spread' ],
+      exclude: '**/node_modules/**',
     }),
-    replace({
-      'process.env.NODE_ENV': JSON.stringify(NODE_ENV)
-    }),
-    commonjs()
-  ]
+    replace({ 'process.env.NODE_ENV': JSON.stringify(NODE_ENV) }),
+    commonjs(),
+  ],
 }
 
 if (NODE_ENV === 'production') {
-  config.plugins.push(
-    uglify({
-      compress: {
-        pure_getters: true,
-        unsafe: true,
-        unsafe_comps: true,
-        warnings: false
-      }
-    })
-  )
+  config.plugins.push(uglify({
+    compress: {
+      pure_getters: true,
+      unsafe: true,
+      unsafe_comps: true,
+      warnings: false,
+    },
+  }))
 }
 
 export default config

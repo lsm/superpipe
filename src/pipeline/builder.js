@@ -10,7 +10,7 @@ export function createPipe (fn, input, output) {
   const pipe = {
     fetcher: new Fetcher(input),
     producer: new Producer(output),
-    injected: false
+    injected: false,
   }
 
   // fn is the name of the function being injected during execution.
@@ -49,7 +49,7 @@ export function createInputPipe (input) {
 
   return {
     isInputPipe: true,
-    producer
+    producer,
   }
 }
 
@@ -86,7 +86,7 @@ export function createErrorPipe (errorFn, input = 'error') {
 export function createPipesFromDefs (pipeline, definitions) {
   let end
 
-  definitions.forEach(function ([fn, input, output]) {
+  definitions.forEach(function ([ fn, input, output ]) {
     switch (fn) {
       case FN_INPUT:
         pipeline.input(input)

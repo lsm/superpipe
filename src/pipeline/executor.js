@@ -1,31 +1,45 @@
-export function runPipeline (args, pipeline) {
-  // Internal pipeline execution state.
-  const state = {
-    step: 0,
-    nextCalled: {},
-    previousPipe: null,
-    // Internale container for keeping pipeline runtime dependencies.
-    container: {
-      next: function (error, value) {
-        next(state, pipeline, error, value)
+function throwNoErrorHandlerError (error, step, pipeline) {
+  const pipe = pipeline.pipes[step]
+  const { name } = pipeline
+  const { fnName } = pipe
+
+  const ex = new Error()
+  ex.name = 'PipelineError'
+  ex.message = `\nError was triggered in pipeline "${name}" step "${step}:[${fnName}]":\n(Tips: use .error(errorHandlerFn, 'error') to handle this error within your pipeline.)`
+  ex.exception = error
+
+  throw ex
+}
+
+export function executePipe (pipe, state, pipeline, next) {
+  const { functions } = pipeline
+  const { fnName } = pipe
+  const { container } = state
+
+  const fn = pipe.injected ? container[fnName] || functions[fnName] : pipe.fn
+  const fnType = typeof fn
+  const inputArgs = pipe.fetcher.fetch(container)
+
+  if (fnType === 'function') {
+    try {
+      const result = fn.apply(0, inputArgs)
+      if (!pipe.fetcher.hasNext) {
+        // Run next pipe automatically when next is not required by the input.
+        next(state, pipeline, null, result)
       }
+    } catch (e) {
+      next(state, pipeline, e)
     }
+  } else if (pipe.optional && fnType === 'undefined') {
+    // Optional pipe, skip the execution.
+    state.previousPipe = null
+    next(state, pipeline)
+  } else {
+  // Throw an exception when the function is not something
+  // we understand.
+    throw new Error(`Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName
+    }] : Dependency "${fnName}" is not a function or boolean.`)
   }
-
-  // Start executing from the first pipe.
-  const pipe = pipeline.pipes[0]
-  // Process input pipe if we have one at the begining of the pipeline.
-  if (pipe && pipe.isInputPipe) {
-    // The original pipeline arguments is the result of the input pipe
-    // which will be merged in next.
-    Object.assign(state.container, pipe.producer.produce(args))
-    state.step += 1
-  }
-
-  // Start executing pipeline
-  next(state, pipeline)
-
-  return state.container
 }
 
 /**
@@ -60,58 +74,43 @@ export function next (state, pipeline, error, value) {
   } else if (pipes.length > state.step) {
     // When we have more pipe, get current one and increase the step by 1.
     const pipe = pipes[state.step++]
+
     /**
      * Keep a reference to the previous pipe.
      */
     state.previousPipe = pipe
 
     // Execute the pipe.
-    executePipe(pipe, state, pipeline)
+    executePipe(pipe, state, pipeline, next)
   }
 }
 
-export function executePipe (pipe, state, pipeline) {
-  const { functions } = pipeline
-  const { fnName } = pipe
-  const { container } = state
-
-  const fn = pipe.injected ? container[fnName] || functions[fnName] : pipe.fn
-  const fnType = typeof fn
-  const inputArgs = pipe.fetcher.fetch(container)
-
-  if (fnType === 'function') {
-    try {
-      const result = fn.apply(0, inputArgs)
-      if (!pipe.fetcher.hasNext) {
-        // Run next pipe automatically when next is not required by the input.
-        next(state, pipeline, null, result)
-      }
-    } catch (e) {
-      next(state, pipeline, e)
-    }
-  } else if (pipe.optional && fnType === 'undefined') {
-    // Optional pipe, skip the execution.
-    state.previousPipe = null
-    next(state, pipeline)
-  } else {
-  // Throw an exception when the function is not something
-  // we understand.
-    throw new Error(
-      `Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName
-      }] : Dependency "${fnName}" is not a function or boolean.`
-    )
+export function runPipeline (args, pipeline) {
+  // Internal pipeline execution state.
+  const state = {
+    step: 0,
+    nextCalled: {},
+    previousPipe: null,
+    // Internale container for keeping pipeline runtime dependencies.
+    container: {
+      next: function (error, value) {
+        next(state, pipeline, error, value)
+      },
+    },
   }
-}
 
-function throwNoErrorHandlerError (error, step, pipeline) {
-  const pipe = pipeline.pipes[step]
-  const { name } = pipeline
-  const { fnName } = pipe
+  // Start executing from the first pipe.
+  const pipe = pipeline.pipes[0]
+  // Process input pipe if we have one at the begining of the pipeline.
+  if (pipe && pipe.isInputPipe) {
+    // The original pipeline arguments is the result of the input pipe
+    // which will be merged in next.
+    Object.assign(state.container, pipe.producer.produce(args))
+    state.step += 1
+  }
 
-  const ex = new Error()
-  ex.name = 'PipelineError'
-  ex.message = `\nError was triggered in pipeline "${name}" step "${step}:[${fnName}]":\n(Tips: use .error(errorHandlerFn, 'error') to handle this error within your pipeline.)`
-  ex.exception = error
+  // Start executing pipeline
+  next(state, pipeline)
 
-  throw ex
+  return state.container
 }
