@@ -3,7 +3,8 @@
     "allowJs": false,
     "allowSyntheticDefaultImports": true,
     "jsx": "preserve",
-    "lib": ["dom", "esnext"],
+    "lib": ["es2018"],
+    "listFiles": false,
     "module": "commonjs",
     "moduleResolution": "node",
     "noEmit": true,
@@ -14,7 +15,8 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
-    "target": "esnext"
+    "outDir": "lib",
+    "target": "es5"
   },
   "include": [
     "src/**/*" 

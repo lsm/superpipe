@@ -1,20 +1,24 @@
-function throwNoErrorHandlerError (error, step, pipeline) {
-  const pipe = pipeline.pipes[step]
-  const { name } = pipeline
-  const { fnName } = pipe
+import Pipe from './Pipe'
+import { PipeResult, PipelineBase, throwNoErrorHandlerError } from '../common'
 
-  const ex = new Error()
-  ex.name = 'PipelineError'
-  ex.message = `\nError was triggered in pipeline "${name}" step "${step}:[${fnName}]":\n(Tips: use .error(errorHandlerFn, 'error') to handle this error within your pipeline.)`
-  ex.exception = error
-
-  throw ex
+interface ResultContainer {
+  [key: string]: PipeResult;
 }
 
-export function executePipe (pipe, state, pipeline, next) {
-  const { functions } = pipeline
+interface PipeState {
+  step: 0;
+  container: ResultContainer;
+  nextCalled: {[key: string]: boolean};
+  previousPipe?: Pipe;
+}
+
+function executePipe (
+  pipe: Pipe, state: PipeState,
+  pipeline: PipelineBase, next: Function
+): void {
   const { fnName } = pipe
   const { container } = state
+  const { functions } = pipeline
 
   const fn = pipe.injected ? container[fnName] || functions[fnName] : pipe.fn
   const fnType = typeof fn
@@ -27,12 +31,12 @@ export function executePipe (pipe, state, pipeline, next) {
         // Run next pipe automatically when next is not required by the input.
         next(state, pipeline, null, result)
       }
-    } catch (e) {
-      next(state, pipeline, e)
+    } catch (err) {
+      next(state, pipeline, err)
     }
   } else if (pipe.optional && fnType === 'undefined') {
     // Optional pipe, skip the execution.
-    state.previousPipe = null
+    state.previousPipe = undefined
     next(state, pipeline)
   } else {
   // Throw an exception when the function is not something
@@ -50,12 +54,15 @@ export function executePipe (pipe, state, pipeline, next) {
  * @param  {Error|null}     error     Error object if any.
  * @param  {Any}            value     The return value of the previousPipe.
  */
-export function next (state, pipeline, error, value) {
+function next (
+  state: PipeState, pipeline: PipelineBase,
+  error?: Error, value?: PipeResult
+): void {
   if (state.nextCalled[state.step]) {
     throw new Error('"next" could not be called more than once in a pipe.')
   }
-  state.nextCalled[state.step] = true
 
+  state.nextCalled[state.step] = true
   const { pipes, errorHandler } = pipeline
   const { step, container, previousPipe } = state
 
@@ -65,12 +72,13 @@ export function next (state, pipeline, error, value) {
   }
 
   if (error) {
-    if (!errorHandler) {
-      // Throw the error if we don't have error handling function.
-      throwNoErrorHandlerError(error, step - 1, pipeline)
+    if (errorHandler) {
+      container.error = error
+      errorHandler(container, pipeline.functions)
+
     }
-    container.error = error
-    errorHandler(container, pipeline.functions)
+    // Throw the error if we don't have error handling function.
+    throwNoErrorHandlerError(error, step - 1, pipeline)
   } else if (pipes.length > state.step) {
     // When we have more pipe, get current one and increase the step by 1.
     const pipe = pipes[state.step++]
@@ -85,28 +93,28 @@ export function next (state, pipeline, error, value) {
   }
 }
 
-export function runPipeline (args, pipeline) {
+export function runPipeline (
+  args: PipeResult,
+  pipeline: PipelineBase
+): ResultContainer {
   // Internal pipeline execution state.
-  const state = {
+  const state: PipeState = {
     step: 0,
     nextCalled: {},
-    previousPipe: null,
     // Internale container for keeping pipeline runtime dependencies.
     container: {
-      next: function (error, value) {
+      next: function (error: Error, value: PipeResult): void {
         next(state, pipeline, error, value)
       },
     },
   }
 
-  // Start executing from the first pipe.
-  const pipe = pipeline.pipes[0]
-  // Process input pipe if we have one at the begining of the pipeline.
-  if (pipe && pipe.isInputPipe) {
-    // The original pipeline arguments is the result of the input pipe
-    // which will be merged in next.
-    Object.assign(state.container, pipe.producer.produce(args))
-    state.step += 1
+  // Start executing from input pipe if we have one.
+  const inputPipe = pipeline.inputPipe
+  if (inputPipe) {
+    // Produce output from the original pipeline arguments
+    // which will be merged with state container.
+    Object.assign(state.container, inputPipe.producer.produce(args))
   }
 
   // Start executing pipeline
