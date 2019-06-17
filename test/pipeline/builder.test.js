@@ -4,18 +4,18 @@ import {
   createPipe,
   createErrorPipe,
   createInputPipe,
-  createPipesFromDefs
+  createPipesFromDefs,
 } from '../../src/pipeline/builder'
 
-import Fetcher from '../../src/argument/Fetcher'
-import Producer from '../../src/argument/Producer'
+import Fetcher from '../../src/parameter/Fetcher'
+import Producer from '../../src/parameter/Producer'
 import superpipe from '../../src'
 
 describe('Test pipe builder', () => {
   describe('createPipe(fn, input, output)', () => {
     it('should create a pipe from function', () => {
       const myPipeFunction = function () {}
-      const pipe = createPipe(myPipeFunction, ['input'], '{output}')
+      const pipe = createPipe(myPipeFunction, [ 'input' ], '{output}')
 
       expect(pipe.fn).to.equal(myPipeFunction)
       expect(pipe.fnName).to.equal('myPipeFunction')
@@ -26,7 +26,7 @@ describe('Test pipe builder', () => {
 
     it('should create an injected pipe from string', () => {
       const myFunctionName = 'myFunc'
-      const pipe = createPipe(myFunctionName, ['input'], '{output}')
+      const pipe = createPipe(myFunctionName, [ 'input' ], '{output}')
 
       expect(pipe.fn).to.equal(null)
       expect(pipe.fnName).to.equal('myFunc')
@@ -37,7 +37,7 @@ describe('Test pipe builder', () => {
 
     it('should create an optional pipe when function name start with ?', () => {
       const myFunctionName = 'myFunc?'
-      const pipe = createPipe(myFunctionName, ['input'], '{output}')
+      const pipe = createPipe(myFunctionName, [ 'input' ], '{output}')
 
       expect(pipe.fn).to.equal(null)
       expect(pipe.fnName).to.equal('myFunc')
@@ -50,7 +50,7 @@ describe('Test pipe builder', () => {
 
     it('should create a not pipe when function name start with !', () => {
       const myFunctionName = '!myFunc'
-      const pipe = createPipe(myFunctionName, ['input'], '{output}')
+      const pipe = createPipe(myFunctionName, [ 'input' ], '{output}')
 
       expect(pipe.fn).to.equal(null)
       expect(pipe.fnName).to.equal('myFunc')
@@ -62,24 +62,12 @@ describe('Test pipe builder', () => {
     })
 
     it('should throw if the format of the pipe is unsupported', () => {
-      expect(() => createPipe('', ['input'], '{output}')).to.throw(
-        'Unsupported pipe function ""'
-      )
-      expect(() => createPipe(true, ['input'], '{output}')).to.throw(
-        'Unsupported pipe function "true"'
-      )
-      expect(() => createPipe(null, ['input'], '{output}')).to.throw(
-        'Unsupported pipe function "null"'
-      )
-      expect(() => createPipe(1, ['input'], '{output}')).to.throw(
-        'Unsupported pipe function "1"'
-      )
-      expect(() => createPipe({}, ['input'], '{output}')).to.throw(
-        'Unsupported pipe function'
-      )
-      expect(() => createPipe([], ['input'], '{output}')).to.throw(
-        'Unsupported pipe function'
-      )
+      expect(() => createPipe('', [ 'input' ], '{output}')).to.throw('Unsupported pipe function ""')
+      expect(() => createPipe(true, [ 'input' ], '{output}')).to.throw('Unsupported pipe function "true"')
+      expect(() => createPipe(null, [ 'input' ], '{output}')).to.throw('Unsupported pipe function "null"')
+      expect(() => createPipe(1, [ 'input' ], '{output}')).to.throw('Unsupported pipe function "1"')
+      expect(() => createPipe({}, [ 'input' ], '{output}')).to.throw('Unsupported pipe function')
+      expect(() => createPipe([], [ 'input' ], '{output}')).to.throw('Unsupported pipe function')
     })
   })
 
@@ -101,7 +89,7 @@ describe('Test pipe builder', () => {
         errorHandlerFunc: function (error) {
           expect(error).to.equal(container.MyError)
           done()
-        }
+        },
       }
 
       expect(pipe).to.be.a('function')
@@ -122,39 +110,17 @@ describe('Test pipe builder', () => {
     })
 
     it('should throw if the format of the error pipe is unsupported', () => {
-      expect(() => createErrorPipe('', ['input'])).to.throw(
-        'Error handler must be a string or function'
-      )
-      expect(() => createErrorPipe(true, ['input'])).to.throw(
-        'Error handler must be a string or function'
-      )
-      expect(() => createErrorPipe(null, ['input'])).to.throw(
-        'Error handler must be a string or function'
-      )
-      expect(() => createErrorPipe(1, ['input'])).to.throw(
-        'Error handler must be a string or function'
-      )
-      expect(() => createErrorPipe({}, ['input'])).to.throw(
-        'Error handler must be a string or function'
-      )
-      expect(() => createErrorPipe([], ['input'])).to.throw(
-        'Error handler must be a string or function'
-      )
-      expect(() => createErrorPipe('error', ['next'])).to.throw(
-        '"next" could not be used in error pipe.'
-      )
-      expect(() => createErrorPipe('error', ['input', 'next'])).to.throw(
-        '"next" could not be used in error pipe.'
-      )
-      expect(() => createErrorPipe('error', 'next')).to.throw(
-        '"next" could not be used in error pipe.'
-      )
-      expect(() => createErrorPipe('error', '{next}')).to.throw(
-        '"next" could not be used in error pipe.'
-      )
-      expect(() => createErrorPipe('error', '{input, next}')).to.throw(
-        '"next" could not be used in error pipe.'
-      )
+      expect(() => createErrorPipe('', [ 'input' ])).to.throw('Error handler must be a string or function')
+      expect(() => createErrorPipe(true, [ 'input' ])).to.throw('Error handler must be a string or function')
+      expect(() => createErrorPipe(null, [ 'input' ])).to.throw('Error handler must be a string or function')
+      expect(() => createErrorPipe(1, [ 'input' ])).to.throw('Error handler must be a string or function')
+      expect(() => createErrorPipe({}, [ 'input' ])).to.throw('Error handler must be a string or function')
+      expect(() => createErrorPipe([], [ 'input' ])).to.throw('Error handler must be a string or function')
+      expect(() => createErrorPipe('error', [ 'next' ])).to.throw('"next" could not be used in error pipe.')
+      expect(() => createErrorPipe('error', [ 'input', 'next' ])).to.throw('"next" could not be used in error pipe.')
+      expect(() => createErrorPipe('error', 'next')).to.throw('"next" could not be used in error pipe.')
+      expect(() => createErrorPipe('error', '{next}')).to.throw('"next" could not be used in error pipe.')
+      expect(() => createErrorPipe('error', '{input, next}')).to.throw('"next" could not be used in error pipe.')
 
       const errorHandler = createErrorPipe('no such function')
       expect(() => {
@@ -166,11 +132,11 @@ describe('Test pipe builder', () => {
   describe('createPipesFromDefs(pipeline, definitions)', () => {
     it('should create pipes based on the definitions', () => {
       const defs = [
-        ['input', '{myKey}'],
-        [function () {}, '{input}', 'output'],
-        ['myFunc', 'input', ['output']],
-        ['error', 'myErrorHandlerFunc', 'error'],
-        ['end', '{output}']
+        [ 'input', '{myKey}' ],
+        [ function () {}, '{input}', 'output' ],
+        [ 'myFunc', 'input', [ 'output' ] ],
+        [ 'error', 'myErrorHandlerFunc', 'error' ],
+        [ 'end', '{output}' ],
       ]
 
       const pipeline = superpipe()('myPipelineName')

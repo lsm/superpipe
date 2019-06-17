@@ -1,14 +1,14 @@
 /* globals describe, it */
 import { expect } from 'chai'
-import Producer from '../../src/argument/Producer'
+import Producer from '../../src/parameter/Producer'
 
 describe('Producer', () => {
   const result = {
     myArg: 'myArg value',
-    mySecondArg: 'second arg value'
+    mySecondArg: 'second arg value',
   }
 
-  const arrayResult = ['myArg value', 'second arg value']
+  const arrayResult = [ 'myArg value', 'second arg value' ]
 
   describe('allow empty input/output', () => {
     it('should okay with no input and product empty object as output', () => {
@@ -29,17 +29,17 @@ describe('Producer', () => {
 
   describe('parse array argument', () => {
     it('should o variables from result and output an object', () => {
-      const producer = new Producer(['myArg'])
+      const producer = new Producer([ 'myArg' ])
       const output = producer.produce(arrayResult)
 
       expect(output).to.deep.equal({ myArg: 'myArg value' })
 
-      const producer2 = new Producer(['mySecondArg', 'myArg'])
+      const producer2 = new Producer([ 'mySecondArg', 'myArg' ])
       const output2 = producer2.produce(arrayResult)
 
       expect(output2).to.deep.equal({
         myArg: 'second arg value',
-        mySecondArg: 'myArg value'
+        mySecondArg: 'myArg value',
       })
     })
   })
@@ -60,18 +60,12 @@ describe('Producer', () => {
 
   describe('invalid inputs', () => {
     it('should throw when using object string in an array', () => {
-      expect(() => new Producer(['{myArg}'])).to.throw(
-        'Object string {myArg} is not allowed in array argument'
-      )
+      expect(() => new Producer([ '{myArg}' ])).to.throw('Object string {myArg} is not allowed in array argument')
     })
 
     it('should throw if the format of the argument is invalid', () => {
-      expect(() => new Producer(1)).to.throw(
-        'Pipe output argument must be string or array of strings'
-      )
-      expect(() => new Producer({})).to.throw(
-        'Pipe output argument must be string or array of strings'
-      )
+      expect(() => new Producer(1)).to.throw('Pipe output argument must be string or array of strings')
+      expect(() => new Producer({})).to.throw('Pipe output argument must be string or array of strings')
     })
   })
 })

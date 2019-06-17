@@ -5,15 +5,15 @@ import { describe, it } from 'mocha'
 describe('Executor', () => {
   const input = {
     arg1: 'a',
-    arg2: 1
+    arg2: 1,
   }
 
   const output = {
     key1: 'value of key1',
     key2: { subkey: 'value of subkey' },
-    key3: ['value in array'],
+    key3: [ 'value in array' ],
     key4: function () { return 'value of key4' },
-    key5: {}
+    key5: {},
   }
 
   const dependencies = {
@@ -21,7 +21,7 @@ describe('Executor', () => {
       function (arg2, arg1) {
         expect(arg1).to.equal(input.arg1)
         expect(arg2).to.equal(input.arg2)
-      }
+      },
   }
 
   const sp = superpipe(dependencies)
@@ -43,7 +43,7 @@ describe('Executor', () => {
 
       const func = pl
         .input('{arg1, arg2}')
-        .pipe('arrayInput', ['arg2', 'arg1'])
+        .pipe('arrayInput', [ 'arg2', 'arg1' ])
         .pipe(singleInput, 'arg2')
         .pipe(objectStringInput, '{arg1, arg2}')
         .end('arg2')
@@ -58,7 +58,7 @@ describe('Executor', () => {
       expect(pl.name).to.equal('test output')
 
       function outputArray () {
-        return [output.key2, output.key1, outputObject]
+        return [ output.key2, output.key1, outputObject ]
       }
 
       function outputSingle () {
@@ -69,12 +69,12 @@ describe('Executor', () => {
         return {
           renamedKey3: output.key3,
           renamedKey2: output.key2,
-          key4: output.key4
+          key4: output.key4,
         }
       }
 
       const func = pl
-        .pipe(outputArray, null, ['key2', 'key1', 'outputObject'])
+        .pipe(outputArray, null, [ 'key2', 'key1', 'outputObject' ])
         .pipe(outputSingle, null, 'key3')
         .pipe('outputObject', null, '{renamedKey2, renamedKey3}')
         .end('{key1, key2, key3, renamedKey3, renamedKey2, key4}')
@@ -102,7 +102,7 @@ describe('Executor', () => {
       const asyncFunc2 = function ({ arg2, next }) {
         setTimeout(function () {
           expect(arg2).to.equal(input.arg2)
-          next(null, [output.key2, output.key4, output.key5])
+          next(null, [ output.key2, output.key4, output.key5 ])
         }, 50)
       }
 
@@ -123,11 +123,11 @@ describe('Executor', () => {
 
       const func = sp('test async pipes')
         .input('{arg1, arg2}')
-        .pipe(asyncFunc1, ['arg1', 'next'], '{key1}')
-        .pipe(asyncFunc2, '{arg2, next}', ['key2', 'key4'])
+        .pipe(asyncFunc1, [ 'arg1', 'next' ], '{key1}')
+        .pipe(asyncFunc2, '{arg2, next}', [ 'key2', 'key4' ])
         .pipe(asyncFunc3, 'next', 'key3')
-        .pipe(verifyResult, ['key2', 'key1', 'key5', 'key3', 'key4'])
-        .end(['key2', 'key1', 'key5', 'key3', 'key4'])
+        .pipe(verifyResult, [ 'key2', 'key1', 'key5', 'key3', 'key4' ])
+        .end([ 'key2', 'key1', 'key5', 'key3', 'key4' ])
 
       const result = func(input)
       expect(typeof result).to.equal('object')
@@ -147,7 +147,7 @@ describe('Executor', () => {
   describe('Test optional pipe', () => {
     it('should ignore the optional pipe if it is not provided', (done) => {
       const func = sp('call optional pipe')
-        .input(['someFunc', 'arg2'])
+        .input([ 'someFunc', 'arg2' ])
         .pipe('someFunc?', 'arg2')
         .end()
 
@@ -173,13 +173,13 @@ describe('Executor', () => {
           error = new Error('error message')
           error.data = output.key5
           throw error
-        }, null, ['abc'])
+        }, null, [ 'abc' ])
         .error(function (err, abc) {
           expect(err).to.equal(error)
           expect(err.data).to.equal(output.key5)
           expect(abc).to.equal(undefined)
           done()
-        }, ['error', 'abc'])
+        }, [ 'error', 'abc' ])
         .end()
 
       func()
@@ -192,7 +192,7 @@ describe('Executor', () => {
         }, 50)
       }
       const func = sp('test async error')
-        .pipe(asyncErrorFunc, ['next'])
+        .pipe(asyncErrorFunc, [ 'next' ])
         .error(function (error) {
           expect(error).to.equal(output.key4)
           done()
@@ -216,7 +216,7 @@ describe('Executor', () => {
       }
 
       const func = sp('test error with result')
-        .pipe(asyncErrorFunc, ['next'], '{key1, key2}')
+        .pipe(asyncErrorFunc, [ 'next' ], '{key1, key2}')
         .error(errorHandler, '{error, key2, key1}')
         .end()
 

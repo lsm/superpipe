@@ -22,7 +22,7 @@ describe('Superpipe', function () {
         func (key) {
           expect(key).to.equal('value')
           done()
-        }
+        },
       }
       var sp = superpipe(functions)
       const pipeline = sp('key value pipeline')
@@ -35,14 +35,14 @@ describe('Superpipe', function () {
     it('should create pipeline function directly from definitions', () => {
       const sp = superpipe()
       const func = sp('from defs', [
-        ['pipe1', 'arg'],
-        ['end', 'arg']
+        [ 'pipe1', 'arg' ],
+        [ 'end', 'arg' ],
       ])
       expect(func).to.be.a('function')
 
       const pl = sp('from defs', [
-        ['pipe1', 'arg'],
-        ['pipe2', 'arg']
+        [ 'pipe1', 'arg' ],
+        [ 'pipe2', 'arg' ],
       ])
       expect(pl.pipe).to.be.a('function')
     })
@@ -55,15 +55,15 @@ describe('Superpipe', function () {
       expect(() => {
         sp('mypl')
           .pipe('abc')
-          .input(['arg'])
-      }).to.throw('Input must be called before any other pipes.')
+          .input([ 'arg' ])
+      }).to.throw('Input pipe must be the first pipe in the pipeline.')
 
       expect(() => {
         sp('mypl', [
-          ['someFunc', 'arg', 'result'],
-          ['input', '{arg}']
+          [ 'someFunc', 'arg', 'result' ],
+          [ 'input', '{arg}' ],
         ])
-      }).to.throw('Input must be called before any other pipes.')
+      }).to.throw('Input pipe must be the first pipe in the pipeline.')
     })
 
     it('should throw when adding new pipe after error pipe', () => {
@@ -75,8 +75,8 @@ describe('Superpipe', function () {
 
       expect(() => {
         sp('mypl', [
-          ['error', 'errorHandler', 'error input'],
-          ['someFunc', ['arg']]
+          [ 'error', 'errorHandler', 'error input' ],
+          [ 'someFunc', [ 'arg' ] ],
         ])
       }).to.throw('Adding new pipe after error pipe is not allowed.')
     })
@@ -90,8 +90,8 @@ describe('Superpipe', function () {
 
       expect(() => {
         sp('mypl', [
-          ['error', 'arg', 'result'],
-          ['error', '{arg}']
+          [ 'error', 'arg', 'result' ],
+          [ 'error', '{arg}' ],
         ])
       }).to.throw('Each pipeline could only have one error handler.')
     })
