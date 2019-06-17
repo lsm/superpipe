@@ -63,9 +63,9 @@ describe('Producer', () => {
       expect(() => new Producer([ '{myArg}' ])).to.throw('Object string {myArg} is not allowed in array argument')
     })
 
-    it('should throw if the format of the argument is invalid', () => {
-      expect(() => new Producer(1)).to.throw('Pipe output argument must be string or array of strings')
-      expect(() => new Producer({})).to.throw('Pipe output argument must be string or array of strings')
+    it('should throw if the format of the parameter is invalid', () => {
+      expect(() => new Producer(1)).to.throw('Pipe input/output parameter must be string or array of strings')
+      expect(() => new Producer({})).to.throw('Pipe input/output parameter must be string or array of strings')
     })
   })
 })

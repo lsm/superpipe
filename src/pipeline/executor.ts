@@ -75,7 +75,6 @@ function next (
     if (errorHandler) {
       container.error = error
       errorHandler(container, pipeline.functions)
-
     }
     // Throw the error if we don't have error handling function.
     throwNoErrorHandlerError(error, step - 1, pipeline)

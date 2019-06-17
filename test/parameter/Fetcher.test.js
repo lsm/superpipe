@@ -63,12 +63,12 @@ describe('Fetcher', () => {
       expect(() => new Fetcher([ '{myArg}' ])).to.throw('Object string {myArg} is not allowed in array argument')
     })
 
-    it('should throw if the format of the argument is invalid', () => {
-      expect(() => new Fetcher(1)).to.throw('Pipe input argument must be non-empty string or array of non-empty strings')
-      expect(() => new Fetcher({})).to.throw('Pipe input argument must be non-empty string or array of non-empty strings')
-      expect(() => new Fetcher('')).to.throw('Pipe input argument must be non-empty string or array of non-empty strings')
-      expect(() => new Fetcher([])).to.throw('Pipe input argument must be non-empty string or array of non-empty strings')
-      expect(() => new Fetcher([ '' ])).to.throw('Pipe input argument must be non-empty string or array of non-empty strings')
+    it('should throw if the format of the parameter is invalid', () => {
+      expect(() => new Fetcher(1)).to.throw('Pipe input parameter must be non-empty string or array of non-empty strings')
+      expect(() => new Fetcher({})).to.throw('Pipe input parameter must be non-empty string or array of non-empty strings')
+      expect(() => new Fetcher('')).to.throw('Pipe input parameter must be non-empty string or array of non-empty strings')
+      expect(() => new Fetcher([])).to.throw('Pipe input parameter must be non-empty string or array of non-empty strings')
+      expect(() => new Fetcher([ '' ])).to.throw('Pipe input parameter must be non-empty string or array of non-empty strings')
     })
   })
 })
