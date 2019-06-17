@@ -57,20 +57,20 @@ describe('Executor', () => {
 
       expect(pl.name).to.equal('test output')
 
-      function outputArray () {
-        return [ output.key2, output.key1, outputObject ]
-      }
-
-      function outputSingle () {
-        return output.key3
-      }
-
       function outputObject () {
         return {
           renamedKey3: output.key3,
           renamedKey2: output.key2,
           key4: output.key4,
         }
+      }
+
+      function outputArray () {
+        return [ output.key2, output.key1, outputObject ]
+      }
+
+      function outputSingle () {
+        return output.key3
       }
 
       const func = pl

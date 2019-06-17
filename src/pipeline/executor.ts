@@ -75,9 +75,10 @@ function next (
     if (errorHandler) {
       container.error = error
       errorHandler(container, pipeline.functions)
+    } else {
+      // Throw the error if we don't have error handling function.
+      throwNoErrorHandlerError(error, step - 1, pipeline)
     }
-    // Throw the error if we don't have error handling function.
-    throwNoErrorHandlerError(error, step - 1, pipeline)
   } else if (pipes.length > state.step) {
     // When we have more pipe, get current one and increase the step by 1.
     const pipe = pipes[state.step++]

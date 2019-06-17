@@ -62,12 +62,12 @@ describe('Test pipe builder', () => {
     })
 
     it('should throw if the format of the pipe is unsupported', () => {
-      expect(() => createPipe('', [ 'input' ], '{output}')).to.throw('Unsupported pipe function ""')
-      expect(() => createPipe(true, [ 'input' ], '{output}')).to.throw('Unsupported pipe function "true"')
-      expect(() => createPipe(null, [ 'input' ], '{output}')).to.throw('Unsupported pipe function "null"')
-      expect(() => createPipe(1, [ 'input' ], '{output}')).to.throw('Unsupported pipe function "1"')
-      expect(() => createPipe({}, [ 'input' ], '{output}')).to.throw('Unsupported pipe function')
-      expect(() => createPipe([], [ 'input' ], '{output}')).to.throw('Unsupported pipe function')
+      expect(() => createPipe('', [ 'input' ], '{output}')).to.throw('Unsupported pipe function type "string"')
+      expect(() => createPipe(true, [ 'input' ], '{output}')).to.throw('Unsupported pipe function type "boolean"')
+      expect(() => createPipe(null, [ 'input' ], '{output}')).to.throw('Unsupported pipe function type "object"')
+      expect(() => createPipe(1, [ 'input' ], '{output}')).to.throw('Unsupported pipe function type "number"')
+      expect(() => createPipe({}, [ 'input' ], '{output}')).to.throw('Unsupported pipe function type "object"')
+      expect(() => createPipe([], [ 'input' ], '{output}')).to.throw('Unsupported pipe function type "object"')
     })
   })
 
@@ -75,7 +75,6 @@ describe('Test pipe builder', () => {
     it('should create an input pipe', () => {
       const pipe = createInputPipe('{input}')
 
-      expect(pipe.isInputPipe).to.equal(true)
       expect(pipe.fetcher).to.be.equal(undefined)
       expect(pipe.producer).to.be.an.instanceof(Producer)
     })
@@ -129,26 +128,26 @@ describe('Test pipe builder', () => {
     })
   })
 
-  describe('createPipesFromDefs(pipeline, definitions)', () => {
-    it('should create pipes based on the definitions', () => {
-      const defs = [
-        [ 'input', '{myKey}' ],
-        [ function () {}, '{input}', 'output' ],
-        [ 'myFunc', 'input', [ 'output' ] ],
-        [ 'error', 'myErrorHandlerFunc', 'error' ],
-        [ 'end', '{output}' ],
-      ]
+  // describe('createPipesFromDefs(pipeline, definitions)', () => {
+  //   it('should create pipes based on the definitions', () => {
+  //     const defs = [
+  //       [ 'input', '{myKey}' ],
+  //       [ function () {}, '{input}', 'output' ],
+  //       [ 'myFunc', 'input', [ 'output' ] ],
+  //       [ 'error', 'myErrorHandlerFunc', 'error' ],
+  //       [ 'end', '{output}' ],
+  //     ]
 
-      const pipeline = superpipe()('myPipelineName')
-      const func = createPipesFromDefs(pipeline, defs)
-      const pipes = pipeline._pipes
+  //     const pipeline = superpipe()('myPipelineName')
+  //     const func = createPipesFromDefs(pipeline, defs)
+  //     const pipes = pipeline._pipes
 
-      expect(func).to.be.a('function')
-      expect(pipes[0].isInputPipe).to.equal(true)
-      expect(pipes[1].fn).to.equal(defs[1][0])
-      expect(pipes[2].fnName).to.equal('myFunc')
-      expect(pipeline.errorHandler).to.be.a('function')
-      expect(pipes[4]).to.equal(undefined)
-    })
-  })
+  //     expect(func).to.be.a('function')
+  //     expect(pipes[0].isInputPipe).to.equal(true)
+  //     expect(pipes[1].fn).to.equal(defs[1][0])
+  //     expect(pipes[2].fnName).to.equal('myFunc')
+  //     expect(pipeline.errorHandler).to.be.a('function')
+  //     expect(pipes[4]).to.equal(undefined)
+  //   })
+  // })
 })
