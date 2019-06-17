@@ -13,7 +13,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "mocha --recursive --require ./test/babel-register",
+    "test": "cross-env NODE_ENV=development mocha --recursive --require source-map-support --require ./test/babel-register test/superpipe.test.js",
     "watch": "nodemon -w ./src -w ./test -x 'npm run coverage'",
     "coverage": "nyc npm test",
     "report-coverage": "nyc report --reporter=text-lcov | coveralls",
