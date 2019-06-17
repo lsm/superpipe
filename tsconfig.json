@@ -7,6 +7,7 @@
     "listFiles": false,
     "module": "commonjs",
     "moduleResolution": "node",
+    "esModuleInterop": true,
     "noEmit": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -16,7 +17,7 @@
     "sourceMap": true,
     "strict": true,
     "outDir": "lib",
-    "target": "es5"
+    "target": "esnext"
   },
   "include": [
     "src/**/*" 
