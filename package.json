@@ -17,11 +17,12 @@
     "watch": "nodemon -w ./src -w ./test -x 'npm run coverage'",
     "coverage": "nyc npm test",
     "report-coverage": "nyc report --reporter=text-lcov | coveralls",
-    "build:es": "cross-env BABEL_ENV=es babel src --out-dir es",
-    "build:cjs": "cross-env BABEL_ENV=commonjs babel src --out-dir lib",
-    "build:umd": "cross-env BABEL_ENV=rollup NODE_ENV=development rollup -c -o dist/alfa.js",
-    "build:umd:min": "cross-env BABEL_ENV=rollup NODE_ENV=production rollup -c -o dist/alfa.min.js",
-    "build": "npm run build:es && npm run build:cjs && npm run build:umd && npm run build:umd:min"
+    "build:es": "cross-env NODE_ENV=production tsc -d --noEmit false --module es6 --outDir ./es",
+    "build:cjs": "cross-env NODE_ENV=production babel -x '.ts' -d ./lib src",
+    "build:umd": "cross-env NODE_ENV=development rollup -c -o dist/superpipe.js",
+    "build:umd:min": "cross-env NODE_ENV=production rollup -c -o dist/superpipe.min.js",
+    "build:types": "tsc -d --emitDeclarationOnly --noEmit false --outDir ./lib",
+    "build": "npm run build:es && npm run build:cjs && npm run build:types && npm run build:umd && npm run build:umd:min"
   },
   "nyc": {
     "reporter": [
@@ -33,7 +34,6 @@
   "devDependencies": {
     "@babel/cli": "7.4.4",
     "@babel/core": "7.4.5",
-    "@babel/node": "^7.4.5",
     "@babel/plugin-proposal-class-properties": "7.4.4",
     "@babel/plugin-proposal-object-rest-spread": "7.4.4",
     "@babel/preset-env": "7.4.5",
