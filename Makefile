@@ -8,6 +8,9 @@ build:
 build-watch:
 	npm run build-watch
 
+clean-build:
+	rm -rf ./es ./lib ./dist
+
 unit:
 	npm test
 

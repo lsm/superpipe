@@ -13,9 +13,9 @@
     "README.md"
   ],
   "scripts": {
-    "test": "cross-env NODE_ENV=development mocha --recursive --require source-map-support --require ./test/babel-register",
+    "test": "cross-env NODE_ENV=development mocha --recursive --require source-map-support --require ./babel-register",
     "watch": "nodemon -w ./src -w ./test -x 'npm run test'",
-    "coverage": "nyc npm test",
+    "coverage": "cross-env NODE_ENV=test nyc mocha --recursive",
     "report-coverage": "nyc report --reporter=text-lcov | coveralls",
     "build:es": "cross-env NODE_ENV=production tsc -d --noEmit false --module es6 --outDir ./es",
     "build:cjs": "cross-env NODE_ENV=production babel -x '.ts' -d ./lib src",
@@ -25,11 +25,22 @@
     "build": "npm run build:es && npm run build:cjs && npm run build:types && npm run build:umd && npm run build:umd:min"
   },
   "nyc": {
+    "require": [
+      "./babel-register"
+    ],
+    "include": [
+      "src/**/*.ts"
+    ],
+    "extension": [
+      ".ts"
+    ],
     "reporter": [
       "lcov",
       "html",
       "text"
-    ]
+    ],
+    "sourceMap": false,
+    "instrument": false
   },
   "devDependencies": {
     "@babel/cli": "7.4.4",
@@ -42,6 +53,7 @@
     "@typescript-eslint/eslint-plugin": "1.10.2",
     "@typescript-eslint/parser": "1.10.2",
     "babel-eslint": "10.0.1",
+    "babel-plugin-istanbul": "^5.1.4",
     "chai": "4.2.0",
     "coveralls": "3.0.4",
     "cross-env": "5.2.0",

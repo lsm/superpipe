@@ -128,26 +128,26 @@ describe('Test pipe builder', () => {
     })
   })
 
-  // describe('createPipesFromDefs(pipeline, definitions)', () => {
-  //   it('should create pipes based on the definitions', () => {
-  //     const defs = [
-  //       [ 'input', '{myKey}' ],
-  //       [ function () {}, '{input}', 'output' ],
-  //       [ 'myFunc', 'input', [ 'output' ] ],
-  //       [ 'error', 'myErrorHandlerFunc', 'error' ],
-  //       [ 'end', '{output}' ],
-  //     ]
+  describe('createPipesFromDefs(pipeline, definitions)', () => {
+    it('should create pipes based on the definitions', () => {
+      const defs = [
+        [ 'input', '{myKey}' ],
+        [ function () {}, '{input}', 'output' ],
+        [ 'myFunc', 'input', [ 'output' ] ],
+        [ 'error', 'myErrorHandlerFunc', 'error' ],
+        // [ 'end', '{output}' ],
+      ]
 
-  //     const pipeline = superpipe()('myPipelineName')
-  //     const func = createPipesFromDefs(pipeline, defs)
-  //     const pipes = pipeline._pipes
+      const sp = superpipe()
+      const pipeline = sp('myPipelineName', defs)
+      const func = pipeline.end('{output}')
+      const pipes = pipeline.pipes
 
-  //     expect(func).to.be.a('function')
-  //     expect(pipes[0].isInputPipe).to.equal(true)
-  //     expect(pipes[1].fn).to.equal(defs[1][0])
-  //     expect(pipes[2].fnName).to.equal('myFunc')
-  //     expect(pipeline.errorHandler).to.be.a('function')
-  //     expect(pipes[4]).to.equal(undefined)
-  //   })
-  // })
+      expect(func).to.be.a('function')
+      expect(pipes[0].fn).to.equal(defs[1][0])
+      expect(pipes[1].fnName).to.equal('myFunc')
+      expect(pipeline.errorHandler).to.be.a('function')
+      expect(pipes[3]).to.equal(undefined)
+    })
+  })
 })
