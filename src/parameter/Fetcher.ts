@@ -29,7 +29,7 @@ export default class Fetcher {
       parameter = [ parameter ]
     }
 
-    if (!this._fetch) {
+    if (this._fetch === this.fetchNothing) {
       if (isValidArrayParameters(parameter)) {
         this.keys = parameter
         this._fetch = this.fetchAsArray
