@@ -9,7 +9,6 @@ interface PipeState {
   step: 0;
   container: ResultContainer;
   nextCalled: {[key: string]: boolean};
-  previousPipe?: Pipe;
 }
 
 function executePipe (
@@ -27,7 +26,7 @@ function executePipe (
   if (fnType === 'function') {
     try {
       const result = fn.apply(0, inputArgs)
-      if (!pipe.fetcher.hasNext) {
+      if (pipe.fetcher.hasNext === false) {
         // Run next pipe automatically when next is not required by the input.
         next(state, pipeline, null, result)
       }
@@ -36,11 +35,9 @@ function executePipe (
     }
   } else if (pipe.optional && fnType === 'undefined') {
     // Optional pipe, skip the execution.
-    state.previousPipe = undefined
     next(state, pipeline)
   } else {
-  // Throw an exception when the function is not something
-  // we understand.
+  // Throw an exception when the function is not something we can understand.
     throw new Error(`Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName
     }] : Dependency "${fnName}" is not a function or boolean.`)
   }
@@ -64,11 +61,11 @@ function next (
 
   state.nextCalled[state.step] = true
   const { pipes, errorHandler } = pipeline
-  const { step, container, previousPipe } = state
+  const { step, container } = state
 
-  if (previousPipe && value != null) {
-    // Merge the output with container.
-    Object.assign(container, previousPipe.producer.produce(value))
+  if (value != null) {
+    // Merge the output of previous pipe with container.
+    Object.assign(container, pipes[step - 1].producer.produce(value))
   }
 
   if (error) {
@@ -80,16 +77,8 @@ function next (
       throwNoErrorHandlerError(error, step - 1, pipeline)
     }
   } else if (pipes.length > state.step) {
-    // When we have more pipe, get current one and increase the step by 1.
-    const pipe = pipes[state.step++]
-
-    /**
-     * Keep a reference to the previous pipe.
-     */
-    state.previousPipe = pipe
-
-    // Execute the pipe.
-    executePipe(pipe, state, pipeline, next)
+    // When we have more pipe, execute current one and increase the step by 1.
+    executePipe(pipes[state.step++], state, pipeline, next)
   }
 }
 
@@ -103,7 +92,7 @@ export function runPipeline (
     nextCalled: {},
     // Internale container for keeping pipeline runtime dependencies.
     container: {
-      next: function (error: Error, value: PipeResult): void {
+      next: function (error?: Error, value?: PipeResult): void {
         next(state, pipeline, error, value)
       },
     },
