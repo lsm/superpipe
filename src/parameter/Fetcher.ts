@@ -13,7 +13,7 @@ export default class Fetcher {
 
   private _fetch: Function = this.fetchNothing
 
-  hasNext: boolean
+  hasNext: boolean = false
 
   constructor (parameter: PipeParameter, flag?: string) {
     if (typeof parameter === 'string') {
