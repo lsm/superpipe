@@ -2,15 +2,15 @@
 #
 # Check https://circleci.com/docs/2.0/language-javascript/ for more details
 #
-
+---
 workflows:
   version: 2
   multi-test:
     jobs:
-      - browser
       - node-v6
       - node-v8
       - node-v10
+      - node-v12
 
 version: 2
 jobs:
@@ -25,7 +25,7 @@ jobs:
       # Download and cache dependencies
       - restore_cache:
           keys:
-          - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
+            - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
       - run: npm install
       - save_cache:
           paths:
@@ -45,10 +45,14 @@ jobs:
     <<: *node-base
     docker:
       - image: circleci/node:10
+  node-v12:
+    <<: *node-base
+    docker:
+      - image: circleci/node:12
 
   browser:
     docker:
-      - image: circleci/node:8
+      - image: circleci/node:10
     working_directory: ~/repo
     steps:
       - run: node --version
@@ -57,7 +61,7 @@ jobs:
       # Download and cache dependencies
       - restore_cache:
           keys:
-          - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
+            - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
       - run: npm install
       - save_cache:
           paths:

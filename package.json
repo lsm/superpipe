@@ -5,64 +5,73 @@
   "main": "lib/index.js",
   "module": "es/index.js",
   "files": [
-    "es",
-    "lib",
-    "src",
+    "es/**/*",
+    "lib/**/*",
     "dist",
     "LICENSE",
     "CHANGELOG.md",
     "README.md"
   ],
   "scripts": {
-    "test": "mocha --require babel-core/register",
-    "watch": "nodemon -w ./src -w ./test -x 'npm run coverage'",
-    "browser": "TEST_ENV=browser karma start karma.conf.js",
-    "local-browser": "karma start karma.conf.js",
-    "coverage": "nyc npm test",
+    "test": "cross-env NODE_ENV=development mocha --recursive --require source-map-support --require ./babel-register",
+    "watch": "nodemon -w ./src -w ./test -x 'npm run test'",
+    "coverage": "cross-env NODE_ENV=test nyc mocha --recursive",
     "report-coverage": "nyc report --reporter=text-lcov | coveralls",
-    "build:es": "cross-env BABEL_ENV=es babel src --out-dir es",
-    "build:cjs": "cross-env BABEL_ENV=commonjs babel src --out-dir lib",
-    "build:umd": "cross-env BABEL_ENV=rollup NODE_ENV=development rollup -c -o dist/alfa.js",
-    "build:umd:min": "cross-env BABEL_ENV=rollup NODE_ENV=production rollup -c -o dist/alfa.min.js",
-    "build": "npm run build:es && npm run build:cjs && npm run build:umd && npm run build:umd:min"
+    "build:es": "cross-env NODE_ENV=production tsc -d --noEmit false --module es6 --outDir ./es",
+    "build:cjs": "cross-env NODE_ENV=production babel -x '.ts' -d ./lib src",
+    "build:umd": "cross-env NODE_ENV=development rollup -c -o dist/superpipe.js",
+    "build:umd:min": "cross-env NODE_ENV=production rollup -c -o dist/superpipe.min.js",
+    "build:types": "tsc -d --emitDeclarationOnly --noEmit false --outDir ./lib",
+    "build": "npm run build:es && npm run build:cjs && npm run build:types && npm run build:umd && npm run build:umd:min"
   },
   "nyc": {
+    "require": [
+      "./babel-register"
+    ],
+    "include": [
+      "src/**/*.ts"
+    ],
+    "extension": [
+      ".ts"
+    ],
     "reporter": [
       "lcov",
       "html",
       "text"
-    ]
+    ],
+    "sourceMap": false,
+    "instrument": false
   },
   "devDependencies": {
-    "ajv": "6.5.2",
-    "assume": "2.1.0",
-    "babel-cli": "6.26.0",
-    "babel-loader": "7.1.5",
-    "babel-preset-env": "1.7.0",
-    "chai": "4.1.2",
-    "coveralls": "3.0.2",
+    "@babel/cli": "7.4.4",
+    "@babel/core": "7.4.5",
+    "@babel/plugin-proposal-class-properties": "7.4.4",
+    "@babel/plugin-proposal-object-rest-spread": "7.4.4",
+    "@babel/preset-env": "7.4.5",
+    "@babel/preset-typescript": "7.3.3",
+    "@babel/register": "7.4.4",
+    "@typescript-eslint/eslint-plugin": "1.10.2",
+    "@typescript-eslint/parser": "1.10.2",
+    "babel-eslint": "10.0.1",
+    "babel-plugin-istanbul": "^5.1.4",
+    "chai": "4.2.0",
+    "coveralls": "3.0.4",
     "cross-env": "5.2.0",
-    "eslint": "5.3.0",
-    "eslint-config-airbnb-base": "13.1.0",
-    "eslint-plugin-import": "2.14.0",
-    "karma": "3.0.0",
-    "karma-chrome-launcher": "2.2.0",
-    "karma-mocha": "1.3.0",
-    "karma-sauce-launcher": "git+https://github.com/lsm/karma-sauce-launcher.git#1.2.1",
-    "karma-webpack": "3.0.0",
-    "mocha": "5.2.0",
+    "eslint": "5.16.0",
+    "eslint-plugin-babel": "5.3.0",
+    "eslint-plugin-import": "2.17.3",
+    "eslint_d": "7.3.0",
+    "mocha": "6.1.4",
     "mocha-lcov-reporter": "1.3.0",
-    "nodemon": "1.18.3",
-    "nyc": "12.0.2",
-    "prettier": "1.14.2",
-    "rollup": "0.64.1",
-    "rollup-plugin-babel": "3.0.7",
-    "rollup-plugin-commonjs": "9.1.5",
-    "rollup-plugin-node-resolve": "3.3.0",
-    "rollup-plugin-replace": "2.0.0",
-    "rollup-plugin-uglify": "4.0.0",
-    "sauce-connect-launcher": "1.2.4",
-    "webpack": "4.16.5"
+    "nodemon": "1.19.1",
+    "nyc": "14.1.1",
+    "rollup": "1.15.6",
+    "rollup-plugin-babel": "4.3.2",
+    "rollup-plugin-commonjs": "10.0.0",
+    "rollup-plugin-node-resolve": "5.0.3",
+    "rollup-plugin-replace": "2.2.0",
+    "rollup-plugin-uglify": "6.0.2",
+    "typescript": "3.5.2"
   },
   "repository": {
     "type": "git",
@@ -84,5 +93,16 @@
     "node": ">= 0.10.0"
   },
   "author": "lsm <marc@liu.pm> (https://github.com/lsm)",
-  "license": "MIT"
+  "license": "MIT",
+  "browserslist": {
+    "development": [
+      "last 1 chrome versions",
+      "last 1 firefox versions",
+      "last 1 safari version"
+    ],
+    "production": [
+      "> 0.25%",
+      "not dead"
+    ]
+  }
 }
