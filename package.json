@@ -34,7 +34,7 @@
     ]
   },
   "devDependencies": {
-    "ajv": "6.5.2",
+    "ajv": "6.12.3",
     "assume": "2.1.0",
     "babel-cli": "6.26.0",
     "babel-loader": "7.1.5",
