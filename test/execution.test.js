@@ -108,18 +108,14 @@ describe('Execution', function() {
           nextCalled = false
         })
         .pipe(
-          function(set, next) {
+          function(next) {
             expect(nextCalled).to.equal(false)
-            set('abc', 123)
-            setTimeout(() => {
-              set('xyz', 456)
-            }, 20)
             setTimeout(() => {
               nextCalled = true
-              next()
+              next(null, { abc: 123, xyz: 456 })
             }, 40)
           },
-          ['set', 'next'],
+          'next',
           ['abc', 'xyz']
         )
         .pipe(
@@ -135,26 +131,20 @@ describe('Execution', function() {
       pl()
     })
 
-    it('should trigger next only when all outputs haven been fulfilled', function(done) {
-      let setCalled = false
-      let pl = sp('set is in control')
+    it('should pass output via next with array value', function(done) {
+      let pl = sp('next with array value')
         .pipe(
-          function(set) {
-            set('abc', 123)
+          function(next) {
             setTimeout(function() {
-              setCalled = true
-              set('abc', 789) // Repeat calls to set for the same key should override the old value.
-              set('xyz', 456)
+              next(null, [123, 456])
             }, 50)
-            return true
           },
-          'set',
+          'next',
           ['abc', 'xyz']
         )
         .pipe(
           function(abc, xyz) {
-            expect(setCalled).to.equal(true)
-            expect(abc).to.equal(789)
+            expect(abc).to.equal(123)
             expect(xyz).to.equal(456)
             done()
           },
@@ -164,30 +154,115 @@ describe('Execution', function() {
       pl()
     })
 
-    it('should go next when all outputs has been fulfilled even the value is undefined', function(done) {
-      let setCalled = false
-      let pl = sp('set is in control')
+    it('should pass single output via next', function(done) {
+      let pl = sp('next with single value')
         .pipe(
-          function(set) {
-            set('abc', 123)
+          function(next) {
             setTimeout(function() {
-              setCalled = true
-              set('xyz', undefined)
+              next(null, 'single value')
             }, 50)
-            return true
           },
-          'set',
+          'next',
+          'result'
+        )
+        .pipe(
+          function(result) {
+            expect(result).to.equal('single value')
+            done()
+          },
+          'result'
+        )
+        .end()
+      pl()
+    })
+
+    it('should not map primitive value when multiple outputs declared', function(done) {
+      let pl = sp('primitive with multiple outputs')
+        .pipe(
+          function(next) {
+            // Return a number (not array, not object) with multiple outputs
+            next(null, 42)
+          },
+          'next',
           ['abc', 'xyz']
         )
         .pipe(
           function(abc, xyz) {
-            expect(setCalled).to.equal(true)
-            expect(abc).to.equal(123)
+            // Neither should be set since value is primitive
+            expect(abc).to.equal(undefined)
             expect(xyz).to.equal(undefined)
             done()
           },
           ['abc', 'xyz']
         )
+        .end()
+      pl()
+    })
+
+    it('should handle null value with no output defined', function(done) {
+      let pl = sp('null value no output')
+        .pipe(
+          function(next) {
+            // Return null - tests isPlainObject with null
+            next(null, null)
+          },
+          'next'
+        )
+        .pipe(done)
+        .end()
+      pl()
+    })
+
+    it('should not merge array when no output defined', function(done) {
+      let pl = sp('array with no output')
+        .pipe(
+          function(next) {
+            // Return an array with no output defined - should not merge
+            next(null, [1, 2, 3])
+          },
+          'next'
+        )
+        .pipe(done)
+        .end()
+      pl()
+    })
+
+    it('should not merge string when no output defined', function(done) {
+      let pl = sp('string with no output')
+        .pipe(
+          function(next) {
+            // Return a string with no output defined - should not merge
+            next(null, 'test string')
+          },
+          'next'
+        )
+        .pipe(done)
+        .end()
+      pl()
+    })
+
+    it('should not merge number when no output defined', function(done) {
+      let verifyResult = false
+      let pl = sp('number with no output')
+        .pipe(
+          function(next) {
+            // Return a number - primitive, not object, not array
+            next(null, 12345)
+          },
+          'next'
+        )
+        .pipe(
+          function(result) {
+            // The number should NOT be merged into store (result is undefined)
+            expect(result).to.equal(undefined)
+            verifyResult = true
+          },
+          'result'
+        )
+        .pipe(function() {
+          expect(verifyResult).to.equal(true)
+          done()
+        })
         .end()
       pl()
     })

@@ -1,5 +1,4 @@
 import { FN_INPUT } from './pipe'
-import { isPlainObject } from './set'
 
 export function executePipe(args, store, pipeState) {
   const { fn, fnName } = pipeState
@@ -24,15 +23,10 @@ export function executePipe(args, store, pipeState) {
 
   pipeState.fnReturned = true
 
-  // Call set if a plain object was returned
-  if (isPlainObject(pipeState.result)) {
-    pipeState.set(pipeState.result)
-  }
-
   // Check if we need to run next automatically when:
   // autoNext is true, no error and result is not false.
   if (pipeState.autoNext && !pipeState.error && pipeState.result !== false) {
-    store.next()
+    store.next(null, pipeState.result)
   }
 }
 
@@ -45,18 +39,15 @@ function getInputArgs(store, pipeState, args) {
   return pipeState.input.map(key => {
     if (key === 'next') {
       let called = false
-      return function next(err, key, value) {
+      return function next(err, value) {
         if (called) {
           throw new Error(
             '"next" should not be called more than once in a pipe.'
           )
         }
         called = true
-        return store.next(err, key, value)
+        return store.next(err, value)
       }
-    } else if (key === 'set') {
-      // Set function is local to a praticular execution state.
-      return pipeState.set
     }
 
     return getProp(key, store, deps)

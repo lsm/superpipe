@@ -130,58 +130,41 @@ describe('Pipeline', function() {
       }).to.throw('Each pipeline could only have one error handler.')
     })
 
-    it('should trigger error when calling set with key "error"', function() {
-      let pl = sp('call set with error')
+    it('should handle error using function as error handler', function(done) {
+      let pl = sp('error handler as function')
         .pipe(
-          function(set, arg1) {
-            set('arg2', arg1)
-            set('error', 'error from set')
+          function(next) {
+            next('error occurred')
           },
-          ['set', 'arg1'],
-          'arg2'
+          'next'
         )
-        .pipe(() => {
-          throw new Error('This pipeline should not be called')
-        })
-        .error(
-          function(arg2, arg1, error) {
-            expect(arg2).to.equal(arg1)
-            expect(error).to.equal('error from set')
-          },
-          ['arg2', 'arg1', 'error']
-        )
+        .error(function(error) {
+          expect(error).to.equal('error occurred')
+          done()
+        }, 'error')
         .end()
       pl()
     })
 
-    it('should only trigger error handler once when calling set with key "error"', function() {
-      let count = 0
-      let pl = sp('call set with error')
+    it('should ignore next calls from error handler after error is handled', function(done) {
+      let errorHandlerCalled = false
+      let pl = sp('ignore next from error handler')
         .pipe(
-          function(set, arg1, next) {
-            set('arg2', arg1)
-            set('error', 'error from set1')
-            set('error', 'error from set2')
-            set('error', 'error from set3')
-            next()
+          function(next) {
+            next('first error')
           },
-          ['set', 'arg1', 'next'],
-          'arg2'
+          'next'
         )
-        .pipe(() => {
-          throw new Error('This pipeline should not be called')
+        .pipe(function() {
+          throw new Error('This pipe should not be called')
         })
-        .error(
-          function(arg2, arg1, error) {
-            count++
-            if (count > 1) {
-              throw new Error('Error handler called more than once.')
-            }
-            expect(arg2).to.equal(arg1)
-            expect(error).to.equal('error from set1')
-          },
-          ['arg2', 'arg1', 'error']
-        )
+        .error(function(error, next) {
+          expect(error).to.equal('first error')
+          errorHandlerCalled = true
+          // Call next from error handler - should be ignored since error was already handled
+          next()
+          done()
+        }, ['error', 'next'])
         .end()
       pl()
     })

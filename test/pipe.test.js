@@ -157,9 +157,6 @@ describe('Pipe', function() {
       },
       func2: function(arg2) {
         expect(arg2).to.equal('arg2 value')
-      },
-      func3: function(set) {
-        set('arg2', 'arg2 value')
       }
     })
 
@@ -168,21 +165,6 @@ describe('Pipe', function() {
         .pipe(
           'func1',
           'arg1',
-          'arg2:mappedArgName'
-        )
-        .pipe(
-          'func2',
-          'mappedArgName'
-        )
-        .end()
-      pl()
-    })
-
-    it('should map the setted output to new name', function() {
-      let pl = sp('set map output')
-        .pipe(
-          'func3',
-          'set',
           'arg2:mappedArgName'
         )
         .pipe(

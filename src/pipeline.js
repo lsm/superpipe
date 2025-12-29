@@ -1,5 +1,4 @@
 import { executePipe } from './execution'
-import { setWithPipeState } from './set'
 import { FN_ERROR, FN_INPUT, createPipe } from './pipe'
 
 export function createAPI(name, defs, deps) {
@@ -90,29 +89,26 @@ function createStore(args, pipeline) {
      * The function which helps executing functions in the pipeline one by one.
      * Save next to the store so pipes could retrieve it as input.
      *
-     * @param  {Object|null}    err   Error object if any.
-     * @param  {String|Object}  key   Key of value to store or object of
-     *                                key/value maps.
-     * @param  {Any}            value Value to store.
+     * @param  {Object|null}    err     Error object if any.
+     * @param  {Any}            value   Return value from previous pipe.
      */
-    next(err, key, value) {
+    next(err, value) {
       if (previousPipeState && previousPipeState.error) {
-        // Any subsiquential calls to next should be ignored if error handler is
+        // Any subsequent calls to next should be ignored if error handler is
         // triggered.
         return
       }
 
-      // We have the `key` which means the previous pipe produced
-      // some output by calling `next`.  We need to set this output to the store
-      // before executing the next pipe.
-      if (key) {
-        previousPipeState.set(key, value)
+      // Map the value to the store based on output configuration.
+      if (previousPipeState && value != null) {
+        setValueToStore(store, previousPipeState, value)
       }
 
-      // Save error to the store or get one from it.  This will make sure
+      // Save error to the store or get one from it. This will make sure
       // error will be handled properly no matter how it was set.
       if (err) {
         store.error = err
+        previousPipeState.error = err
       } else {
         err = store.error
       }
@@ -136,7 +132,7 @@ function createStore(args, pipeline) {
          * Keep a reference to pipeState for better error handling.
          * @type {Object}
          */
-        previousPipeState = createPipeState(err, pipeline, pipe, store)
+        previousPipeState = createPipeState(err, pipeline, pipe)
 
         // Execute the pipe.
         executePipe(args, store, previousPipeState)
@@ -148,16 +144,63 @@ function createStore(args, pipeline) {
 }
 
 /**
+ * Map the return value from a pipe to the store based on output configuration.
+ *
+ * @param {Object} store      The store object.
+ * @param {Object} pipeState  The pipe state object.
+ * @param {Any}    value      The return value from the pipe.
+ */
+function setValueToStore(store, pipeState, value) {
+  const { output } = pipeState
+  const isArray = Array.isArray(value)
+  let isObject = false
+  if (!isArray) {
+    /* istanbul ignore next */
+    isObject = typeof value === 'object'
+  }
+
+  if (!output || output.length === 0) {
+    // No output defined, merge plain objects directly (not arrays or primitives)
+    if (isObject) {
+      Object.assign(store, value)
+    }
+    return
+  }
+
+  if (isArray) {
+    // Map array elements to output keys
+    output.forEach((key, idx) => {
+      store[getStoreKey(key)] = value[idx]
+    })
+  } else if (isObject) {
+    // Map object properties to output keys
+    output.forEach(key => {
+      const originalKey = key.includes(':') ? key.split(':')[0] : key
+      store[getStoreKey(key)] = value[originalKey]
+    })
+  } else if (output.length === 1) {
+    // Single output, single value
+    store[getStoreKey(output[0])] = value
+  }
+}
+
+function getStoreKey(key) {
+  if (key.includes(':')) {
+    return key.split(':')[1]
+  }
+  return key
+}
+
+/**
  * Create an object for holding execution state, result and other references
- * of current pipe which allows executing pipeline continously.
+ * of current pipe which allows executing pipeline continuously.
  *
  * @param  {Any} error        The error object.
- * @param  {String} name      Name of the pipeline.
+ * @param  {Object} pipeline  The pipeline object.
  * @param  {Object} pipe      Pipe definition object.
- * @param  {Object} store     The store object which holds all the execution data.
  * @return {Object}           The pipe execution state object.
  */
-function createPipeState(error, pipeline, pipe, store) {
+function createPipeState(error, pipeline, pipe) {
   const pipeState = {
     fn: pipe.fn,
     not: pipe.not,
@@ -167,19 +210,8 @@ function createPipeState(error, pipeline, pipe, store) {
     fnName: pipe.fnName,
     autoNext: true,
     optional: pipe.optional,
-    outputMap: pipe.outputMap,
-    set(key, value) {
-      setWithPipeState(store, pipeState, key, value)
-    },
     name: pipeline.name,
     error
-  }
-
-  if (pipe.output && pipe.output.length > 0) {
-    // Keep track of output fulfilment.
-    pipeState.fulfilled = []
-    // We will handle the auto next behaviour in setWithPipeState function.
-    pipeState.autoNext = pipeState.input.indexOf('set') === -1 ? true : 0
   }
 
   if (~pipe.input.indexOf('next')) {

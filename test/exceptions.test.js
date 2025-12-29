@@ -130,47 +130,6 @@ describe('Exceptions', function() {
         'Pipe requires non-empty string or array of non-empty strings as output.'
       )
     })
-
-    it('should throw if output key is not defined in the pipe', function() {
-      expect(function() {
-        sp('throw undefined key')
-          .pipe(
-            function() {
-              return { xyz: '123' }
-            },
-            null,
-            ['abc']
-          )
-          .end()()
-      }).to.throw('Dependency "xyz" is not defined in output.')
-
-      expect(function() {
-        sp('throw undefined key')
-          .pipe(
-            function(next) {
-              next(null, { xyz: '123' })
-            },
-            'next',
-            ['abc']
-          )
-          .end()()
-      }).to.throw('Dependency "xyz" is not defined in output.')
-
-      expect(function() {
-        sp('throw undefined key')
-          .pipe(
-            function(set) {
-              set({ abc: 'abc', xyz: '123' })
-            },
-            ['set'],
-            ['abc']
-          )
-          .pipe(function() {
-            throw new Error('This pipeline should not be called.')
-          })
-          .end()()
-      }).to.throw('Dependency "xyz" is not defined in output.')
-    })
   })
 
   describe('error', function() {
@@ -184,46 +143,6 @@ describe('Exceptions', function() {
       expect(function() {
         sp('throw wrong error handler type').error({})
       }).to.throw('Error handler must be a string or function')
-    })
-  })
-
-  describe('set', function() {
-    it('should throw if call set with unsupported key types', function() {
-      expect(function() {
-        sp('throw unsupported key')
-          .pipe(
-            function(set) {
-              set(true, 'value')
-            },
-            ['set'],
-            ['abc']
-          )
-          .end()()
-      }).to.throw('Unsupported output key type.')
-
-      expect(function() {
-        sp('throw unsupported key')
-          .pipe(
-            function(set) {
-              set(() => {}, 'value')
-            },
-            ['set'],
-            ['abc']
-          )
-          .end()()
-      }).to.throw('Unsupported output key type.')
-
-      expect(function() {
-        sp('throw unsupported key')
-          .pipe(
-            function(set) {
-              set(1, 'value')
-            },
-            ['set'],
-            ['abc']
-          )
-          .end()()
-      }).to.throw('Unsupported output key type.')
     })
   })
 
