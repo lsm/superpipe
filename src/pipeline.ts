@@ -153,7 +153,8 @@ function createStore(args: unknown[], pipeline: Pipeline): Store {
       if (err) {
         if (!pipeline.errorHandler) {
           // Throw the error if we don't have error handling function.
-          throwError(err, step, previousPipeState)
+          // previousPipeState is always defined here since errors are triggered by pipes
+          throwError(err, step, previousPipeState!)
         }
         pipe = pipeline.errorHandler
       } else {
@@ -227,11 +228,10 @@ function createPipeState(
 function throwError(
   error: unknown,
   step: number,
-  pipe?: PipeState
+  pipe: PipeState
 ): never {
   let ex: Error
-  const name = pipe?.name ?? 'unknown'
-  const fnName = pipe?.fnName
+  const { name, fnName } = pipe
   const pipeName = fnName || 'function'
 
   if ('string' === typeof error) {
