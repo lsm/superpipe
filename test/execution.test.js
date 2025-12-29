@@ -191,5 +191,26 @@ describe('Execution', function() {
         .end()
       pl()
     })
+
+    it('should allow set without defined output', function(done) {
+      let pl = sp('set without output')
+        .pipe(
+          function(set) {
+            // Set a value even though no output is defined for this pipe
+            set('dynamicValue', 42)
+          },
+          'set'
+          // No output defined
+        )
+        .pipe(
+          function(dynamicValue) {
+            expect(dynamicValue).to.equal(42)
+            done()
+          },
+          'dynamicValue'
+        )
+        .end()
+      pl()
+    })
   })
 })

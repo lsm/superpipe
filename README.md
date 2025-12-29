@@ -3,171 +3,250 @@
 [![CI status][ci-img]][ci-url]
 [![License MIT][license-img]][license-url]
 [![NPM version][npm-img]][npm-url]
-[![Dependencies][dep-image]][dep-url]
 [![Coverage Status][coverage-img]][coverage-url]
 [![Code Climate][climate-img]][climate-url]
 
-[![Sauce Test Status](https://saucelabs.com/browser-matrix/spipe.svg)](https://saucelabs.com/u/spipe)
+A lightweight functional reactive programming (FRP) library for composing asynchronous operations with dependency injection.
 
-
-Hire SuperPipe for your complex reactive javascript application
-
-##  Quick Start
-
-The easiest way to install SuperPipe is with [`npm`](http://npmjs.org)
+## Installation
 
 ```sh
-
 npm install superpipe
-
 ```
 
-##  Usage example
+## Quick Start
 
 ```javascript
+import superpipe from 'superpipe'
 
-var SuperPipe = require('superpipe');
+// Create a pipeline factory with dependencies
+const sp = superpipe({
+  greet: name => `Hello, ${name}!`
+})
 
-var sp = new SuperPipe();
+// Build a pipeline
+const pipeline = sp('greeting-pipeline')
+  .input(['name'])
+  .pipe('greet', 'name', 'message')
+  .pipe(message => console.log(message), 'message')
+  .end()
 
+// Execute the pipeline
+pipeline('World')  // Output: Hello, World!
 ```
 
-##  Example
+## Core Concepts
 
-*  [math operation](https://github.com/lsm/superpipe/tree/master/example/math-operation)
+### Pipelines
 
-##  Documentation
+A pipeline is a sequence of pipes that execute in order. Each pipe can:
+- Transform data
+- Produce outputs that become available to subsequent pipes
+- Control flow (stop execution by returning `false`)
 
-Below is a description of exposed public API
+### Pipes
 
-#### Constructor([insider])
+Each pipe has three components:
+- **Function**: The operation to perform (can be a function or a string referencing an injected dependency)
+- **Input**: Dependencies the function needs (retrieved from the store or injected deps)
+- **Output**: Names to assign to the return values
 
-SuperPipe constructor can take 1 parameter:
+### Dependency Injection
 
-* injector - instance of [insider](https://github.com/lsm/insider)
+Dependencies are passed when creating the superpipe factory and are available to all pipelines:
 
 ```javascript
-var SuperPipe = require('superpipe')
-
-var superpipe = new SuperPipe()
+const sp = superpipe({
+  db: databaseConnection,
+  logger: loggingService,
+  config: appConfig
+})
 ```
 
-or
+## API
+
+### `superpipe(deps?)`
+
+Creates a pipeline factory function.
+
+- `deps` (optional): Object containing dependencies available to all pipelines
+
+Returns a function `(name, defs?) => PipelineAPI | executor`
+
+### Pipeline API
+
+#### `.input(names)`
+
+Maps positional arguments to named dependencies.
 
 ```javascript
-var insider = require('insider')
-var SuperPipe = require('superpipe')
-
-var superpipe = new SuperPipe(insider)
-
+sp('my-pipeline')
+  .input(['userId', 'action'])  // First arg -> userId, second -> action
 ```
 
-#### .listenTo([eventEmitter],eventName)
-Return a new pipeline. Listen to the event of emitter and create a new pipeline to handle the emitted events.
-The `listenTo` can take 2 parameters:
+#### `.pipe(fn, input?, output?)`
 
-* eventEmitter -  instance of EventEmitter. Optional parameter. If you not provide eventEmitter, will be used instaoce of `superpipe`
-* eventName - name of event for listen. For example `superpipe.listenTo('login')`
+Adds a pipe to the pipeline.
 
-#### .pipeline()
-
-Return a new pipeline instance
-
-#### .autoBind({Boolean})
-The `autoBind` can take 1 parameter. Paramater is boolean.The `.autoBind()` controls if we should automatically bind the function dependency
+- `fn`: Function to execute, or string name of an injected dependency
+- `input`: String or array of dependency names to pass as arguments
+- `output`: String or array of names to assign to return values
 
 ```javascript
-var SuperPipe = require('superpipe')
-var superpipe = new SuperPipe()
+// Direct function
+.pipe((a, b) => a + b, ['x', 'y'], 'sum')
 
-var loginPipeline = superpipe
-  .pipeline()
-  .autoBind(true)
-  .pipe(...)
-  .pipe(...)
-  .toPipe()
+// Injected function by name
+.pipe('myFunction', ['arg1', 'arg2'], 'result')
+
+// Using special inputs
+.pipe((next, value) => {
+  setTimeout(() => next(null, 'key', value * 2), 100)
+}, ['next', 'value'])
 ```
 
-#### .setDep(name,dep,[props])
-The `setDep` can take 3 parameters.
-* `name` - Required {String} Name of the dependency to set or prefix if props is present.
-* `dep`  - Required {String,Object,Array,Number,Boolean,Function}
-* `props` - Optional {String} Name(s) of properties to set as dependencies or shortcuts.
-  You can set props in 3 ways :
-   * '*' - set all the properties of the object as dependencies.
-   * '*^' - set all the function properties of the object as dependencies.
-   * '*$' - set all non-function properties of the object as dependencies.
+#### `.error(handler, input?)`
 
-Example without `props`
+Sets an error handler for the pipeline. Only one error handler is allowed per pipeline.
 
 ```javascript
-var SuperPipe = require('superpipe')
-var superpipe = new SuperPipe()
-
-var secret = 'secret-key'
-var x = 5
-
-superpipe
-  .setDep('secret',secret)
-  .setDep('y',x)  // you can make another name of dep then your variable or function
-
-
+.error((error) => console.error('Pipeline error:', error), 'error')
 ```
 
-Example with 'props'
+#### `.end()`
+
+Finalizes the pipeline and returns an executor function.
 
 ```javascript
+const run = sp('my-pipeline')
+  .input(['x'])
+  .pipe(x => x * 2, 'x', 'doubled')
+  .end()
 
-// For example we have a module that does math operations
-// name of file math.js
+run(5)  // Executes the pipeline with x=5
+```
 
-module.exports = {
-  add: function(x,y,setDep){
-    ...
-  },
-  sub: function(x,y,setDep){
-    ...
-  },
-  z: 10
+### Declarative API
+
+Pipelines can also be defined declaratively:
+
+```javascript
+const run = sp('math-pipeline', [
+  ['input', ['a', 'b']],
+  [(a, b) => a + b, ['a', 'b'], 'sum'],
+  [(sum) => console.log('Sum:', sum), 'sum']
+])
+
+run(3, 4)  // Output: Sum: 7
+```
+
+## Special Features
+
+### Special Input Dependencies
+
+- `next`: Control when to proceed to the next pipe (for async operations)
+- `set`: Manually set output values
+
+```javascript
+// Async operation with next
+.pipe((next, value) => {
+  fetchData(value, (err, result) => {
+    next(err, 'data', result)
+  })
+}, ['next', 'value'], 'data')
+
+// Manual output with set
+.pipe((set, value) => {
+  set('output1', value * 2)
+  set('output2', value * 3)
+}, ['set', 'value'], ['output1', 'output2'])
+```
+
+### Boolean Flow Control
+
+When a pipe returns `false`, the pipeline stops (useful for guards/validation):
+
+```javascript
+.pipe(user => user.isAdmin, 'user')  // Stops if not admin
+.pipe(() => console.log('Admin access granted'))
+```
+
+### Not Pipes (`!`)
+
+Prefix function name with `!` to invert boolean results:
+
+```javascript
+.pipe('!isBlocked', 'user')  // Continues if isBlocked returns false
+```
+
+### Optional Pipes (`?`)
+
+Prefix function name with `?` to skip if the dependency is undefined:
+
+```javascript
+.pipe('?optionalHandler', 'maybeValue')  // Skips if optionalHandler or maybeValue is undefined
+```
+
+### Output Mapping
+
+Rename outputs using `originalName:newName` syntax:
+
+```javascript
+.pipe(getData, 'id', 'result:userProfile')  // Maps 'result' output to 'userProfile'
+```
+
+### Plain Object Returns
+
+Returning a plain object automatically sets all its keys as outputs:
+
+```javascript
+.pipe(() => ({ name: 'John', age: 30 }))  // Sets both 'name' and 'age'
+```
+
+## Error Handling
+
+Errors can be triggered by:
+1. Calling `next(error)` with an error
+2. Setting `set('error', error)`
+3. Throwing an exception in a pipe function
+
+```javascript
+sp('safe-pipeline')
+  .input(['data'])
+  .pipe((data) => {
+    if (!data) throw new Error('Data required')
+    return data
+  }, 'data', 'validated')
+  .error((error) => {
+    console.error('Error:', error.message)
+  }, 'error')
+  .end()
+```
+
+## TypeScript Support
+
+SuperPipe is written in TypeScript and includes type definitions:
+
+```typescript
+import superpipe, { Dependencies, PipelineAPI } from 'superpipe'
+
+interface MyDeps extends Dependencies {
+  logger: (msg: string) => void
 }
 
+const sp = superpipe<MyDeps>({
+  logger: console.log
+})
 ```
 
-```javascript
-var SuperPipe = require('superpipe')
-var superpipe = new SuperPipe()
-var math = require('./math')
+## License
 
-superpipe
-  .setDep('math1',math,'*')  // you can get add,sub,z
-  .setDep('math2',math,'*^') // you can get just add and sub (func)
-  .setDep('math3',math,'*$') // you can get just z (non-func)
+[MIT](LICENSE)
 
-```
+## Bug Reports
 
-#### .getDep(name)
+[GitHub Issues](https://github.com/lsm/superpipe/issues)
 
-The `getDep` can take 1 parameter
- * `name` - Required {String} Name of the dependency
-
-```javascript
-
-var SuperPipe = require('superpipe')
-var superpipe = new SuperPipe()
-
-var x = 5
-
-superpipe
-  .setDep('x',x)
-
-var z = superpipe.getDep('x') // z = 5
-
-```
-
-##  Bug Reports [here](https://github.com/lsm/superpipe/issues)
-
-[dep-url]: https://david-dm.org/lsm/superpipe
-[dep-image]: https://david-dm.org/lsm/superpipe.svg
 [license-img]: https://img.shields.io/npm/l/superpipe.svg
 [license-url]: http://opensource.org/licenses/MIT
 [npm-img]: http://img.shields.io/npm/v/superpipe.svg

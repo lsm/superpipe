@@ -1,30 +1,52 @@
 import { executePipe } from './execution'
 import { setWithPipeState } from './set'
 import { FN_ERROR, FN_INPUT, createPipe } from './pipe'
+import type {
+  Pipe,
+  Pipeline,
+  PipeState,
+  Store,
+  Dependencies,
+  PipelineAPI,
+  PipelineDefinition,
+  PipeFunctionArg
+} from './types'
 
-export function createAPI(name, defs, deps) {
+export function createAPI(
+  name: string,
+  defs?: PipelineDefinition[],
+  deps?: Dependencies
+): PipelineAPI | ((...args: unknown[]) => void) {
   const pipeline = createPipeline(name, defs, deps)
 
-  const api = {
-    input: function(input) {
+  const api: PipelineAPI = {
+    input: function(input: string | string[]): PipelineAPI {
       pipeline.pipes.push(createPipe(FN_INPUT, input))
       return api
     },
 
-    pipe: function(fn, input, output) {
+    pipe: function(
+      fn: PipeFunctionArg,
+      input?: string | string[],
+      output?: string | string[]
+    ): PipelineAPI {
       pipeline.pipes.push(createPipe(fn, input, output))
       return api
     },
 
     // .error('theErrorHandler', ['input1', 'input2'])
-    error: function(fn, input) {
+    error: function(
+      fn: PipeFunctionArg,
+      input?: string | string[]
+    ): PipelineAPI {
       onlyOneErrorHandlerIsAllowed(pipeline.errorHandler)
-      pipeline.errorHandler = createPipe(FN_ERROR, fn, input)
+      // For error pipes, fn is passed as the second arg (errorFn) and input as the third
+      pipeline.errorHandler = createPipe(FN_ERROR, fn as string, input)
       return api
     },
 
-    end: function() {
-      return function() {
+    end: function(): (...args: unknown[]) => void {
+      return function(): void {
         execPipeline(arguments, pipeline)
       }
     }
@@ -39,18 +61,26 @@ export function createAPI(name, defs, deps) {
   return api
 }
 
-function execPipeline(args, pipeline) {
+function execPipeline(args: IArguments, pipeline: Pipeline): void {
   const store = createStore(Array.prototype.slice.apply(args), pipeline)
   // Start executing the pipeline.
   store.next()
 }
 
-function createPipeline(name, defs, deps) {
-  let pipes = []
-  let errorHandler
+function createPipeline(
+  name: string,
+  defs?: PipelineDefinition[],
+  deps?: Dependencies
+): Pipeline {
+  const pipes: Pipe[] = []
+  let errorHandler: Pipe | undefined
   if (Array.isArray(defs)) {
     defs.forEach(function(pipeDef) {
-      let pipe = createPipe(pipeDef[0], pipeDef[1], pipeDef[2])
+      const pipe = createPipe(
+        pipeDef[0] as ((...args: unknown[]) => unknown) | string,
+        pipeDef[1],
+        pipeDef[2]
+      )
       if (pipeDef[0] === FN_ERROR) {
         onlyOneErrorHandlerIsAllowed(errorHandler)
         errorHandler = pipe
@@ -62,54 +92,54 @@ function createPipeline(name, defs, deps) {
   return { name, pipes, errorHandler, deps: deps || {} }
 }
 
-function onlyOneErrorHandlerIsAllowed(errorHandler) {
+function onlyOneErrorHandlerIsAllowed(errorHandler?: Pipe): void {
   if (errorHandler) {
     throw new Error('Each pipeline could only have one error handler.')
   }
 }
 
-function createStore(args, pipeline) {
+function createStore(args: unknown[], pipeline: Pipeline): Store {
   /**
    * Start from the first pipe of the pipeline.
-   * @type {Number}
    */
   let step = 0
 
   /**
    * Execution state of previous pipe.
-   * @type {Object}
    */
-  let previousPipeState
+  let previousPipeState: PipeState | undefined
 
   /**
    * We start with a fresh store each time we execute the pipeline.
-   * @type {Object}
    */
-  const store = {
+  const store: Store = {
     /**
      * The function which helps executing functions in the pipeline one by one.
      * Save next to the store so pipes could retrieve it as input.
      *
-     * @param  {Object|null}    err   Error object if any.
-     * @param  {String|Object}  key   Key of value to store or object of
-     *                                key/value maps.
-     * @param  {Any}            value Value to store.
+     * @param  err - Error object if any.
+     * @param  key - Key of value to store or object of key/value maps.
+     * @param  value - Value to store.
      */
-    next(err, key, value) {
+    next(
+      err?: unknown,
+      key?: string | Record<string, unknown>,
+      value?: unknown
+    ): void {
       if (previousPipeState && previousPipeState.error) {
-        // Any subsiquential calls to next should be ignored if error handler is
+        // Any subsequent calls to next should be ignored if error handler is
         // triggered.
         return
       }
 
       // We have the `key` which means the previous pipe produced
-      // some output by calling `next`.  We need to set this output to the store
+      // some output by calling `next`. We need to set this output to the store
       // before executing the next pipe.
-      if (key) {
+      if (key && previousPipeState) {
         previousPipeState.set(key, value)
       }
 
-      // Save error to the store or get one from it.  This will make sure
+      // Save error to the store or get one from it. This will make sure
       // error will be handled properly no matter how it was set.
       if (err) {
         store.error = err
@@ -118,12 +148,13 @@ function createStore(args, pipeline) {
       }
 
       // The placeholder for the pipe function which will be executed below.
-      let pipe
+      let pipe: Pipe | undefined
 
       if (err) {
         if (!pipeline.errorHandler) {
           // Throw the error if we don't have error handling function.
-          throwError(err, step, previousPipeState)
+          // previousPipeState is always defined here since errors are triggered by pipes
+          throwError(err, step, previousPipeState!)
         }
         pipe = pipeline.errorHandler
       } else {
@@ -134,7 +165,6 @@ function createStore(args, pipeline) {
       if (pipe) {
         /**
          * Keep a reference to pipeState for better error handling.
-         * @type {Object}
          */
         previousPipeState = createPipeState(err, pipeline, pipe, store)
 
@@ -149,16 +179,21 @@ function createStore(args, pipeline) {
 
 /**
  * Create an object for holding execution state, result and other references
- * of current pipe which allows executing pipeline continously.
+ * of current pipe which allows executing pipeline continuously.
  *
- * @param  {Any} error        The error object.
- * @param  {String} name      Name of the pipeline.
- * @param  {Object} pipe      Pipe definition object.
- * @param  {Object} store     The store object which holds all the execution data.
- * @return {Object}           The pipe execution state object.
+ * @param  error - The error object.
+ * @param  pipeline - The pipeline object.
+ * @param  pipe - Pipe definition object.
+ * @param  store - The store object which holds all the execution data.
+ * @return The pipe execution state object.
  */
-function createPipeState(error, pipeline, pipe, store) {
-  const pipeState = {
+function createPipeState(
+  error: unknown,
+  pipeline: Pipeline,
+  pipe: Pipe,
+  store: Store
+): PipeState {
+  const pipeState: PipeState = {
     fn: pipe.fn,
     not: pipe.not,
     deps: pipeline.deps,
@@ -168,7 +203,7 @@ function createPipeState(error, pipeline, pipe, store) {
     autoNext: true,
     optional: pipe.optional,
     outputMap: pipe.outputMap,
-    set(key, value) {
+    set(key: string | Record<string, unknown>, value?: unknown): void {
       setWithPipeState(store, pipeState, key, value)
     },
     name: pipeline.name,
@@ -190,8 +225,12 @@ function createPipeState(error, pipeline, pipe, store) {
   return pipeState
 }
 
-function throwError(error, step, pipe) {
-  let ex = error
+function throwError(
+  error: unknown,
+  step: number,
+  pipe: PipeState
+): never {
+  let ex: Error
   const { name, fnName } = pipe
   const pipeName = fnName || 'function'
 
@@ -199,6 +238,8 @@ function throwError(error, step, pipe) {
     ex = new Error()
     ex.name = `\nError was triggered in pipeline "${name}" step "${step}:${pipeName}":\n(Tips: use .pipe("error", errorHandlerFn, ['input']) to handle this error inside your pipeline.)`
     ex.message = `\nError: ${error}`
+  } else {
+    ex = error as Error
   }
 
   throw ex
