@@ -32,4 +32,5 @@ node_modules
 lib
 es
 dist
+types
 .nyc_output

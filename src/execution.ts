@@ -1,10 +1,15 @@
 import { FN_INPUT } from './pipe'
+import type { Store, PipeState, Dependencies } from './types'
 
-export function executePipe(args, store, pipeState) {
+export function executePipe(
+  args: unknown[],
+  store: Store,
+  pipeState: PipeState
+): void {
   const { fn, fnName } = pipeState
 
   if (FN_INPUT === fnName) {
-    return fn.call(0, args, store)
+    return (fn as (args: unknown[], store: Store) => void).call(0, args, store)
   }
 
   const inputArgs = getInputArgs(store, pipeState, args)
@@ -18,7 +23,7 @@ export function executePipe(args, store, pipeState) {
   if (injectedFn || false === injectedFn) {
     pipeState.result = executeInjectedFunc(inputArgs, injectedFn, pipeState)
   } else {
-    pipeState.result = fn.apply(0, inputArgs)
+    pipeState.result = (fn as (...args: unknown[]) => unknown).apply(0, inputArgs)
   }
 
   pipeState.fnReturned = true
@@ -30,7 +35,11 @@ export function executePipe(args, store, pipeState) {
   }
 }
 
-function getInputArgs(store, pipeState, args) {
+function getInputArgs(
+  store: Store,
+  pipeState: PipeState,
+  args: unknown[]
+): unknown[] {
   if (pipeState.input.length === 0) {
     return args
   }
@@ -39,14 +48,14 @@ function getInputArgs(store, pipeState, args) {
   return pipeState.input.map(key => {
     if (key === 'next') {
       let called = false
-      return function next(err, value) {
+      return function next(err?: unknown, value?: unknown): void {
         if (called) {
           throw new Error(
             '"next" should not be called more than once in a pipe.'
           )
         }
         called = true
-        return store.next(err, value)
+        store.next(err, value)
       }
     }
 
@@ -54,16 +63,23 @@ function getInputArgs(store, pipeState, args) {
   })
 }
 
-function getInjectedFunction(store, pipeState, inputArgs) {
+function getInjectedFunction(
+  store: Store,
+  pipeState: PipeState,
+  inputArgs: unknown[]
+): ((...args: unknown[]) => unknown) | boolean | 0 | undefined {
   const { fn, deps, fnName } = pipeState
 
   if (fn !== null || 'string' !== typeof fnName) {
-    return
+    return undefined
   }
 
   // An injection pipe. Get the pipe function from the store or the dependency
   // container.
-  const injectedFn = getProp(fnName, store, deps)
+  const injectedFn = getProp(fnName, store, deps) as
+    | ((...args: unknown[]) => unknown)
+    | boolean
+    | undefined
 
   if (
     pipeState.optional &&
@@ -82,8 +98,12 @@ function getInjectedFunction(store, pipeState, inputArgs) {
  * It calls the original function and return the result if that is a function.
  * Or return the result directly for case like `boolean` value.
  */
-function executeInjectedFunc(args, injectedFn, pipeState) {
-  let result
+function executeInjectedFunc(
+  args: unknown[],
+  injectedFn: ((...args: unknown[]) => unknown) | boolean,
+  pipeState: PipeState
+): unknown {
+  let result: unknown
   /* istanbul ignore next */
   const fnType = typeof injectedFn
 
@@ -92,7 +112,7 @@ function executeInjectedFunc(args, injectedFn, pipeState) {
       // Call it with the arguments passed in when it's a function.
       // We call it with `0` to prevent some JS engines injecting the
       // default `this`.
-      result = injectedFn.apply(0, args)
+      result = (injectedFn as (...args: unknown[]) => unknown).apply(0, args)
       break
     case 'boolean':
       // Directly return the value when it is a boolean for flow control.
@@ -117,6 +137,6 @@ function executeInjectedFunc(args, injectedFn, pipeState) {
   return result
 }
 
-function getProp(key, store, deps) {
-  return store.hasOwnProperty(key) ? store[key] : deps[key]
+function getProp(key: string, store: Store, deps: Dependencies): unknown {
+  return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : deps[key]
 }
