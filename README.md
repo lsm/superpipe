@@ -186,6 +186,21 @@ Prefix function name with `?` to skip if the dependency is undefined:
 .pipe('?optionalHandler', 'maybeValue')  // Skips if optionalHandler or maybeValue is undefined
 ```
 
+### Output Renaming (`source:destination`)
+
+Rename an output as it is stored, using `source:destination` syntax:
+
+```javascript
+.pipe(getData, 'id', 'result:userProfile')  // Stores the returned `result` as `userProfile`
+```
+
+### Asynchronous Pipelines and `.end(output)`
+
+The executor returned by `.end()` completes synchronously. When a pipe uses
+`next` and resolves asynchronously, values produced later are not reflected in
+`.end(output)`'s return value — deliver async results through a final pipe,
+`next`, or an error handler instead.
+
 ### Object-String Syntax
 
 Use an `{a, b}` object string to destructure a single object argument into

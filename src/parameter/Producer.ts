@@ -7,13 +7,34 @@ import {
   objectStringToArray,
 } from '../common'
 
+// `source:destination` renaming, e.g. an output of `'arg2:mappedArgName'`
+// stores the returned `arg2` under `mappedArgName`.
+const RE_RENAME = /^([^:]+):([^:]+)$/
+
+function applyKey (output: PipeOutput, key: string, value: PipeResult): void {
+  const rename = RE_RENAME.exec(key)
+  if (rename) {
+    output[rename[2]] = value
+  } else {
+    output[key] = value
+  }
+}
+
 export default class Producer {
   // Array of property name to produce.
   private keys: string[] = []
 
   private _produce: Function
 
-  constructor(parameter: PipeParameter) {
+  // Input producers receive the wrapped invocation-arguments array, so
+  // single-name and object-string specs read from its first element.
+  private inputMode: boolean = false
+
+  constructor(parameter: PipeParameter | undefined, flag?: string) {
+    if (flag === 'input') {
+      this.inputMode = true
+    }
+
     if (typeof parameter === 'string') {
       if (RE_IS_OBJ_STRING.test(parameter)) {
         this.keys = objectStringToArray(parameter)
@@ -23,7 +44,7 @@ export default class Producer {
         this._produce = this.produceSingle
       }
     } else if (isValidArrayParameters(parameter)) {
-      this.keys = parameter
+      this.keys = parameter as string[]
       this._produce = this.produceFromArray
     } else if (typeof parameter === 'undefined') {
       this._produce = this.produceNothing
@@ -41,23 +62,48 @@ export default class Producer {
   }
 
   produceSingle(result: PipeResult): PipeOutput {
-    return { [this.keys[0]]: result }
+    const key = this.keys[0]
+    const source = this.inputSource(result)
+    const rename = RE_RENAME.exec(key)
+
+    if (rename) {
+      return { [rename[2]]: source[rename[1]] }
+    }
+    return { [key]: source }
   }
 
   produceFromArray(result: PipeResult): PipeOutput {
     const output: PipeOutput = {}
 
-    // When a single positional input name is mapped to a single (non-array)
-    // argument — e.g. `.input(['name'])` called with `run('World')` — assign
-    // the whole argument rather than indexing into it.
+    // A single output name with a single (non-array) return value is assigned
+    // the whole value, not its first element.
     if (this.keys.length === 1 && !Array.isArray(result)) {
+      const rename = RE_RENAME.exec(this.keys[0])
+      if (rename) {
+        return { [rename[2]]: result[rename[1]] }
+      }
       output[this.keys[0]] = result
       return output
     }
 
+    // Multiple output names with a plain-object return value are mapped by
+    // property name, not by numeric index.
+    if (!Array.isArray(result) && result !== null && typeof result === 'object') {
+      for (const key of this.keys) {
+        const rename = RE_RENAME.exec(key)
+        if (rename) {
+          output[rename[2]] = result[rename[1]]
+        } else {
+          output[key] = result[key]
+        }
+      }
+      return output
+    }
+
+    // Positional mapping over an array return value.
     let i = 0
     for (const key of this.keys) {
-      output[key] = result[i]
+      applyKey(output, key, result[i])
       i += 1
     }
 
@@ -66,12 +112,19 @@ export default class Producer {
 
   produceFromObject(result: PipeResult): PipeOutput {
     const output: PipeOutput = {}
+    const source = this.inputSource(result)
 
     for (const key of this.keys) {
       // Only take the keys we need.
-      output[key] = result[key]
+      output[key] = source[key]
     }
 
     return output
+  }
+
+  // In input mode the producer receives the wrapped arguments array; a
+  // single-name or object-string spec addresses the first argument.
+  private inputSource(result: PipeResult): PipeResult {
+    return this.inputMode && Array.isArray(result) ? result[0] : result
   }
 }

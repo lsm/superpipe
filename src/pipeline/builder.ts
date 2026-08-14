@@ -60,7 +60,7 @@ export function createPipe (
 export function createInputPipe (input: PipeParameter): InputPipe {
   const pipe: InputPipe = {
     fnName: 'input',
-    producer: new Producer(input),
+    producer: new Producer(input, 'input'),
   }
 
   return pipe
@@ -84,7 +84,10 @@ export function createErrorPipe (
       container: PipeResult,
       functions: FunctionContainer
     ): Function {
-      return container[fnName] || functions[fnName]
+      if (Object.prototype.hasOwnProperty.call(container, fnName)) {
+        return container[fnName] as Function
+      }
+      return functions[fnName] as Function
     }
   } else if (typeof errorFn === 'function') {
     getErrorFn = (): Function => errorFn

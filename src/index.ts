@@ -1,12 +1,12 @@
 import Pipeline from './pipeline/Pipeline'
 import { FN_TYPE } from './pipeline/builder'
 import { PipeDefinition } from './pipeline/Pipe'
-import { PipeFunction, FunctionContainer } from './common'
+import { PipeFunction, PipeResult, FunctionContainer } from './common'
 
-export default function superpipe<T extends FunctionContainer>(
-  functions: T
-): (name: string, defs: PipeDefinition[]) => Pipeline | Function {
-  return function (name: string, defs: PipeDefinition[]): Pipeline | Function {
+export default function superpipe<T extends FunctionContainer = FunctionContainer>(
+  functions?: T
+): (name: string, defs?: PipeDefinition[]) => Pipeline | Function {
+  return function (name: string, defs?: PipeDefinition[]): Pipeline | Function {
     let end
     const pipeline = new Pipeline(name, functions)
 
@@ -31,9 +31,13 @@ export default function superpipe<T extends FunctionContainer>(
             )
         }
       })
+
+      // Declarative definitions auto-finalize when no explicit end tuple
+      // is present, so `const run = sp('name', defs)` returns an executor.
+      return end || pipeline.end()
     }
 
-    return end || pipeline
+    return pipeline
   }
 }
 
@@ -50,5 +54,22 @@ export type {
   PipelineBase,
 } from './common'
 export type { PipeDefinition } from './pipeline/Pipe'
+export type { default as Pipe, InputPipe } from './pipeline/Pipe'
 export type { FunctionContainer as Dependencies } from './common'
 export type { Pipeline as PipelineAPI }
+
+// Compatibility aliases for the remaining type names master exported.
+export type SuperPipeFactory = (
+  name: string,
+  defs?: PipeDefinition[]
+) => Pipeline | Function
+export type Store = {
+  next: (error?: Error, value?: PipeResult) => void
+  error?: Error
+  [key: string]: PipeResult
+}
+export type PipeState = {
+  step: number
+  container: Store
+  args: PipeResult[]
+}

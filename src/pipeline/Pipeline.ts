@@ -28,7 +28,7 @@ export default class Pipeline implements PipelineBase {
 
   errorHandler?: Function
 
-  constructor (name: string, functions: FunctionContainer) {
+  constructor (name: string, functions?: FunctionContainer) {
     this.name = name
     this.functions = { ...functions }
   }
@@ -62,7 +62,7 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
-  end (output: PipeParameter): Function {
+  end (output?: PipeParameter): Function {
     const fetcher = new Fetcher(output, 'raw')
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
@@ -73,14 +73,19 @@ export default class Pipeline implements PipelineBase {
       errorHandler: this.errorHandler,
     }
 
-    return function (arg: PipeResult): PipeOutput {
-      let args
-      let len = arguments.length
-      if (len === 1) {
-        args = arg
-      } else if (len > 1) {
-        args = Array.prototype.slice.apply(arguments)
+    // NOTE: the executor returns synchronously. When a pipe completes
+    // asynchronously via `next`, the requested output may not be populated
+    // yet — `.end(output)` is only meaningful for synchronous pipelines;
+    // async flows should deliver results through a final pipe or callbacks.
+    if (output === undefined) {
+      // `.end()` without an output spec returns nothing, like master.
+      return function (): undefined {
+        runPipeline(Array.prototype.slice.apply(arguments), pipeline)
       }
+    }
+
+    return function (): PipeOutput {
+      const args: PipeResult = Array.prototype.slice.apply(arguments)
 
       // Start executing the pipeline.
       const container = runPipeline(args, pipeline)

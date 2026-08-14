@@ -40,10 +40,9 @@ describe('Superpipe', function () {
       ])
       expect(func).to.be.a('function')
 
-      const pl = sp('from defs', [
-        [ 'pipe1', 'arg' ],
-        [ 'pipe2', 'arg' ],
-      ])
+      // Definitions without an explicit end tuple auto-finalize (README
+      // contract); use the no-defs form to get the builder back.
+      const pl = sp('builder form')
       expect(pl.pipe).to.be.a('function')
     })
   })

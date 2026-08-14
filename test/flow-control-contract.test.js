@@ -160,3 +160,144 @@ describe('Flow-control contract (README-pinned behaviors)', function () {
     })
   })
 })
+
+// --- review round 2: parity behaviors pinned from the codex findings ---
+describe('review-fix contract (parity behaviors)', function () {
+  it('resolves pipe inputs from configured dependencies', function () {
+    let observed
+    const sp = superpipe({ arg1: 'value', fn: (a) => a })
+    const run = sp('deps-as-inputs')
+      .pipe('fn', 'arg1', 'out')
+      .pipe((out) => { observed = out }, 'out')
+      .end()
+
+    run()
+    expect(observed).to.equal('value')
+  })
+
+  it('passes the invocation arguments to pipes that declare no inputs', function (done) {
+    const sp = superpipe({})
+    const run = sp('args-passthrough')
+      .pipe((a, b) => {
+        expect(a).to.equal(1)
+        expect(b).to.equal(2)
+        done()
+      })
+      .end()
+
+    run(1, 2)
+  })
+
+  it('skips an optional pipe when a requested input is undefined', function () {
+    let afterRan = false
+    const sp = superpipe({ handler: () => { throw new Error('should be skipped') } })
+    const run = sp('optional-missing-input')
+      .input(['user'])
+      .pipe('?handler', 'missingValue')
+      .pipe(() => { afterRan = true })
+      .end()
+
+    expect(() => run({ user: 'x' })).to.not.throw()
+    expect(afterRan).to.equal(true)
+  })
+
+  it('throws when a stale next from an earlier pipe is invoked again', function () {
+    let staleNext
+    const sp = superpipe({})
+    const run = sp('stale-next')
+      .pipe((next) => { staleNext = next; next(null, 'x') }, 'next', 'first')
+      .pipe((next) => { next(null, 'y') }, 'next', 'second')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(() => staleNext()).to.throw('"next" could not be called more than once in a pipe.')
+  })
+
+  it('prefers a runtime false over a configured truthy dependency', function () {
+    let afterRan = false
+    const sp = superpipe({ enabled: () => true })
+    const run = sp('runtime-false')
+      .input(['enabled'])
+      .pipe('enabled')                 // runtime false must halt, not fall back to the dep
+      .pipe(() => { afterRan = true })
+      .end()
+
+    run(false)
+    expect(afterRan).to.equal(false)
+  })
+
+  it('maps a plain-object return to array-declared outputs by name', function () {
+    let observed
+    const sp = superpipe({})
+    const run = sp('object-outputs')
+      .pipe(() => ({ abc: 1, xyz: 2 }), null, ['abc', 'xyz'])
+      .pipe((abc, xyz) => { observed = [abc, xyz] }, ['abc', 'xyz'])
+      .end()
+
+    run()
+    expect(observed).to.deep.equal([1, 2])
+  })
+
+  it('applies source:destination output renaming', function () {
+    let observed
+    const sp = superpipe({})
+    const run = sp('rename')
+      .pipe(() => ({ result: 'data' }), null, 'result:userProfile')
+      .pipe((profile) => { observed = profile }, 'userProfile')
+      .end()
+
+    run()
+    expect(observed).to.equal('data')
+  })
+
+  it('preserves a single array argument as one named input', function () {
+    let observed
+    const sp = superpipe({})
+    const run = sp('array-arg')
+      .input(['items'])
+      .pipe((items) => { observed = items }, 'items')
+      .end()
+
+    run([1, 2, 3])
+    expect(observed).to.deep.equal([1, 2, 3])
+  })
+
+  it('returns the picked object itself from .end("{a, b}")', function () {
+    const sp = superpipe({})
+    const run = sp('end-object')
+      .pipe(() => ({ a: 1, b: 2 }), null, '{a, b}')
+      .end('{a, b}')
+
+    expect(run()).to.deep.equal({ a: 1, b: 2 })
+  })
+
+  it('auto-finalizes declarative definitions without an end tuple', function () {
+    let observed
+    const sp = superpipe({ double: (x) => x * 2 })
+    const run = sp('declarative', [
+      ['input', ['x']],
+      ['double', 'x', 'y'],
+      [(y) => { observed = y }, 'y'],
+    ])
+
+    expect(run).to.be.a('function')
+    run(4)
+    expect(observed).to.equal(8)
+  })
+
+  it('preserves the original error on the wrapping PipelineError', function () {
+    const original = new TypeError('boom')
+    const sp = superpipe({})
+    const run = sp('error-cause')
+      .pipe(() => { throw original })
+      .end()
+
+    try {
+      run()
+      throw new Error('expected pipeline to throw')
+    } catch (err) {
+      expect(err.name).to.equal('PipelineError')
+      expect(err.cause).to.equal(original)
+    }
+  })
+})

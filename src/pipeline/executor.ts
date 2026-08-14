@@ -1,5 +1,10 @@
 import Pipe from './Pipe'
-import { PipeResult, PipelineBase, throwNoErrorHandlerError } from '../common'
+import {
+  PipeResult,
+  PipelineBase,
+  NextCalledTwiceError,
+  throwNoErrorHandlerError,
+} from '../common'
 
 interface ResultContainer {
   [key: string]: PipeResult;
@@ -8,7 +13,8 @@ interface ResultContainer {
 interface PipeState {
   step: 0;
   container: ResultContainer;
-  nextCalled: {[key: string]: boolean};
+  // Wrapped invocation arguments, supplied to pipes that declare no inputs.
+  args: PipeResult[];
 }
 
 function executePipe (
@@ -16,27 +22,37 @@ function executePipe (
   pipeline: PipelineBase, next: Function
 ): void {
   const { fnName } = pipe
-  const { container } = state
+  const { container, args } = state
   const { functions } = pipeline
 
-  const fn = pipe.injected ? container[fnName] || functions[fnName] : pipe.fn
-  const fnType = typeof fn
-  const inputArgs = pipe.fetcher.fetch(container)
+  // Presence-based lookup: a runtime `false` (or other falsey value) must not
+  // fall through to the configured dependency.
+  const fn = pipe.injected
+    ? (Object.prototype.hasOwnProperty.call(container, fnName)
+        ? container[fnName]
+        : functions[fnName])
+    : pipe.fn
+  const inputArgs = pipe.fetcher.fetch(container, args, functions)
 
   let result: PipeResult
 
-  if (fnType === 'function') {
+  // Optional pipe: skip when the dependency or any requested input is
+  // unresolved — before the callable is invoked.
+  if (pipe.optional && (fn === undefined || inputArgs.indexOf(undefined) > -1)) {
+    return next(state, pipeline)
+  } else if (typeof fn === 'function') {
     try {
-      result = fn.apply(0, inputArgs)
+      result = fn.apply(0, inputArgs as PipeResult[])
     } catch (err) {
-      return next(state, pipeline, err)
+      // The duplicate-`next` guard must surface as itself, not be wrapped.
+      if (err instanceof NextCalledTwiceError) {
+        throw err
+      }
+      return next(state, pipeline, err as Error)
     }
-  } else if (fnType === 'boolean') {
+  } else if (typeof fn === 'boolean') {
     // Raw boolean dependency used for flow control.
     result = fn
-  } else if (pipe.optional && fnType === 'undefined') {
-    // Optional pipe, skip the execution.
-    return next(state, pipeline)
   } else {
     // Throw an exception when the dependency is not something we can execute.
     throw new Error(`Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName
@@ -51,6 +67,8 @@ function executePipe (
 
   // Auto-advance only when the pipe does not request `next` AND does not
   // return `false` (boolean flow control — `false` halts the pipeline).
+  // Duplicate-`next` detection lives on the per-pipe callback handed out by
+  // the Fetcher, not here.
   if (pipe.fetcher.hasNext === false && result !== false) {
     next(state, pipeline, null, result)
   }
@@ -68,11 +86,6 @@ function next (
   state: PipeState, pipeline: PipelineBase,
   error?: Error, value?: PipeResult
 ): void {
-  if (state.nextCalled[state.step]) {
-    throw new Error('"next" could not be called more than once in a pipe.')
-  }
-
-  state.nextCalled[state.step] = true
   const { pipes, errorHandler } = pipeline
   const { step, container } = state
 
@@ -102,13 +115,13 @@ export function runPipeline (
   // Internal pipeline execution state.
   const state: PipeState = {
     step: 0,
-    nextCalled: {},
     // Internale container for keeping pipeline runtime dependencies.
     container: {
       next: function (error?: Error, value?: PipeResult): void {
         next(state, pipeline, error, value)
       },
     },
+    args: Array.isArray(args) ? args : (args === undefined ? [] : [ args ]),
   }
 
   // Start executing from input pipe if we have one.
@@ -116,7 +129,7 @@ export function runPipeline (
   if (inputPipe) {
     // Produce output from the original pipeline arguments
     // which will be merged with state container.
-    Object.assign(state.container, inputPipe.producer.produce(args))
+    Object.assign(state.container, inputPipe.producer.produce(state.args))
   }
 
   // Start executing pipeline

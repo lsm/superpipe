@@ -2,6 +2,15 @@ import Pipe, { InputPipe } from './pipeline/Pipe'
 
 export const RE_IS_OBJ_STRING = /^{.+}$/
 
+// Thrown when a pipe's `next` callback is invoked more than once. Surfaced
+// as-is rather than wrapped in a PipelineError.
+export class NextCalledTwiceError extends Error {
+  constructor () {
+    super('"next" could not be called more than once in a pipe.')
+    this.name = 'NextCalledTwiceError'
+  }
+}
+
 type AnyValue = any
 
 export type PipeResult = AnyValue
@@ -10,7 +19,8 @@ export type PipeFunction = string | Function
 export type PipeParameter = string | string[]
 
 export interface FunctionContainer {
-  [key: string]: Function;
+  // Dependencies may also be raw booleans, usable as pipe flow control.
+  [key: string]: Function | boolean;
 }
 
 export interface PipelineBase {
@@ -59,6 +69,8 @@ export function throwNoErrorHandlerError (
   err.name = 'PipelineError'
   err.message = `\nError was triggered in pipeline "${name}" step "${step}:[${fnName}]":\n(Tips: use .error(errorHandlerFn, 'error') to handle this error within your pipeline.)`
   err.stack = error.stack
+  // Preserve the original exception for `instanceof` checks and inspection.
+  err.cause = error
 
   throw err
 }
