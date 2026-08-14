@@ -394,8 +394,10 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
     const sp = superpipe({})
     const run = sp('falsy-throw')
       .pipe(() => {
+        // Intentional falsy throw — pins the contract that falsy thrown
+        // values are treated as errors, not as successful completion.
         throw null
-      }) // eslint-disable-line no-throw-literal
+      })
       .pipe(() => {
         afterRan = true
       })

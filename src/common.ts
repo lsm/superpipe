@@ -19,7 +19,11 @@ export type AnyFunction = (...args: any[]) => any
 
 export type PipeResult = AnyValue
 export type PipeOutput = PipeResult | PipeResult[] | { [key: string]: PipeResult }
-export type PipeFunction = string | AnyFunction
+// `Function` stays in the public union for backwards compatibility:
+// 0.15.0 accepted variables typed as Function; a lint migration must not
+// narrow the public contract. Internal call sites use AnyFunction.
+// biome-ignore lint/complexity/noBannedTypes: public API compatibility
+export type PipeFunction = string | AnyFunction | Function
 export type PipeParameter = string | string[]
 
 export interface FunctionContainer {

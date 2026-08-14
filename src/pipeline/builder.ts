@@ -88,7 +88,7 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
       return functions[fnName] as AnyFunction
     }
   } else if (typeof errorFn === 'function') {
-    getErrorFn = (): AnyFunction => errorFn
+    getErrorFn = (): AnyFunction => errorFn as AnyFunction
   } else {
     throw new Error('Error handler must be a string or function.')
   }
