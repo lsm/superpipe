@@ -1,8 +1,8 @@
-import babel from 'rollup-plugin-babel'
-import replace from 'rollup-plugin-replace'
-import commonjs from 'rollup-plugin-commonjs'
-import { uglify } from 'rollup-plugin-uglify'
-import nodeResolve from 'rollup-plugin-node-resolve'
+import { babel } from '@rollup/plugin-babel'
+import replace from '@rollup/plugin-replace'
+import commonjs from '@rollup/plugin-commonjs'
+import terser from '@rollup/plugin-terser'
+import { nodeResolve } from '@rollup/plugin-node-resolve'
 
 const NODE_ENV = process.env.NODE_ENV
 
@@ -15,7 +15,9 @@ const config = {
 
   plugins: [
     nodeResolve(),
+    commonjs(),
     babel({
+      babelHelpers: 'bundled',
       babelrc: false,
       presets: [
         [
@@ -23,9 +25,7 @@ const config = {
           {
             targets: {
               browsers: [
-                // 'last 2 version',
                 '> 0.25%',
-                // 'maintained node versions',
                 'not dead',
               ],
             },
@@ -36,17 +36,15 @@ const config = {
       exclude: '**/node_modules/**',
     }),
     replace({ 'process.env.NODE_ENV': JSON.stringify(NODE_ENV) }),
-    commonjs(),
   ],
 }
 
 if (NODE_ENV === 'production') {
-  config.plugins.push(uglify({
+  config.plugins.push(terser({
     compress: {
       pure_getters: true,
       unsafe: true,
       unsafe_comps: true,
-      warnings: false,
     },
   }))
 }
