@@ -514,3 +514,36 @@ describe('review-fix contract (round 5 parity behaviors)', function () {
     expect(() => sp('empty-output').pipe(() => 1, null, '')).to.throw('non-empty string')
   })
 })
+
+// --- review round 7: behaviors pinned from the sixth codex round ---
+describe('review-fix contract (round 6 parity behaviors)', function () {
+  it('dispatches an error property merged from a pipe result', function (done) {
+    const failure = new Error('from-result')
+    const sp = superpipe({})
+    const run = sp('error-in-result')
+      .pipe(() => ({ error: failure }), null, '{error}')
+      .pipe(() => { throw new Error('should never run') })
+      .error((error) => {
+        expect(error).to.equal(failure)
+        done()
+      }, 'error')
+      .end()
+
+    run()
+  })
+
+  it('wraps non-Error values passed to next(error)', function () {
+    const sp = superpipe({})
+    const run = sp('string-error')
+      .pipe((next) => { next('boom') }, 'next')
+      .end()
+
+    try {
+      run()
+      throw new Error('expected pipeline to throw')
+    } catch (err) {
+      expect(err).to.be.an.instanceof(Error)
+      expect(err.message).to.contain('boom')
+    }
+  })
+})

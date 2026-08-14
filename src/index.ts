@@ -1,7 +1,7 @@
 import Pipeline from './pipeline/Pipeline'
 import { FN_TYPE } from './pipeline/builder'
 import { PipeDefinition } from './pipeline/Pipe'
-import { PipeFunction, PipeParameter, PipeResult, FunctionContainer } from './common'
+import { PipeFunction, PipeParameter, FunctionContainer } from './common'
 
 export default function superpipe<T extends FunctionContainer = FunctionContainer>(
   functions?: T
@@ -47,7 +47,6 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
 // Exports for library consumers. `Dependencies`, `PipelineAPI` and
 // `PipelineDefinition` are aliases for the names master exported, kept for
 // backwards compatibility.
-export { Pipeline }
 export type {
   PipeResult,
   PipeOutput,
@@ -69,7 +68,15 @@ export interface Pipe {
   optional?: boolean
 }
 export type { FunctionContainer as Dependencies } from './common'
-export type { Pipeline as PipelineAPI }
+
+// Compatibility interface matching the fluent builder master exported as
+// `PipelineAPI`.
+export interface PipelineAPI {
+  input: (input?: PipeParameter) => PipelineAPI
+  pipe: (fn: PipeFunction, input?: PipeParameter, output?: PipeParameter) => PipelineAPI
+  error: (fn: PipeFunction, input?: PipeParameter) => PipelineAPI
+  end: (output?: PipeParameter) => Function
+}
 
 // Compatibility aliases for the remaining type names master exported.
 export type SuperPipeFactory = (
@@ -77,9 +84,9 @@ export type SuperPipeFactory = (
   defs?: PipeDefinition[]
 ) => Pipeline | Function
 export type Store = {
-  next: (error?: Error, value?: PipeResult) => void
-  error?: Error
-  [key: string]: PipeResult
+  next: (error?: unknown, value?: unknown) => void
+  error?: unknown
+  [key: string]: unknown
 }
 // Compatibility type matching the shape master exported as `PipeState`.
 export interface PipeState {

@@ -39,7 +39,7 @@ const config = {
       ],
       exclude: '**/node_modules/**',
     }),
-    replace({ 'process.env.NODE_ENV': JSON.stringify(NODE_ENV) }),
+    replace({ preventAssignment: true, 'process.env.NODE_ENV': JSON.stringify(NODE_ENV) }),
   ],
 }
 

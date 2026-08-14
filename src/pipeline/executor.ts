@@ -103,30 +103,39 @@ function next (
   const { pipes, errorHandler } = pipeline
   const { step, container } = state
 
-  if (!error) {
-    // Clear any stale flag from a previous, fully-handled error path.
-    state.handlingError = false
-  }
-
   if (value != null) {
     // Merge the output of previous pipe with container.
     Object.assign(container, pipes[step - 1].producer.produce(value))
   }
 
-  if (error) {
-    // Stays set while the handler (or the no-handler rethrow) unwinds, so
-    // executePipe's catch does not re-dispatch it as a fresh pipe error.
-    state.handlingError = true
-    if (errorHandler) {
-      container.error = error
-      errorHandler(container, pipeline.functions)
-    } else {
-      // Throw the error if we don't have error handling function.
-      throwNoErrorHandlerError(error)
+  // The active error is either the one passed to `next` or an `error`
+  // property merged into the container by the previous pipe's result.
+  let activeError: unknown
+  if (error != null) {
+    container.error = error
+    activeError = error
+  } else if (container.error != null) {
+    activeError = container.error
+  }
+
+  if (activeError == null) {
+    // Clear any stale flag from a previous, fully-handled error path.
+    state.handlingError = false
+    if (pipes.length > state.step) {
+      // When we have more pipe, execute current one and increase the step by 1.
+      executePipe(pipes[state.step++], state, pipeline, next)
     }
-  } else if (pipes.length > state.step) {
-    // When we have more pipe, execute current one and increase the step by 1.
-    executePipe(pipes[state.step++], state, pipeline, next)
+    return
+  }
+
+  // Stays set while the handler (or the no-handler rethrow) unwinds, so
+  // executePipe's catch does not re-dispatch it as a fresh pipe error.
+  state.handlingError = true
+  if (errorHandler) {
+    errorHandler(container, pipeline.functions)
+  } else {
+    // Throw the error if we don't have error handling function.
+    throwNoErrorHandlerError(activeError)
   }
 }
 

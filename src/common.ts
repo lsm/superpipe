@@ -58,8 +58,13 @@ export function isValidArrayParameters<T>(array: T): boolean {
   )
 }
 
-export function throwNoErrorHandlerError (error: Error): never {
-  // Surface the original exception as-is — wrapping it would change the
-  // error's identity and class for `instanceof` checks downstream.
-  throw error
+export function throwNoErrorHandlerError (error: unknown): never {
+  // Surface Error instances as-is — wrapping them would change their
+  // identity and class for `instanceof` checks downstream. Other values
+  // (strings, objects thrown as errors) are wrapped so callers always
+  // receive an Error with a message and stack.
+  if (error instanceof Error) {
+    throw error
+  }
+  throw new Error(`Pipeline error: ${String(error)}`)
 }
