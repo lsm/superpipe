@@ -37,6 +37,9 @@ jobs:
       - name: Run build
         run: npm run build
 
+      - name: Lint package (publint + attw)
+        run: npm run lint:pkg
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -57,9 +60,3 @@ jobs:
 
       - name: Run coverage
         run: npm run coverage
-
-      - name: Upload coverage to Coveralls
-        uses: coverallsapp/github-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true

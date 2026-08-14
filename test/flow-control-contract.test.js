@@ -1,5 +1,3 @@
-/* globals describe, it */
-
 /**
  * Flow-control contract tests.
  *
@@ -12,20 +10,15 @@
  *      isBlocked is falsey, halts when truthy).
  *   3. `?` optional-pipes — prefixing an injected name with `?` skips the pipe
  *      when the dependency (or its input) is undefined, instead of throwing.
- *
- * `master` is the reference implementation and passes all of these.
- * `pre-1.0-refactoring` is expected to FAIL the three "discriminator" cases
- * (1, 2a, 3) — those are the gaps a revival must close. Cases "sanity" and 2b
- * pass on both and serve as controls.
  */
-import { expect } from 'chai'
+import { describe, expect, it } from 'vitest'
 import superpipe from '../src'
 
 describe('Flow-control contract (README-pinned behaviors)', function () {
   // --- control: MUST pass on every branch, else the harness is broken ---
   // Uses two positional args (both branches wrap multiple args into an array
   // identically) so input mapping is unambiguous.
-  it('runs a basic pipeline to completion', function (done) {
+  it('runs a basic pipeline to completion', () => new Promise((done) => {
     const sp = superpipe({})
     const run = sp('sanity')
       .input(['greeting', 'name'])
@@ -37,7 +30,7 @@ describe('Flow-control contract (README-pinned behaviors)', function () {
       .end()
 
     run('Hello', 'World')
-  })
+  }))
 
   // --- 1. false-return stops the pipeline (DISCRIMINATOR) ---
   describe('boolean flow control — return false stops the pipeline', function () {
@@ -103,7 +96,7 @@ describe('Flow-control contract (README-pinned behaviors)', function () {
 
   // --- 4. single positional scalar arg maps to its input name (DISCRIMINATOR) ---
   describe('positional input — single scalar arg maps to its input name', function () {
-    it('assigns the whole arg, not arg[0], to a single input name', function (done) {
+    it('assigns the whole arg, not arg[0], to a single input name', () => new Promise((done) => {
       const sp = superpipe({ greet: (name) => `Hello, ${name}!` })
       const run = sp('scalar-arg')
         .input(['name'])
@@ -115,7 +108,7 @@ describe('Flow-control contract (README-pinned behaviors)', function () {
         .end()
 
       run('World')
-    })
+    }))
   })
 
   // --- 5. raw boolean dependency (flow control) ---
@@ -175,7 +168,7 @@ describe('review-fix contract (parity behaviors)', function () {
     expect(observed).to.equal('value')
   })
 
-  it('passes the invocation arguments to pipes that declare no inputs', function (done) {
+  it('passes the invocation arguments to pipes that declare no inputs', () => new Promise((done) => {
     const sp = superpipe({})
     const run = sp('args-passthrough')
       .pipe((a, b) => {
@@ -186,7 +179,7 @@ describe('review-fix contract (parity behaviors)', function () {
       .end()
 
     run(1, 2)
-  })
+  }))
 
   it('skips an optional pipe when a requested input is undefined', function () {
     let afterRan = false
@@ -303,7 +296,7 @@ describe('review-fix contract (parity behaviors)', function () {
 
 // --- review round 3: parity behaviors pinned from the second codex round ---
 describe('review-fix contract (round 2 parity behaviors)', function () {
-  it('resolves error-handler inputs from configured dependencies', function (done) {
+  it('resolves error-handler inputs from configured dependencies', () => new Promise((done) => {
     const sp = superpipe({ config: { retries: 3 } })
     const run = sp('error-deps')
       .pipe(() => { throw new Error('boom') })
@@ -315,7 +308,7 @@ describe('review-fix contract (round 2 parity behaviors)', function () {
       .end()
 
     run()
-  })
+  }))
 
   it('merges a plain-object return into the store when no output is declared', function () {
     let observed
@@ -341,7 +334,7 @@ describe('review-fix contract (round 2 parity behaviors)', function () {
     expect(afterRan).to.equal(false)
   })
 
-  it('stores nothing when multiple outputs receive a primitive return value', function (done) {
+  it('stores nothing when multiple outputs receive a primitive return value', () => new Promise((done) => {
     // Master maps only arrays (positionally) and objects (by property);
     // a primitive with multiple output names maps to nothing.
     const sp = superpipe({})
@@ -355,7 +348,7 @@ describe('review-fix contract (round 2 parity behaviors)', function () {
       .end()
 
     expect(() => run()).to.not.throw()
-  })
+  }))
 
   it('rejects empty input declarations at construction', function () {
     const sp = superpipe({})
@@ -428,7 +421,7 @@ describe('review-fix contract (round 3 parity behaviors)', function () {
 
 // --- review round 5: behaviors pinned from the fourth codex round ---
 describe('review-fix contract (round 4 parity behaviors)', function () {
-  it('processes tuples that follow an explicit end tuple', function (done) {
+  it('processes tuples that follow an explicit end tuple', () => new Promise((done) => {
     const sp = superpipe({ tag: (s) => `tagged:${s}` })
     const run = sp('end-then-more', [
       ['input', ['x']],
@@ -438,9 +431,9 @@ describe('review-fix contract (round 4 parity behaviors)', function () {
     ])
 
     run('hi')
-  })
+  }))
 
-  it('keeps colon-bearing input names literal', function (done) {
+  it('keeps colon-bearing input names literal', () => new Promise((done) => {
     const sp = superpipe({})
     const run = sp('literal-colon-input')
       .input(['source:destination'])
@@ -448,7 +441,7 @@ describe('review-fix contract (round 4 parity behaviors)', function () {
       .end()
 
     run('raw')
-  })
+  }))
 })
 
 // --- review round 6: behaviors pinned from the fifth codex round ---
@@ -483,7 +476,7 @@ describe('review-fix contract (round 5 parity behaviors)', function () {
     expect(afterRan).to.equal(true)
   })
 
-  it('accumulates multiple input declarations', function (done) {
+  it('accumulates multiple input declarations', () => new Promise((done) => {
     // Each declaration maps the same invocation arguments positionally;
     // what matters is that an earlier declaration is not lost.
     const sp = superpipe({})
@@ -498,7 +491,7 @@ describe('review-fix contract (round 5 parity behaviors)', function () {
       .end()
 
     run('a')
-  })
+  }))
 
   it('resolves .end(output) from configured dependencies', function () {
     const sp = superpipe({ config: 42 })
@@ -517,7 +510,7 @@ describe('review-fix contract (round 5 parity behaviors)', function () {
 
 // --- review round 7: behaviors pinned from the sixth codex round ---
 describe('review-fix contract (round 6 parity behaviors)', function () {
-  it('dispatches an error property merged from a pipe result', function (done) {
+  it('dispatches an error property merged from a pipe result', () => new Promise((done) => {
     const failure = new Error('from-result')
     const sp = superpipe({})
     const run = sp('error-in-result')
@@ -530,7 +523,7 @@ describe('review-fix contract (round 6 parity behaviors)', function () {
       .end()
 
     run()
-  })
+  }))
 
   it('wraps non-Error values passed to next(error)', function () {
     const sp = superpipe({})
@@ -550,7 +543,7 @@ describe('review-fix contract (round 6 parity behaviors)', function () {
 
 // --- review round 8: behaviors pinned from the seventh codex round ---
 describe('review-fix contract (round 7 parity behaviors)', function () {
-  it('maps an absent object-string input argument to undefined values', function (done) {
+  it('maps an absent object-string input argument to undefined values', () => new Promise((done) => {
     const sp = superpipe({})
     const run = sp('missing-obj-arg')
       .input('{a}')
@@ -558,7 +551,7 @@ describe('review-fix contract (round 7 parity behaviors)', function () {
       .end()
 
     run()
-  })
+  }))
 
   it('treats object-string outputs as property selection over any return', function () {
     let observed = 'unset'
