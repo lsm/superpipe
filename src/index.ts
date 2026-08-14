@@ -1,4 +1,4 @@
-import type { AnyFunction, FunctionContainer, PipeFunction, PipeParameter } from './common'
+import type { FunctionContainer, PipeFunction, PipeParameter } from './common'
 import { FN_TYPE } from './pipeline/builder'
 import type { PipeDefinition } from './pipeline/Pipe'
 import PipelineBuilder from './pipeline/Pipeline'
