@@ -117,4 +117,46 @@ describe('Flow-control contract (README-pinned behaviors)', function () {
       run('World')
     })
   })
+
+  // --- 5. raw boolean dependency (flow control) ---
+  describe('raw boolean dependency — used as flow control', function () {
+    it('continues when a raw boolean dependency is true', function () {
+      let afterRan = false
+      const sp = superpipe({ isBlocked: true }) // raw boolean, not a function
+      const run = sp('bool-true')
+        .input(['user'])
+        .pipe('isBlocked', 'user') // true → must continue
+        .pipe(() => { afterRan = true })
+        .end()
+
+      run({ role: 'admin' })
+      expect(afterRan).to.equal(true)
+    })
+
+    it('halts when a raw boolean dependency is false', function () {
+      let afterRan = false
+      const sp = superpipe({ isBlocked: false })
+      const run = sp('bool-false')
+        .input(['user'])
+        .pipe('isBlocked', 'user') // false → must halt
+        .pipe(() => { afterRan = true }) // sentinel — must NOT run
+        .end()
+
+      run({ role: 'admin' })
+      expect(afterRan).to.equal(false)
+    })
+
+    it('inverts a raw boolean dependency with ! (halts when true)', function () {
+      let afterRan = false
+      const sp = superpipe({ isBlocked: true })
+      const run = sp('bool-not')
+        .input(['user'])
+        .pipe('!isBlocked', 'user') // !true === false → must halt
+        .pipe(() => { afterRan = true }) // sentinel — must NOT run
+        .end()
+
+      run({ role: 'admin' })
+      expect(afterRan).to.equal(false)
+    })
+  })
 })

@@ -14,6 +14,7 @@
     "preserveConstEnums": true,
     "removeComments": false,
     "skipLibCheck": true,
+    "types": [],
     "sourceMap": true,
     "strict": true,
     "outDir": "lib",

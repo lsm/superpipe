@@ -23,29 +23,36 @@ function executePipe (
   const fnType = typeof fn
   const inputArgs = pipe.fetcher.fetch(container)
 
+  let result: PipeResult
+
   if (fnType === 'function') {
     try {
-      let result = fn.apply(0, inputArgs)
-      // `!` not-pipe: invert a boolean result so `!dep` continues only when
-      // the dependency is falsey.
-      if (pipe.not && typeof result === 'boolean') {
-        result = !result
-      }
-      // Auto-advance only when the pipe does not request `next` AND does not
-      // return `false` (boolean flow control — `false` halts the pipeline).
-      if (pipe.fetcher.hasNext === false && result !== false) {
-        next(state, pipeline, null, result)
-      }
+      result = fn.apply(0, inputArgs)
     } catch (err) {
-      next(state, pipeline, err)
+      return next(state, pipeline, err)
     }
+  } else if (fnType === 'boolean') {
+    // Raw boolean dependency used for flow control.
+    result = fn
   } else if (pipe.optional && fnType === 'undefined') {
     // Optional pipe, skip the execution.
-    next(state, pipeline)
+    return next(state, pipeline)
   } else {
-  // Throw an exception when the function is not something we can understand.
+    // Throw an exception when the dependency is not something we can execute.
     throw new Error(`Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName
     }] : Dependency "${fnName}" is not a function or boolean.`)
+  }
+
+  // `!` not-pipe: invert a boolean result so `!dep` continues only when
+  // the dependency is falsey.
+  if (pipe.not && typeof result === 'boolean') {
+    result = !result
+  }
+
+  // Auto-advance only when the pipe does not request `next` AND does not
+  // return `false` (boolean flow control — `false` halts the pipeline).
+  if (pipe.fetcher.hasNext === false && result !== false) {
+    next(state, pipeline, null, result)
   }
 }
 
