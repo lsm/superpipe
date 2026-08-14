@@ -1,3 +1,31 @@
+0.15.0 2026-08-14
+=================
+- New internal architecture: pipeline decomposed into builder / executor /
+  parameter (Fetcher, Producer) modules with independent tests.
+- Flow-control parity with the documented contract: `false` halts a pipeline,
+  `!` inverts boolean results, `?` marks optional pipes (prefix), and raw
+  boolean dependencies act as flow control.
+- Input/output resolution now matches master's semantics: configured
+  dependencies resolve as pipe inputs, no-input pipes receive the invocation
+  arguments, arrays map positionally, objects map by property name, and
+  plain-object returns merge when no output is declared.
+- `.end(output)` can return a value (synchronous pipelines only);
+  `.end()` without an output returns `undefined`.
+- `source:destination` output renaming and `{a, b}` object-string syntax.
+- Duplicate-`next` detection is bound per pipe (NextCalledTwiceError); a
+  stale `next` from an earlier pipe can no longer skip a waiting one.
+- Unhandled `Error` instances propagate as-is; non-Error failures are
+  wrapped in an Error. An `error` property merged from a pipe result routes
+  to the error handler.
+- Multiple `.input()` declarations accumulate; `.pipe('input', ...)` and
+  `.pipe('error', ...)` reserved forms restored; the configured dependency
+  container is live (mutations after `.end()` are visible).
+- Toolchain modernized: exact-pinned devDependencies (typescript 5.9,
+  babel 7.29, rollup 4, mocha 11), Node >= 18, GitHub Actions CI,
+  CircleCI on Node 20/22/24, callable UMD global.
+- Compatibility type exports: Dependencies, PipelineAPI, Pipeline, Pipe,
+  PipeState, Store, SuperPipeFactory, PipelineDefinition.
+
 0.10.3 2016-03-23
 =================
 - Superpipe instance is completely optional when executing pipelines.
