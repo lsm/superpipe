@@ -24,7 +24,7 @@ describe('Superpipe', () => {
             done()
           },
         }
-        var sp = superpipe(functions)
+        const sp = superpipe(functions)
         const pipeline = sp('key value pipeline').input('key').pipe('func', 'key').end()
         pipeline('value')
       }))
