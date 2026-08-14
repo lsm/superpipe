@@ -30,6 +30,10 @@ export default class Producer {
   // single-name and object-string specs read from its first element.
   private inputMode: boolean = false
 
+  // True when the output spec used `{a, b}` object-string syntax, which
+  // selects named properties and never stores a scalar whole.
+  private objString: boolean = false
+
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'input') {
       this.inputMode = true
@@ -59,9 +63,12 @@ export default class Producer {
       throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
     }
     if (typeof parameter === 'string') {
-      this.keys = RE_IS_OBJ_STRING.test(parameter)
-        ? objectStringToArray(parameter)
-        : [ parameter ]
+      if (RE_IS_OBJ_STRING.test(parameter)) {
+        this.objString = true
+        this.keys = objectStringToArray(parameter)
+      } else {
+        this.keys = [ parameter ]
+      }
     } else if (Array.isArray(parameter)) {
       // An empty output list means no declared outputs; otherwise every
       // element must be a non-empty plain string (no object-strings).
@@ -113,7 +120,9 @@ export default class Producer {
     }
 
     if (keys.length === 1) {
-      applyKey(output, keys[0], result)
+      // Object-string syntax selects properties only — a scalar return
+      // means the property is absent, not the whole value.
+      applyKey(output, keys[0], this.objString ? undefined : result)
       return output
     }
 
@@ -140,8 +149,8 @@ export default class Producer {
     const output: PipeOutput = {}
     const source = this.inputSource(result)
     for (const key of this.keys) {
-      // Only take the keys we need.
-      output[key] = source[key]
+      // Only take the keys we need; a missing argument maps to undefined.
+      output[key] = source == null ? undefined : source[key]
     }
     return output
   }

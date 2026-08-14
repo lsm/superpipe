@@ -547,3 +547,28 @@ describe('review-fix contract (round 6 parity behaviors)', function () {
     }
   })
 })
+
+// --- review round 8: behaviors pinned from the seventh codex round ---
+describe('review-fix contract (round 7 parity behaviors)', function () {
+  it('maps an absent object-string input argument to undefined values', function (done) {
+    const sp = superpipe({})
+    const run = sp('missing-obj-arg')
+      .input('{a}')
+      .pipe(({ a }) => { expect(a).to.equal(undefined); done() }, '{a}')
+      .end()
+
+    run()
+  })
+
+  it('treats object-string outputs as property selection over any return', function () {
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('objstring-scalar')
+      .pipe(() => 'scalar', null, '{a}')
+      .pipe((a) => { observed = a }, 'a')
+      .end()
+
+    run()
+    expect(observed).to.equal(undefined)
+  })
+})

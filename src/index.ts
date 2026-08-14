@@ -1,16 +1,16 @@
-import Pipeline from './pipeline/Pipeline'
+import PipelineBuilder from './pipeline/Pipeline'
 import { FN_TYPE } from './pipeline/builder'
 import { PipeDefinition } from './pipeline/Pipe'
 import { PipeFunction, PipeParameter, FunctionContainer } from './common'
 
 export default function superpipe<T extends FunctionContainer = FunctionContainer>(
   functions?: T
-): (name: string, defs?: PipeDefinition[]) => Pipeline | Function {
-  return function (name: string, defs?: PipeDefinition[]): Pipeline | Function {
+): SuperPipeFactory {
+  return function (name: string, defs?: PipeDefinition[]): PipelineAPI | ((...args: unknown[]) => void) {
     // Output spec from an explicit end tuple, applied only after every
     // tuple has been processed so later definitions are not lost.
     let endOutput: PipeParameter | undefined
-    const pipeline = new Pipeline(name, functions)
+    const pipeline = new PipelineBuilder(name, functions)
 
     if (Array.isArray(defs)) {
       defs.forEach(function (pipeDef: PipeDefinition): void {
@@ -58,6 +58,14 @@ export type {
 export type { PipeDefinition } from './pipeline/Pipe'
 export type { PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
+// Compatibility type matching the shape master exported as `Pipeline`.
+export interface Pipeline {
+  name: string
+  pipes: Pipe[]
+  errorHandler?: Pipe
+  deps: FunctionContainer
+}
+
 // Compatibility type matching the shape master exported as `Pipe`.
 export interface Pipe {
   fn: ((...args: unknown[]) => unknown) | null
@@ -82,7 +90,7 @@ export interface PipelineAPI {
 export type SuperPipeFactory = (
   name: string,
   defs?: PipeDefinition[]
-) => Pipeline | Function
+) => PipelineAPI | ((...args: unknown[]) => void)
 export type Store = {
   next: (error?: unknown, value?: unknown) => void
   error?: unknown

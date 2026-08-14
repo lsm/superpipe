@@ -76,7 +76,7 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
-  end (output?: PipeParameter): Function {
+  end (output?: PipeParameter): (...args: unknown[]) => PipeOutput {
     const fetcher = new Fetcher(output, 'raw')
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
