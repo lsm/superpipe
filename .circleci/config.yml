@@ -1,67 +1,65 @@
-# Javascript Node CircleCI 2.0 configuration file
+# CircleCI configuration
 #
-# Check https://circleci.com/docs/2.0/language-javascript/ for more details
-#
+# Note: GitHub Actions (.github/workflows/ci.yml) runs the same suite on
+# pushes and pull requests; this file keeps the CircleCI integration that
+# posts coverage to Coveralls.
+---
+version: 2.1
 
 workflows:
   version: 2
   multi-test:
     jobs:
-      - browser
-      - node-v6
-      - node-v8
-      - node-v10
+      - node-v20
+      - node-v22
+      - node-v24
+      - coverage
 
-version: 2
 jobs:
   node-base: &node-base
     docker:
-      - image: circleci/node
+      # Placeholder executor; every declared job needs one, derived jobs
+      # override the image.
+      - image: cimg/node:22.18
     working_directory: ~/repo
     steps:
       - run: node --version
-      - run: npm version
       - checkout
-      # Download and cache dependencies
       - restore_cache:
           keys:
-          - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
-      - run: npm install
+            - v2-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
+      - run: npm ci
       - save_cache:
           paths:
             - node_modules
-          key: v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
-      # run tests!
-      - run: make report-coverage
-  node-v6:
-    <<: *node-base
-    docker:
-      - image: circleci/node:6
-  node-v8:
-    <<: *node-base
-    docker:
-      - image: circleci/node:8
-  node-v10:
-    <<: *node-base
-    docker:
-      - image: circleci/node:10
+          key: v2-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
 
-  browser:
+  node-v20:
+    <<: *node-base
     docker:
-      - image: circleci/node:8
+      - image: cimg/node:20.19
+  node-v22:
+    <<: *node-base
+    docker:
+      - image: cimg/node:22.18
+  node-v24:
+    <<: *node-base
+    docker:
+      - image: cimg/node:24.3
+
+  coverage:
     working_directory: ~/repo
+    docker:
+      - image: cimg/node:20.19
     steps:
       - run: node --version
-      - run: npm version
       - checkout
-      # Download and cache dependencies
       - restore_cache:
           keys:
-          - v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
-      - run: npm install
-      - save_cache:
-          paths:
-            - node_modules
-          key: v1-dependencies-{{ checksum "package.json" }}-{{ .Environment.CIRCLE_JOB }}
-      # run tests!
-      - run: make browser
+            - v2-dependencies-{{ checksum "package-lock.json" }}-{{ .Environment.CIRCLE_JOB }}
+      - run: npm ci
+      - run: npm run coverage
+      - run: npm run report-coverage

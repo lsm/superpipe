@@ -1,28 +1,26 @@
 {
   "compilerOptions": {
-    "target": "ES2015",
-    "module": "ESNext",
-    "lib": ["ES2015"],
-    "declaration": true,
-    "declarationDir": "./types",
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "noImplicitThis": true,
-    "alwaysStrict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
+    "allowJs": false,
+    "allowSyntheticDefaultImports": true,
+    "jsx": "preserve",
+    "lib": ["ES2022"],
+    "listFiles": false,
+    "module": "commonjs",
     "moduleResolution": "node",
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "sourceMap": true,
-    "outDir": "./lib",
-    "rootDir": "./src",
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "preserveConstEnums": true,
+    "removeComments": false,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "types": [],
+    "sourceMap": true,
+    "strict": true,
+    "outDir": "lib",
+    "target": "esnext"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "lib", "es", "dist", "test"]
+  "include": [
+    "src/**/*" 
+  ]
 }

@@ -8,6 +8,9 @@ build:
 build-watch:
 	npm run build-watch
 
+clean-build:
+	rm -rf ./es ./lib ./dist
+
 unit:
 	npm test
 
@@ -20,11 +23,3 @@ coverage:
 # Run test and report coverage reports to coveralls.
 report-coverage: coverage
 	npm run report-coverage
-
-# Test on the saucelabs cloud.
-browser:
-	npm run browser
-
-# Test on local browsers.
-local-browser:
-	npm run local-browser

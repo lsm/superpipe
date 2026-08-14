@@ -2,27 +2,30 @@ import { babel } from '@rollup/plugin-babel'
 import replace from '@rollup/plugin-replace'
 import commonjs from '@rollup/plugin-commonjs'
 import terser from '@rollup/plugin-terser'
-import nodeResolve from '@rollup/plugin-node-resolve'
+import { nodeResolve } from '@rollup/plugin-node-resolve'
 
 const NODE_ENV = process.env.NODE_ENV
 
 const config = {
-  input: 'src/index.ts',
+  input: 'lib/index.js',
   output: {
     format: 'umd',
     name: 'Superpipe',
+    // The entry mixes a default export with named type re-exports; expose
+    // the callable default as the UMD global (`Superpipe(...)`) instead of
+    // a namespace (`Superpipe.default(...)`).
+    exports: 'default',
   },
 
   plugins: [
-    nodeResolve({
-      extensions: ['.ts', '.js']
-    }),
+    nodeResolve(),
+    commonjs(),
     babel({
       babelHelpers: 'bundled',
-      extensions: ['.ts', '.js'],
+      babelrc: false,
       presets: [
         [
-          '@babel/preset-env',
+          '@babel/env',
           {
             targets: {
               browsers: [
@@ -33,15 +36,10 @@ const config = {
             modules: false,
           },
         ],
-        '@babel/preset-typescript'
       ],
       exclude: '**/node_modules/**',
     }),
-    replace({
-      preventAssignment: true,
-      'process.env.NODE_ENV': JSON.stringify(NODE_ENV)
-    }),
-    commonjs(),
+    replace({ preventAssignment: true, 'process.env.NODE_ENV': JSON.stringify(NODE_ENV) }),
   ],
 }
 

@@ -2,6 +2,7 @@
 
 [![CI status][ci-img]][ci-url]
 [![License MIT][license-img]][license-url]
+[![JavaScript Style Guide][standard-img]][standard-url]
 [![NPM version][npm-img]][npm-url]
 [![Coverage Status][coverage-img]][coverage-url]
 [![Code Climate][climate-img]][climate-url]
@@ -99,10 +100,11 @@ Adds a pipe to the pipeline.
 // Injected function by name
 .pipe('myFunction', ['arg1', 'arg2'], 'result')
 
-// Using special inputs
+// Using the special `next` input — next(error, value) assigns `value`
+// to the pipe's declared output name
 .pipe((next, value) => {
-  setTimeout(() => next(null, 'key', value * 2), 100)
-}, ['next', 'value'])
+  setTimeout(() => next(null, value * 2), 100)
+}, ['next', 'value'], 'key')
 ```
 
 #### `.error(handler, input?)`
@@ -113,17 +115,19 @@ Sets an error handler for the pipeline. Only one error handler is allowed per pi
 .error((error) => console.error('Pipeline error:', error), 'error')
 ```
 
-#### `.end()`
+#### `.end(output?)`
 
-Finalizes the pipeline and returns an executor function.
+Finalizes the pipeline and returns an executor function. When `output` is
+provided, the executor returns the requested output value (or an object of the
+requested keys) once the pipeline completes; otherwise it returns `undefined`.
 
 ```javascript
 const run = sp('my-pipeline')
   .input(['x'])
   .pipe(x => x * 2, 'x', 'doubled')
-  .end()
+  .end('doubled')
 
-run(5)  // Executes the pipeline with x=5
+run(5)  // Executes the pipeline with x=5, returns 10
 ```
 
 ### Declarative API
@@ -144,22 +148,17 @@ run(3, 4)  // Output: Sum: 7
 
 ### Special Input Dependencies
 
-- `next`: Control when to proceed to the next pipe (for async operations)
-- `set`: Manually set output values
+- `next`: Control when to proceed to the next pipe and assign outputs manually
+  (for async operations)
 
 ```javascript
-// Async operation with next
+// Async operation — next(error, value) proceeds and stores `value`
+// under the pipe's declared output name ('data')
 .pipe((next, value) => {
   fetchData(value, (err, result) => {
-    next(err, 'data', result)
+    next(err, result)
   })
 }, ['next', 'value'], 'data')
-
-// Manual output with set
-.pipe((set, value) => {
-  set('output1', value * 2)
-  set('output2', value * 3)
-}, ['set', 'value'], ['output1', 'output2'])
 ```
 
 ### Boolean Flow Control
@@ -187,28 +186,42 @@ Prefix function name with `?` to skip if the dependency is undefined:
 .pipe('?optionalHandler', 'maybeValue')  // Skips if optionalHandler or maybeValue is undefined
 ```
 
-### Output Mapping
+### Output Renaming (`source:destination`)
 
-Rename outputs using `originalName:newName` syntax:
+Rename an output as it is stored, using `source:destination` syntax:
 
 ```javascript
-.pipe(getData, 'id', 'result:userProfile')  // Maps 'result' output to 'userProfile'
+.pipe(getData, 'id', 'result:userProfile')  // Stores the returned `result` as `userProfile`
 ```
 
-### Plain Object Returns
+### Asynchronous Pipelines and `.end(output)`
 
-Returning a plain object automatically sets all its keys as outputs:
+The executor returned by `.end()` completes synchronously. When a pipe uses
+`next` and resolves asynchronously, values produced later are not reflected in
+`.end(output)`'s return value — deliver async results through a final pipe,
+`next`, or an error handler instead.
+
+### Object-String Syntax
+
+Use an `{a, b}` object string to destructure a single object argument into
+several inputs, or to pick specific keys from a pipe's returned object as
+outputs:
 
 ```javascript
-.pipe(() => ({ name: 'John', age: 30 }))  // Sets both 'name' and 'age'
+// Input: pull `arg1` and `arg2` out of the single object argument
+sp('my-pipeline')
+  .input('{arg1, arg2}')
+  .pipe(({ arg1, arg2 }) => arg1 + arg2, '{arg1, arg2}', 'sum')
+
+// Output: pick keys from the returned object
+.pipe(getProfile, 'id', '{name, email}')
 ```
 
 ## Error Handling
 
 Errors can be triggered by:
 1. Calling `next(error)` with an error
-2. Setting `set('error', error)`
-3. Throwing an exception in a pipe function
+2. Throwing an exception in a pipe function
 
 ```javascript
 sp('safe-pipeline')
@@ -257,3 +270,5 @@ const sp = superpipe<MyDeps>({
 [coverage-url]: https://coveralls.io/github/lsm/superpipe?branch=master
 [climate-img]: https://codeclimate.com/github/lsm/superpipe/badges/gpa.svg
 [climate-url]: https://codeclimate.com/github/lsm/superpipe
+[standard-img]: https://img.shields.io/badge/code_style-standard-brightgreen.svg
+[standard-url]: https://standardjs.com
