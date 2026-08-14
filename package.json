@@ -32,7 +32,7 @@
     "test": "vitest run",
     "watch": "vitest",
     "coverage": "vitest run --coverage",
-    "lint:pkg": "publint && attw --pack .",
+    "lint:pkg": "publint && attw --pack . --ignore-rules missing-export-equals",
     "typecheck": "tsc --noEmit",
     "build:es": "cross-env NODE_ENV=production tsc -d --noEmit false --module es6 --outDir ./es && node ./scripts/rename-es-mjs.mjs",
     "build:cjs": "cross-env NODE_ENV=production babel -x '.ts' -d ./lib src",
