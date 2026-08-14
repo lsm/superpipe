@@ -31,16 +31,15 @@
     "coverage": "vitest run --coverage",
     "lint:pkg": "publint && attw --pack . --ignore-rules missing-export-equals",
     "typecheck": "tsc --noEmit",
-    "build": "tsdown && tsdown --config tsdown.iife.config.mts"
+    "build": "tsdown && tsdown --config tsdown.iife.config.mts",
+    "lint": "biome check src test",
+    "lint:fix": "biome check src test --write",
+    "format": "biome format src test --write"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@typescript-eslint/eslint-plugin": "8.67.0",
-    "@typescript-eslint/parser": "8.67.0",
+    "@biomejs/biome": "2.5.8",
     "@vitest/coverage-v8": "4.1.10",
-    "eslint": "8.57.1",
-    "eslint-plugin-babel": "5.3.1",
-    "eslint-plugin-import": "2.32.0",
     "publint": "0.3.23",
     "tsdown": "0.22.14",
     "typescript": "5.9.3",

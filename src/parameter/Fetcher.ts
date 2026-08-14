@@ -1,21 +1,22 @@
 import {
-  PipeOutput,
-  PipeResult,
-  PipeParameter,
-  FunctionContainer,
-  NextCalledTwiceError,
-  RE_IS_OBJ_STRING,
+  type AnyFunction,
+  type FunctionContainer,
   isValidArrayParameters,
+  NextCalledTwiceError,
   objectStringToArray,
+  type PipeOutput,
+  type PipeParameter,
+  type PipeResult,
+  RE_IS_OBJ_STRING,
 } from '../common'
 
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
 // to the pipe that received the callback, not to a mutable step counter, so
 // a stale `next` retained by an earlier pipe cannot advance the pipeline
 // around a pipe that is still waiting for its own `next`.
-function once (next: Function): Function {
+function once(next: AnyFunction): AnyFunction {
   let called = false
-  return function (error?: Error, value?: PipeResult): void {
+  return (error?: Error, value?: PipeResult): void => {
     if (called) {
       throw new NextCalledTwiceError()
     }
@@ -28,7 +29,7 @@ export default class Fetcher {
   // Array of property name to fetch.
   private keys: string[] = []
 
-  private _fetch: Function = this.fetchNothing
+  private _fetch: AnyFunction = this.fetchNothing
 
   // Set for the fetcher created by `.end(output)`, whose result is returned
   // to the caller rather than spread as invocation arguments.
@@ -36,7 +37,7 @@ export default class Fetcher {
 
   hasNext: boolean = false
 
-  constructor (parameter: PipeParameter | undefined, flag?: string) {
+  constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'raw') {
       this.raw = true
     }
@@ -46,12 +47,12 @@ export default class Fetcher {
         this.keys = objectStringToArray(parameter)
         this._fetch = this.fetchAsObject
       } else if (this.raw) {
-        this.keys = [ parameter ]
+        this.keys = [parameter]
         this._fetch = this.fetchSingle
       }
       // Normalize string as array.
       // When it's not object string or flag equals raw.
-      parameter = [ parameter ]
+      parameter = [parameter]
     }
 
     if (this._fetch === this.fetchNothing) {
@@ -62,7 +63,9 @@ export default class Fetcher {
         this.keys = []
         this._fetch = this.fetchNothing
       } else {
-        throw new Error('Pipe input parameter must be non-empty string or array of non-empty strings')
+        throw new Error(
+          'Pipe input parameter must be non-empty string or array of non-empty strings',
+        )
       }
     }
 
@@ -72,18 +75,14 @@ export default class Fetcher {
   // `args` are the wrapped invocation arguments, handed to pipes that declare
   // no inputs. `functions` is the configured dependency container, consulted
   // for keys that are not present in `container`.
-  fetch (
-    container: PipeResult,
-    args?: PipeResult[],
-    functions?: FunctionContainer
-  ): PipeOutput {
+  fetch(container: PipeResult, args?: PipeResult[], functions?: FunctionContainer): PipeOutput {
     return this._fetch(container, args || [], functions)
   }
 
-  private lookup (
+  private lookup(
     container: PipeResult,
     functions: FunctionContainer | undefined,
-    key: string
+    key: string,
   ): PipeResult {
     if (Object.prototype.hasOwnProperty.call(container, key)) {
       return container[key]
@@ -94,45 +93,47 @@ export default class Fetcher {
     return undefined
   }
 
-  private value (
+  private value(
     container: PipeResult,
     functions: FunctionContainer | undefined,
-    key: string
+    key: string,
   ): PipeResult {
     return key === 'next' ? once(container.next) : this.lookup(container, functions, key)
   }
 
   // True when any requested input (except `next`) resolves to undefined.
-  hasUnresolved (container: PipeResult, functions?: FunctionContainer): boolean {
-    return this.keys.some((key: string): boolean =>
-      key !== 'next' && this.lookup(container, functions, key) === undefined)
+  hasUnresolved(container: PipeResult, functions?: FunctionContainer): boolean {
+    return this.keys.some(
+      (key: string): boolean =>
+        key !== 'next' && this.lookup(container, functions, key) === undefined,
+    )
   }
 
-  fetchNothing (_container: PipeResult, args: PipeResult[]): PipeOutput {
+  fetchNothing(_container: PipeResult, args: PipeResult[]): PipeOutput {
     // Pipes without an input declaration receive the original invocation args.
     return args
   }
 
-  fetchSingle (
+  fetchSingle(
     container: PipeResult,
     _args: PipeResult[],
-    functions?: FunctionContainer
+    functions?: FunctionContainer,
   ): PipeOutput {
     return this.lookup(container, functions, this.keys[0])
   }
 
-  fetchAsArray (
+  fetchAsArray(
     container: PipeResult,
     _args: PipeResult[],
-    functions?: FunctionContainer
+    functions?: FunctionContainer,
   ): PipeOutput {
     return this.keys.map((key: string): PipeResult => this.value(container, functions, key))
   }
 
-  fetchAsObject (
+  fetchAsObject(
     container: PipeResult,
     _args: PipeResult[],
-    functions?: FunctionContainer
+    functions?: FunctionContainer,
   ): PipeOutput {
     const result: PipeResult = {}
 
@@ -142,6 +143,6 @@ export default class Fetcher {
 
     // The array wrapper suits function invocation; the `.end()` fetcher
     // returns the picked object itself.
-    return this.raw ? result : [ result ]
+    return this.raw ? result : [result]
   }
 }
