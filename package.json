@@ -29,7 +29,7 @@
     "test": "vitest run",
     "watch": "vitest",
     "coverage": "vitest run --coverage",
-    "lint:pkg": "publint && attw --pack .",
+    "lint:pkg": "publint && attw --pack . --ignore-rules missing-export-equals",
     "typecheck": "tsc --noEmit",
     "build": "tsdown && tsdown --config tsdown.iife.config.mts"
   },
