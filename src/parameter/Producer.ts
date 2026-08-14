@@ -55,6 +55,9 @@ export default class Producer {
 
     // Output mode: every spec form reduces to a list of output names; the
     // mapping semantics depend only on the produced value's shape.
+    if (parameter === '') {
+      throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
+    }
     if (typeof parameter === 'string') {
       this.keys = RE_IS_OBJ_STRING.test(parameter)
         ? objectStringToArray(parameter)

@@ -27,7 +27,7 @@ export interface FunctionContainer {
 export interface PipelineBase {
   readonly name: string;
   readonly pipes: Pipe[];
-  readonly inputPipe?: InputPipe;
+  readonly inputPipes?: InputPipe[];
   readonly functions: FunctionContainer;
   readonly errorHandler?: Function;
 }

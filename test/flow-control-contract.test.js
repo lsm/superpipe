@@ -450,3 +450,67 @@ describe('review-fix contract (round 4 parity behaviors)', function () {
     run('raw')
   })
 })
+
+// --- review round 6: behaviors pinned from the fifth codex round ---
+describe('review-fix contract (round 5 parity behaviors)', function () {
+  it('sees dependency updates made after the executor was built', function () {
+    const deps = { enabled: false }
+    const sp = superpipe(deps)
+    let afterRan = false
+    const run = sp('live-deps')
+      .pipe('enabled')                 // falsey raw boolean → halts
+      .pipe(() => { afterRan = true })
+      .end()
+
+    run()
+    expect(afterRan).to.equal(false)
+
+    deps.enabled = true                // mutate the configured container
+    run()
+    expect(afterRan).to.equal(true)
+  })
+
+  it('skips an optional pipe whose object-string input has missing values', function () {
+    let afterRan = false
+    const sp = superpipe({ handler: () => { throw new Error('should be skipped') } })
+    const run = sp('optional-object-input')
+      .input(['user'])
+      .pipe('?handler', '{user, config}')   // config is undefined
+      .pipe(() => { afterRan = true })
+      .end()
+
+    expect(() => run({ user: 'x' })).to.not.throw()
+    expect(afterRan).to.equal(true)
+  })
+
+  it('accumulates multiple input declarations', function (done) {
+    // Each declaration maps the same invocation arguments positionally;
+    // what matters is that an earlier declaration is not lost.
+    const sp = superpipe({})
+    const run = sp('multi-input')
+      .input(['arg1'])
+      .pipe('input', ['arg2'])   // restored reserved form as a second declaration
+      .pipe((arg1, arg2) => {
+        expect(arg1).to.equal('a')
+        expect(arg2).to.equal('a')
+        done()
+      }, ['arg1', 'arg2'])
+      .end()
+
+    run('a')
+  })
+
+  it('resolves .end(output) from configured dependencies', function () {
+    const sp = superpipe({ config: 42 })
+    const run = sp('end-from-deps')
+      .pipe(() => 'unused', null, 'ignored')
+      .end('config')
+
+    expect(run()).to.equal(42)
+  })
+
+  it('rejects an empty-string output declaration at construction', function () {
+    const sp = superpipe({})
+    expect(() => sp('empty-output').pipe(() => 1, null, '')).to.throw('non-empty string')
+  })
+})

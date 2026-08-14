@@ -40,8 +40,10 @@ function executePipe (
   let result: PipeResult
 
   // Optional pipe: skip when the dependency or any requested input is
-  // unresolved — before the callable is invoked.
-  if (pipe.optional && (fn === undefined || inputArgs.indexOf(undefined) > -1)) {
+  // unresolved — before the callable is invoked. hasUnresolved also looks
+  // inside object-string inputs, whose wrapped object hides missing values
+  // from a top-level indexOf.
+  if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
     return next(state, pipeline)
   } else if (typeof fn === 'function') {
     try {
@@ -145,11 +147,9 @@ export function runPipeline (
     handlingError: false,
   }
 
-  // Start executing from input pipe if we have one.
-  const inputPipe = pipeline.inputPipe
-  if (inputPipe) {
-    // Produce output from the original pipeline arguments
-    // which will be merged with state container.
+  // Start from the input pipes, if any: each maps the invocation arguments
+  // into the shared container.
+  for (const inputPipe of pipeline.inputPipes || []) {
     Object.assign(state.container, inputPipe.producer.produce(state.args))
   }
 

@@ -102,6 +102,12 @@ export default class Fetcher {
     return key === 'next' ? once(container.next) : this.lookup(container, functions, key)
   }
 
+  // True when any requested input (except `next`) resolves to undefined.
+  hasUnresolved (container: PipeResult, functions?: FunctionContainer): boolean {
+    return this.keys.some((key: string): boolean =>
+      key !== 'next' && this.lookup(container, functions, key) === undefined)
+  }
+
   fetchNothing (_container: PipeResult, args: PipeResult[]): PipeOutput {
     // Pipes without an input declaration receive the original invocation args.
     return args

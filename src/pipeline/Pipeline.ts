@@ -24,13 +24,15 @@ export default class Pipeline implements PipelineBase {
   // Function container of the pipeline.
   functions: FunctionContainer
 
-  inputPipe?: InputPipe
+  inputPipes: InputPipe[] = []
 
   errorHandler?: Function
 
   constructor (name: string, functions?: FunctionContainer) {
     this.name = name
-    this.functions = { ...functions }
+    // Keep the caller's container by reference so dependency updates made
+    // after construction remain visible at execution time.
+    this.functions = functions || {}
   }
 
   input (input?: PipeParameter): Pipeline {
@@ -41,7 +43,8 @@ export default class Pipeline implements PipelineBase {
       throw new Error('Input pipe requires a non-empty string or array of non-empty strings.')
     }
 
-    this.inputPipe = createInputPipe(input)
+    // Accumulate: multiple input declarations all populate the store.
+    this.inputPipes.push(createInputPipe(input))
     return this
   }
 
@@ -79,8 +82,8 @@ export default class Pipeline implements PipelineBase {
     const pipeline: PipelineBase = {
       name: this.name,
       pipes: [ ...this.pipes ],
-      inputPipe: this.inputPipe,
-      functions: { ...this.functions },
+      inputPipes: [ ...this.inputPipes ],
+      functions: this.functions,
       errorHandler: this.errorHandler,
     }
 
@@ -100,7 +103,7 @@ export default class Pipeline implements PipelineBase {
 
       // Start executing the pipeline.
       const container = runPipeline(args, pipeline)
-      return fetcher.fetch(container)
+      return fetcher.fetch(container, [], pipeline.functions)
     }
   }
 }

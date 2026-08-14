@@ -11,6 +11,10 @@ const config = {
   output: {
     format: 'umd',
     name: 'Superpipe',
+    // The entry mixes a default export with named type re-exports; expose
+    // the callable default as the UMD global (`Superpipe(...)`) instead of
+    // a namespace (`Superpipe.default(...)`).
+    exports: 'default',
   },
 
   plugins: [
