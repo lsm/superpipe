@@ -4,6 +4,7 @@
   "description": "The missing pipeline for functional programming",
   "main": "lib/index.js",
   "module": "es/index.js",
+  "types": "lib/index.d.ts",
   "files": [
     "es/**/*",
     "lib/**/*",
@@ -17,6 +18,7 @@
     "watch": "nodemon -w ./src -w ./test -x 'npm run test'",
     "coverage": "cross-env NODE_ENV=test nyc mocha --recursive",
     "report-coverage": "nyc report --reporter=text-lcov | coveralls",
+    "typecheck": "tsc --noEmit",
     "build:es": "cross-env NODE_ENV=production tsc -d --noEmit false --module es6 --outDir ./es",
     "build:cjs": "cross-env NODE_ENV=production babel -x '.ts' -d ./lib src",
     "build:umd": "cross-env NODE_ENV=development rollup -c -o dist/superpipe.js",

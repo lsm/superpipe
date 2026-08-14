@@ -3,7 +3,9 @@ import { FN_TYPE } from './pipeline/builder'
 import { PipeDefinition } from './pipeline/Pipe'
 import { PipeFunction, FunctionContainer } from './common'
 
-export default function (functions: FunctionContainer): Function {
+export default function superpipe<T extends FunctionContainer>(
+  functions: T
+): (name: string, defs: PipeDefinition[]) => Pipeline | Function {
   return function (name: string, defs: PipeDefinition[]): Pipeline | Function {
     let end
     const pipeline = new Pipeline(name, functions)
@@ -35,3 +37,18 @@ export default function (functions: FunctionContainer): Function {
   }
 }
 
+// Exports for library consumers. `Dependencies`, `PipelineAPI` and
+// `PipelineDefinition` are aliases for the names master exported, kept for
+// backwards compatibility.
+export { Pipeline }
+export type {
+  PipeResult,
+  PipeOutput,
+  PipeFunction,
+  PipeParameter,
+  FunctionContainer,
+  PipelineBase,
+} from './common'
+export type { PipeDefinition } from './pipeline/Pipe'
+export type { FunctionContainer as Dependencies } from './common'
+export type { Pipeline as PipelineAPI }
