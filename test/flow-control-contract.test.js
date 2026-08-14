@@ -341,18 +341,87 @@ describe('review-fix contract (round 2 parity behaviors)', function () {
     expect(afterRan).to.equal(false)
   })
 
-  it('throws when multiple outputs receive a primitive return value', function () {
+  it('stores nothing when multiple outputs receive a primitive return value', function (done) {
+    // Master maps only arrays (positionally) and objects (by property);
+    // a primitive with multiple output names maps to nothing.
     const sp = superpipe({})
     const run = sp('primitive-multi-output')
       .pipe(() => 'ab', null, ['x', 'y'])
+      .pipe((x, y) => {
+        expect(x).to.equal(undefined)
+        expect(y).to.equal(undefined)
+        done()
+      }, ['x', 'y'])
       .end()
 
-    expect(() => run()).to.throw('Multiple pipe outputs require an array or object return value.')
+    expect(() => run()).to.not.throw()
   })
 
   it('rejects empty input declarations at construction', function () {
     const sp = superpipe({})
     expect(() => sp('bad-input').input([])).to.throw('Input pipe requires a non-empty string')
     expect(() => sp('bad-input2').input('')).to.throw('Input pipe requires a non-empty string')
+  })
+})
+
+// --- review round 4: behaviors pinned from the third codex round ---
+describe('review-fix contract (round 3 parity behaviors)', function () {
+  it('selects the declared property for a single output over an object return', function () {
+    let observed
+    const sp = superpipe({})
+    const run = sp('object-single-output')
+      .pipe(() => ({ arg2: 'value', other: 1 }), null, 'arg2')
+      .pipe((arg2) => { observed = arg2 }, 'arg2')
+      .end()
+
+    run()
+    expect(observed).to.equal('value')
+  })
+
+  it('maps arrays positionally even with a single output name', function () {
+    let observed
+    const sp = superpipe({})
+    const run = sp('array-single-output')
+      .pipe(() => ['a', 'b'], null, 'first')
+      .pipe((first) => { observed = first }, 'first')
+      .end()
+
+    run()
+    expect(observed).to.equal('a')
+  })
+
+  it('supports the reserved .pipe("input", [...]) form', function () {
+    let observed
+    const sp = superpipe({ greet: (n) => `hi ${n}` })
+    const run = sp('reserved-input')
+      .pipe('input', ['name'])
+      .pipe('greet', 'name', 'msg')
+      .pipe((msg) => { observed = msg }, 'msg')
+      .end()
+
+    run('bob')
+    expect(observed).to.equal('hi bob')
+  })
+
+  it('accepts an empty array as a pipe output declaration meaning none', function () {
+    const sp = superpipe({})
+    const run = sp('empty-output')
+      .pipe(() => 'x', null, [])
+      .pipe(() => 'done', null, 'done')
+      .end('done')
+
+    expect(run()).to.equal('done')
+  })
+
+  it('runs a throwing error handler exactly once', function () {
+    let calls = 0
+    const sp = superpipe({})
+    const run = sp('handler-throws')
+      .pipe((next) => { next(new Error('first')) }, 'next')
+      .error(() => { calls++; throw new Error('handler exploded') })
+      .end()
+
+    expect(() => run()).to.throw('handler exploded')
+    expect(calls).to.equal(1)
   })
 })

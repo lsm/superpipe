@@ -54,7 +54,16 @@ export type {
   PipelineBase,
 } from './common'
 export type { PipeDefinition } from './pipeline/Pipe'
-export type { default as Pipe, InputPipe } from './pipeline/Pipe'
+
+// Compatibility type matching the shape master exported as `Pipe`.
+export interface Pipe {
+  fn: ((...args: unknown[]) => unknown) | null
+  fnName: string | undefined
+  input: string[]
+  output?: string[]
+  not?: boolean
+  optional?: boolean
+}
 export type { FunctionContainer as Dependencies } from './common'
 export type { Pipeline as PipelineAPI }
 

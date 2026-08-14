@@ -15,6 +15,9 @@ interface PipeState {
   container: ResultContainer;
   // Wrapped invocation arguments, supplied to pipes that declare no inputs.
   args: PipeResult[];
+  // True while an error handler (or the no-handler throw) is unwinding —
+  // such exceptions must not be treated as fresh pipe errors.
+  handlingError: boolean;
 }
 
 function executePipe (
@@ -46,6 +49,13 @@ function executePipe (
     } catch (err) {
       // The duplicate-`next` guard must surface as itself, not be wrapped.
       if (err instanceof NextCalledTwiceError) {
+        throw err
+      }
+      // An exception raised by an error handler (or by the no-handler
+      // rethrow) while a pipe's synchronous `next` unwinds is not a fresh
+      // pipe error — re-dispatching it would run the handler twice.
+      if (state.handlingError) {
+        state.handlingError = false
         throw err
       }
       // A falsey thrown value must not be mistaken for successful
@@ -91,12 +101,20 @@ function next (
   const { pipes, errorHandler } = pipeline
   const { step, container } = state
 
+  if (!error) {
+    // Clear any stale flag from a previous, fully-handled error path.
+    state.handlingError = false
+  }
+
   if (value != null) {
     // Merge the output of previous pipe with container.
     Object.assign(container, pipes[step - 1].producer.produce(value))
   }
 
   if (error) {
+    // Stays set while the handler (or the no-handler rethrow) unwinds, so
+    // executePipe's catch does not re-dispatch it as a fresh pipe error.
+    state.handlingError = true
     if (errorHandler) {
       container.error = error
       errorHandler(container, pipeline.functions)
@@ -124,6 +142,7 @@ export function runPipeline (
       },
     },
     args: Array.isArray(args) ? args : (args === undefined ? [] : [ args ]),
+    handlingError: false,
   }
 
   // Start executing from input pipe if we have one.

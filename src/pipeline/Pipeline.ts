@@ -52,6 +52,14 @@ export default class Pipeline implements PipelineBase {
     if (this.errorHandler) {
       throw new Error('Adding new pipe after error pipe is not allowed.')
     }
+    // Reserved names: `.pipe('input', [...])` and `.pipe('error', handler, [...])`
+    // dispatch to their dedicated builders, as on master.
+    if (fn === 'input') {
+      return this.input(input)
+    }
+    if (fn === 'error') {
+      return this.error(input as PipeFunction, output)
+    }
     const pipe = createPipe(fn, input, output)
     this.pipes.push(pipe)
     return this
