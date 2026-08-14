@@ -45,9 +45,17 @@ export default class Producer {
   }
 
   produceFromArray(result: PipeResult): PipeOutput {
-    let i = 0
     const output: PipeOutput = {}
 
+    // When a single positional input name is mapped to a single (non-array)
+    // argument — e.g. `.input(['name'])` called with `run('World')` — assign
+    // the whole argument rather than indexing into it.
+    if (this.keys.length === 1 && !Array.isArray(result)) {
+      output[this.keys[0]] = result
+      return output
+    }
+
+    let i = 0
     for (const key of this.keys) {
       output[key] = result[i]
       i += 1

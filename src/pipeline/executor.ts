@@ -25,9 +25,15 @@ function executePipe (
 
   if (fnType === 'function') {
     try {
-      const result = fn.apply(0, inputArgs)
-      if (pipe.fetcher.hasNext === false) {
-        // Run next pipe automatically when next is not required by the input.
+      let result = fn.apply(0, inputArgs)
+      // `!` not-pipe: invert a boolean result so `!dep` continues only when
+      // the dependency is falsey.
+      if (pipe.not && typeof result === 'boolean') {
+        result = !result
+      }
+      // Auto-advance only when the pipe does not request `next` AND does not
+      // return `false` (boolean flow control — `false` halts the pipeline).
+      if (pipe.fetcher.hasNext === false && result !== false) {
         next(state, pipeline, null, result)
       }
     } catch (err) {

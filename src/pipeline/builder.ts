@@ -36,11 +36,11 @@ export function createPipe (
       fn = fn.slice(1)
     }
 
-    // It's an `optional` pipe if the name is ended with `?`.
+    // It's an `optional` pipe if the name is started with `?`.
     // The actual function name is the value without the question mark.
-    pipe.optional = /\?$/.test(fn)
+    pipe.optional = /^\?/.test(fn)
     if (pipe.optional) {
-      fn = fn.slice(0, -1)
+      fn = fn.slice(1)
     }
 
     // Set the original function name to the pipe object

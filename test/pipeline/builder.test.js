@@ -36,7 +36,7 @@ describe('Test pipe builder', () => {
     })
 
     it('should create an optional pipe when function name start with ?', () => {
-      const myFunctionName = 'myFunc?'
+      const myFunctionName = '?myFunc'
       const pipe = createPipe(myFunctionName, [ 'input' ], '{output}')
 
       expect(pipe.fn).to.equal(null)

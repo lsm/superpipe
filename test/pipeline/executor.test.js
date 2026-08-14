@@ -148,11 +148,11 @@ describe('Executor', () => {
     it('should ignore the optional pipe if it is not provided', (done) => {
       const func = sp('call optional pipe')
         .input([ 'someFunc', 'arg2' ])
-        .pipe('someFunc?', 'arg2')
+        .pipe('?someFunc', 'arg2')
         .end()
 
       const func2 = sp('ignore optional pipe')
-        .pipe('someFunc?', 'arg2')
+        .pipe('?someFunc', 'arg2')
         .pipe(() => func(someFunc, input.arg2))
         .end()
 
