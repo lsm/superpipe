@@ -1,11 +1,15 @@
-import Pipe, { InputPipe } from './Pipe'
+import {
+  type AnyFunction,
+  type FunctionContainer,
+  isNonEmptyString,
+  type PipeFunction,
+  type PipeParameter,
+  type PipeResult,
+} from '../common'
 import Fetcher from '../parameter/Fetcher'
 import Producer from '../parameter/Producer'
-import {
-  PipeResult,
-  PipeFunction, PipeParameter,
-  isNonEmptyString, FunctionContainer,
-} from '../common'
+import type Pipe from './Pipe'
+import type { InputPipe } from './Pipe'
 
 export enum FN_TYPE {
   END = 'end',
@@ -13,10 +17,10 @@ export enum FN_TYPE {
   INPUT = 'input',
 }
 
-export function createPipe (
+export function createPipe(
   fn: PipeFunction,
   input?: PipeParameter,
-  output?: PipeParameter
+  output?: PipeParameter,
 ): Pipe | never {
   const pipe: Pipe = {
     fn: null,
@@ -57,7 +61,7 @@ export function createPipe (
   return pipe
 }
 
-export function createInputPipe (input: PipeParameter): InputPipe {
+export function createInputPipe(input: PipeParameter): InputPipe {
   const pipe: InputPipe = {
     fnName: 'input',
     producer: new Producer(input, 'input'),
@@ -66,39 +70,30 @@ export function createInputPipe (input: PipeParameter): InputPipe {
   return pipe
 }
 
-export function createErrorPipe (
-  errorFn: PipeFunction,
-  input?: PipeParameter
-): Function {
+export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): AnyFunction {
   const fetcher = new Fetcher(input === undefined ? 'error' : input)
 
   if (fetcher.hasNext) {
     throw new Error('"next" could not be used in error pipe.')
   }
 
-  let getErrorFn: Function
+  let getErrorFn: AnyFunction
 
   if (isNonEmptyString(errorFn)) {
     const fnName: string = errorFn as string
-    getErrorFn = function (
-      container: PipeResult,
-      functions: FunctionContainer
-    ): Function {
-      if (Object.prototype.hasOwnProperty.call(container, fnName)) {
-        return container[fnName] as Function
+    getErrorFn = (container: PipeResult, functions: FunctionContainer): AnyFunction => {
+      if (Object.hasOwn(container, fnName)) {
+        return container[fnName] as AnyFunction
       }
-      return functions[fnName] as Function
+      return functions[fnName] as AnyFunction
     }
   } else if (typeof errorFn === 'function') {
-    getErrorFn = (): Function => errorFn
+    getErrorFn = (): AnyFunction => errorFn
   } else {
     throw new Error('Error handler must be a string or function.')
   }
 
-  return function errorHandler (
-    container: PipeResult,
-    functions: FunctionContainer
-  ): void {
+  return function errorHandler(container: PipeResult, functions: FunctionContainer): void {
     const inputArgs = fetcher.fetch(container, [], functions)
     const fn = getErrorFn(container, functions)
     if (typeof fn === 'function') {

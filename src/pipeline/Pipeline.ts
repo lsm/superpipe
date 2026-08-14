@@ -1,19 +1,17 @@
-import {
-  createPipe,
-  createInputPipe,
-  createErrorPipe,
-} from './builder'
-import {
-  PipeOutput,
-  PipeResult,
+import type {
+  AnyFunction,
+  FunctionContainer,
   PipeFunction,
   PipelineBase,
+  PipeOutput,
   PipeParameter,
-  FunctionContainer,
+  PipeResult,
 } from '../common'
-import { runPipeline } from './executor'
 import Fetcher from '../parameter/Fetcher'
-import Pipe, { InputPipe } from './Pipe'
+import { createErrorPipe, createInputPipe, createPipe } from './builder'
+import { runPipeline } from './executor'
+import type Pipe from './Pipe'
+import type { InputPipe } from './Pipe'
 
 export default class Pipeline implements PipelineBase {
   name: string
@@ -26,16 +24,16 @@ export default class Pipeline implements PipelineBase {
 
   inputPipes: InputPipe[] = []
 
-  errorHandler?: Function
+  errorHandler?: AnyFunction
 
-  constructor (name: string, functions?: FunctionContainer) {
+  constructor(name: string, functions?: FunctionContainer) {
     this.name = name
     // Keep the caller's container by reference so dependency updates made
     // after construction remain visible at execution time.
     this.functions = functions || {}
   }
 
-  input (input?: PipeParameter): Pipeline {
+  input(input?: PipeParameter): Pipeline {
     if (this.pipes.length > 0) {
       throw new Error('Input pipe must be the first pipe in the pipeline.')
     }
@@ -48,10 +46,7 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
-  pipe (
-    fn: PipeFunction,
-    input?: PipeParameter, output?: PipeParameter
-  ): Pipeline {
+  pipe(fn: PipeFunction, input?: PipeParameter, output?: PipeParameter): Pipeline {
     if (this.errorHandler) {
       throw new Error('Adding new pipe after error pipe is not allowed.')
     }
@@ -68,7 +63,7 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
-  error (fn: PipeFunction, input?: PipeParameter): Pipeline {
+  error(fn: PipeFunction, input?: PipeParameter): Pipeline {
     if (this.errorHandler) {
       throw new Error('Each pipeline could only have one error handler.')
     }
@@ -76,13 +71,13 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
-  end (output?: PipeParameter): (...args: unknown[]) => PipeOutput {
+  end(output?: PipeParameter): (...args: unknown[]) => PipeOutput {
     const fetcher = new Fetcher(output, 'raw')
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
       name: this.name,
-      pipes: [ ...this.pipes ],
-      inputPipes: [ ...this.inputPipes ],
+      pipes: [...this.pipes],
+      inputPipes: [...this.inputPipes],
       functions: this.functions,
       errorHandler: this.errorHandler,
     }
@@ -107,4 +102,3 @@ export default class Pipeline implements PipelineBase {
     }
   }
 }
-

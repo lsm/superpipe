@@ -1,17 +1,18 @@
 import {
-  PipeOutput,
-  PipeResult,
-  PipeParameter,
-  RE_IS_OBJ_STRING,
+  type AnyFunction,
   isValidArrayParameters,
   objectStringToArray,
+  type PipeOutput,
+  type PipeParameter,
+  type PipeResult,
+  RE_IS_OBJ_STRING,
 } from '../common'
 
 // `source:destination` renaming, e.g. an output of `'arg2:mappedArgName'`
 // stores the returned `arg2` under `mappedArgName`.
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
-function applyKey (output: PipeOutput, key: string, value: PipeResult): void {
+function applyKey(output: PipeOutput, key: string, value: PipeResult): void {
   const rename = RE_RENAME.exec(key)
   if (rename) {
     output[rename[2]] = value
@@ -24,7 +25,7 @@ export default class Producer {
   // Array of property names to produce.
   private keys: string[] = []
 
-  private _produce: Function
+  private _produce: AnyFunction
 
   // Input producers receive the wrapped invocation-arguments array, so
   // single-name and object-string specs read from its first element.
@@ -52,7 +53,9 @@ export default class Producer {
         this.keys = parameter as string[]
         this._produce = this.produceFromArray
       } else {
-        throw new Error('Pipe input parameter must be non-empty string or array of non-empty strings')
+        throw new Error(
+          'Pipe input parameter must be non-empty string or array of non-empty strings',
+        )
       }
       return
     }
@@ -67,7 +70,7 @@ export default class Producer {
         this.objString = true
         this.keys = objectStringToArray(parameter)
       } else {
-        this.keys = [ parameter ]
+        this.keys = [parameter]
       }
     } else if (Array.isArray(parameter)) {
       // An empty output list means no declared outputs; otherwise every

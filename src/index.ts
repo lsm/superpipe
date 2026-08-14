@@ -1,20 +1,20 @@
-import PipelineBuilder from './pipeline/Pipeline'
+import type { AnyFunction, FunctionContainer, PipeFunction, PipeParameter } from './common'
 import { FN_TYPE } from './pipeline/builder'
-import { PipeDefinition } from './pipeline/Pipe'
-import { PipeFunction, PipeParameter, FunctionContainer } from './common'
+import type { PipeDefinition } from './pipeline/Pipe'
+import PipelineBuilder from './pipeline/Pipeline'
 
 export default function superpipe<T extends FunctionContainer = FunctionContainer>(
-  functions?: T
+  functions?: T,
 ): SuperPipeFactory {
-  return function (name: string, defs?: PipeDefinition[]): PipelineAPI | ((...args: unknown[]) => void) {
+  return (name: string, defs?: PipeDefinition[]): PipelineAPI | ((...args: unknown[]) => void) => {
     // Output spec from an explicit end tuple, applied only after every
     // tuple has been processed so later definitions are not lost.
     let endOutput: PipeParameter | undefined
     const pipeline = new PipelineBuilder(name, functions)
 
     if (Array.isArray(defs)) {
-      defs.forEach(function (pipeDef: PipeDefinition): void {
-        const [ fn, input, output ] = pipeDef
+      defs.forEach((pipeDef: PipeDefinition): void => {
+        const [fn, input, output] = pipeDef
         switch (fn) {
           case FN_TYPE.INPUT:
             pipeline.input(input)
@@ -26,11 +26,7 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
             endOutput = input
             break
           default:
-            pipeline.pipe(
-              fn,
-              input,
-              output
-            )
+            pipeline.pipe(fn, input, output)
         }
       })
 
@@ -48,15 +44,14 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
 // `PipelineDefinition` are aliases for the names master exported, kept for
 // backwards compatibility.
 export type {
-  PipeResult,
-  PipeOutput,
-  PipeFunction,
-  PipeParameter,
   FunctionContainer,
+  PipeFunction,
   PipelineBase,
+  PipeOutput,
+  PipeParameter,
+  PipeResult,
 } from './common'
-export type { PipeDefinition } from './pipeline/Pipe'
-export type { PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
+export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
 // Compatibility type matching the shape master exported as `Pipeline`.
 export interface Pipeline {
@@ -83,13 +78,13 @@ export interface PipelineAPI {
   input: (input?: PipeParameter) => PipelineAPI
   pipe: (fn: PipeFunction, input?: PipeParameter, output?: PipeParameter) => PipelineAPI
   error: (fn: PipeFunction, input?: PipeParameter) => PipelineAPI
-  end: (output?: PipeParameter) => Function
+  end: (output?: PipeParameter) => AnyFunction
 }
 
 // Compatibility aliases for the remaining type names master exported.
 export type SuperPipeFactory = (
   name: string,
-  defs?: PipeDefinition[]
+  defs?: PipeDefinition[],
 ) => PipelineAPI | ((...args: unknown[]) => void)
 export type Store = {
   next: (error?: unknown, value?: unknown) => void

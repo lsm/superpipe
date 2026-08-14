@@ -1,28 +1,31 @@
-import Pipe from './Pipe'
 import {
-  PipeResult,
-  PipelineBase,
+  type AnyFunction,
   NextCalledTwiceError,
+  type PipelineBase,
+  type PipeResult,
   throwNoErrorHandlerError,
 } from '../common'
+import type Pipe from './Pipe'
 
 interface ResultContainer {
-  [key: string]: PipeResult;
+  [key: string]: PipeResult
 }
 
 interface PipeState {
-  step: 0;
-  container: ResultContainer;
+  step: 0
+  container: ResultContainer
   // Wrapped invocation arguments, supplied to pipes that declare no inputs.
-  args: PipeResult[];
+  args: PipeResult[]
   // True while an error handler (or the no-handler throw) is unwinding —
   // such exceptions must not be treated as fresh pipe errors.
-  handlingError: boolean;
+  handlingError: boolean
 }
 
-function executePipe (
-  pipe: Pipe, state: PipeState,
-  pipeline: PipelineBase, next: Function
+function executePipe(
+  pipe: Pipe,
+  state: PipeState,
+  pipeline: PipelineBase,
+  next: AnyFunction,
 ): void {
   const { fnName } = pipe
   const { container, args } = state
@@ -31,9 +34,9 @@ function executePipe (
   // Presence-based lookup: a runtime `false` (or other falsey value) must not
   // fall through to the configured dependency.
   const fn = pipe.injected
-    ? (Object.prototype.hasOwnProperty.call(container, fnName)
-        ? container[fnName]
-        : functions[fnName])
+    ? Object.hasOwn(container, fnName)
+      ? container[fnName]
+      : functions[fnName]
     : pipe.fn
   const inputArgs = pipe.fetcher.fetch(container, args, functions)
 
@@ -69,8 +72,11 @@ function executePipe (
     result = fn
   } else {
     // Throw an exception when the dependency is not something we can execute.
-    throw new Error(`Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName
-    }] : Dependency "${fnName}" is not a function or boolean.`)
+    throw new Error(
+      `Pipeline [${pipeline.name}] step [${state.step}|${
+        pipe.fnName
+      }] : Dependency "${fnName}" is not a function or boolean.`,
+    )
   }
 
   // `!` not-pipe: invert a boolean result so `!dep` continues only when
@@ -96,10 +102,7 @@ function executePipe (
  * @param  {Error|null}     error     Error object if any.
  * @param  {Any}            value     The return value of the previousPipe.
  */
-function next (
-  state: PipeState, pipeline: PipelineBase,
-  error?: Error, value?: PipeResult
-): void {
+function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: PipeResult): void {
   const { pipes, errorHandler } = pipeline
   const { step, container } = state
 
@@ -139,20 +142,17 @@ function next (
   }
 }
 
-export function runPipeline (
-  args: PipeResult,
-  pipeline: PipelineBase
-): ResultContainer {
+export function runPipeline(args: PipeResult, pipeline: PipelineBase): ResultContainer {
   // Internal pipeline execution state.
   const state: PipeState = {
     step: 0,
     // Internale container for keeping pipeline runtime dependencies.
     container: {
-      next: function (error?: Error, value?: PipeResult): void {
+      next: (error?: Error, value?: PipeResult): void => {
         next(state, pipeline, error, value)
       },
     },
-    args: Array.isArray(args) ? args : (args === undefined ? [] : [ args ]),
+    args: Array.isArray(args) ? args : args === undefined ? [] : [args],
     handlingError: false,
   }
 
