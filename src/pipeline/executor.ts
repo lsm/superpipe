@@ -16,6 +16,9 @@ interface PipeState {
   container: ResultContainer
   // Wrapped invocation arguments, supplied to pipes that declare no inputs.
   args: PipeResult[]
+  // The active error travels on the execution state, never the container —
+  // a data value named `error` must not be mistaken for a failure.
+  activeError: Error | null
   // True while an error handler (or the no-handler throw) is unwinding —
   // such exceptions must not be treated as fresh pipe errors.
   handlingError: boolean
@@ -104,24 +107,21 @@ function executePipe(
  */
 function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: PipeResult): void {
   const { pipes, errorHandler } = pipeline
-  const { step, container } = state
+  const { step } = state
 
   if (value != null) {
     // Merge the output of previous pipe with container.
-    Object.assign(container, pipes[step - 1].producer.produce(value))
+    Object.assign(state.container, pipes[step - 1].producer.produce(value))
   }
 
-  // The active error is either the one passed to `next` or an `error`
-  // property merged into the container by the previous pipe's result.
-  let activeError: unknown
+  // The active error is the one passed to `next` — data named `error`
+  // merged into the container by a pipe result no longer triggers the
+  // error handler.
   if (error != null) {
-    container.error = error
-    activeError = error
-  } else if (container.error != null) {
-    activeError = container.error
+    state.activeError = error
   }
 
-  if (activeError == null) {
+  if (state.activeError == null) {
     // Clear any stale flag from a previous, fully-handled error path.
     state.handlingError = false
     if (pipes.length > state.step) {
@@ -135,10 +135,10 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
   // executePipe's catch does not re-dispatch it as a fresh pipe error.
   state.handlingError = true
   if (errorHandler) {
-    errorHandler(container, pipeline.functions)
+    errorHandler(state.container, pipeline.functions, state.activeError)
   } else {
     // Throw the error if we don't have error handling function.
-    throwNoErrorHandlerError(activeError)
+    throwNoErrorHandlerError(state.activeError)
   }
 }
 
@@ -153,6 +153,7 @@ export function runPipeline(args: PipeResult, pipeline: PipelineBase): ResultCon
       },
     },
     args: Array.isArray(args) ? args : args === undefined ? [] : [args],
+    activeError: null,
     handlingError: false,
   }
 

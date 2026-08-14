@@ -93,8 +93,16 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
     throw new Error('Error handler must be a string or function.')
   }
 
-  return function errorHandler(container: PipeResult, functions: FunctionContainer): void {
-    const inputArgs = fetcher.fetch(container, [], functions)
+  return function errorHandler(
+    container: PipeResult,
+    functions: FunctionContainer,
+    error?: Error,
+  ): void {
+    // The `error` input resolves from execution state, never from container
+    // data — a data value named `error` must not reach the handler as the
+    // active failure.
+    const source = Object.assign({}, container, { error })
+    const inputArgs = fetcher.fetch(source, [], functions)
     const fn = getErrorFn(container, functions)
     if (typeof fn === 'function') {
       fn.apply(0, inputArgs)
