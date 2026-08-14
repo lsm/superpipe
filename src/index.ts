@@ -78,7 +78,11 @@ export interface PipelineAPI {
   input: (input?: PipeParameter) => PipelineAPI
   pipe: (fn: PipeFunction, input?: PipeParameter, output?: PipeParameter) => PipelineAPI
   error: (fn: PipeFunction, input?: PipeParameter) => PipelineAPI
-  end: (output?: PipeParameter) => AnyFunction
+  // Function (not AnyFunction) keeps the pre-1.0 compatibility surface:
+  // implementations and mocks typed against the old interface must remain
+  // assignable to PipelineAPI.
+  // biome-ignore lint/complexity/noBannedTypes: public API compatibility
+  end: (output?: PipeParameter) => Function
 }
 
 // Compatibility aliases for the remaining type names master exported.
