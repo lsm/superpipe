@@ -124,9 +124,10 @@ export default class Producer {
 
   produceFromArray(result: PipeResult): PipeOutput {
     const output: PipeOutput = {}
+    // Input names are literal — colon renaming applies to outputs only.
     let i = 0
     for (const key of this.keys) {
-      applyKey(output, key, result[i])
+      output[key] = result[i]
       i += 1
     }
     return output

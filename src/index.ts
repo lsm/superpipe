@@ -1,13 +1,15 @@
 import Pipeline from './pipeline/Pipeline'
 import { FN_TYPE } from './pipeline/builder'
 import { PipeDefinition } from './pipeline/Pipe'
-import { PipeFunction, PipeResult, FunctionContainer } from './common'
+import { PipeFunction, PipeParameter, PipeResult, FunctionContainer } from './common'
 
 export default function superpipe<T extends FunctionContainer = FunctionContainer>(
   functions?: T
 ): (name: string, defs?: PipeDefinition[]) => Pipeline | Function {
   return function (name: string, defs?: PipeDefinition[]): Pipeline | Function {
-    let end
+    // Output spec from an explicit end tuple, applied only after every
+    // tuple has been processed so later definitions are not lost.
+    let endOutput: PipeParameter | undefined
     const pipeline = new Pipeline(name, functions)
 
     if (Array.isArray(defs)) {
@@ -21,7 +23,7 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
             pipeline.error(input as PipeFunction, output)
             break
           case FN_TYPE.END:
-            end = pipeline.end(input)
+            endOutput = input
             break
           default:
             pipeline.pipe(
@@ -32,9 +34,10 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
         }
       })
 
-      // Declarative definitions auto-finalize when no explicit end tuple
-      // is present, so `const run = sp('name', defs)` returns an executor.
-      return end || pipeline.end()
+      // Declarative definitions always finalize, with the end tuple's
+      // output when one was given, so `const run = sp('name', defs)`
+      // returns an executor.
+      return pipeline.end(endOutput)
     }
 
     return pipeline
@@ -54,6 +57,7 @@ export type {
   PipelineBase,
 } from './common'
 export type { PipeDefinition } from './pipeline/Pipe'
+export type { PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
 // Compatibility type matching the shape master exported as `Pipe`.
 export interface Pipe {
@@ -77,8 +81,18 @@ export type Store = {
   error?: Error
   [key: string]: PipeResult
 }
-export type PipeState = {
-  step: number
-  container: Store
-  args: PipeResult[]
+// Compatibility type matching the shape master exported as `PipeState`.
+export interface PipeState {
+  fn: ((...args: unknown[]) => unknown) | null
+  not?: boolean
+  deps: FunctionContainer
+  input: string[]
+  output?: string[]
+  fnName: string | undefined
+  autoNext: boolean | 0
+  optional?: boolean
+  name: string
+  error?: unknown
+  result?: unknown
+  fnReturned?: boolean
 }

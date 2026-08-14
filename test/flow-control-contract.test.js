@@ -425,3 +425,28 @@ describe('review-fix contract (round 3 parity behaviors)', function () {
     expect(calls).to.equal(1)
   })
 })
+
+// --- review round 5: behaviors pinned from the fourth codex round ---
+describe('review-fix contract (round 4 parity behaviors)', function () {
+  it('processes tuples that follow an explicit end tuple', function (done) {
+    const sp = superpipe({ tag: (s) => `tagged:${s}` })
+    const run = sp('end-then-more', [
+      ['input', ['x']],
+      ['end'],                       // explicit end, then more tuples
+      ['tag', 'x', 'y'],
+      [(y) => { expect(y).to.equal('tagged:hi'); done() }, 'y'],
+    ])
+
+    run('hi')
+  })
+
+  it('keeps colon-bearing input names literal', function (done) {
+    const sp = superpipe({})
+    const run = sp('literal-colon-input')
+      .input(['source:destination'])
+      .pipe((v) => { expect(v).to.equal('raw'); done() }, 'source:destination')
+      .end()
+
+    run('raw')
+  })
+})
