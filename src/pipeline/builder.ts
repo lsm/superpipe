@@ -82,7 +82,7 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
   if (isNonEmptyString(errorFn)) {
     const fnName: string = errorFn as string
     getErrorFn = (container: PipeResult, functions: FunctionContainer): AnyFunction => {
-      if (Object.hasOwn(container, fnName)) {
+      if (Object.prototype.hasOwnProperty.call(container, fnName)) {
         return container[fnName] as AnyFunction
       }
       return functions[fnName] as AnyFunction

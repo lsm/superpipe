@@ -34,7 +34,7 @@ function executePipe(
   // Presence-based lookup: a runtime `false` (or other falsey value) must not
   // fall through to the configured dependency.
   const fn = pipe.injected
-    ? Object.hasOwn(container, fnName)
+    ? Object.prototype.hasOwnProperty.call(container, fnName)
       ? container[fnName]
       : functions[fnName]
     : pipe.fn

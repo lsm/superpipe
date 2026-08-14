@@ -84,10 +84,10 @@ export default class Fetcher {
     functions: FunctionContainer | undefined,
     key: string,
   ): PipeResult {
-    if (Object.hasOwn(container, key)) {
+    if (Object.prototype.hasOwnProperty.call(container, key)) {
       return container[key]
     }
-    if (functions && Object.hasOwn(functions, key)) {
+    if (functions && Object.prototype.hasOwnProperty.call(functions, key)) {
       return functions[key]
     }
     return undefined
