@@ -264,8 +264,8 @@ const sp = superpipe<MyDeps>({
 [license-url]: http://opensource.org/licenses/MIT
 [npm-img]: http://img.shields.io/npm/v/superpipe.svg
 [npm-url]: https://npmjs.org/package/superpipe
-[ci-img]: https://circleci.com/gh/lsm/superpipe/tree/master.svg?style=shield
-[ci-url]: https://circleci.com/gh/lsm/superpipe/tree/master
+[ci-img]: https://github.com/lsm/superpipe/actions/workflows/ci.yml/badge.svg
+[ci-url]: https://github.com/lsm/superpipe/actions/workflows/ci.yml
 [coverage-img]: https://coveralls.io/repos/lsm/superpipe/badge.svg?branch=master&service=github
 [coverage-url]: https://coveralls.io/github/lsm/superpipe?branch=master
 [climate-img]: https://codeclimate.com/github/lsm/superpipe/badges/gpa.svg

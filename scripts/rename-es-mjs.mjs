@@ -5,13 +5,14 @@
 // The es/package.json marker declares the directory as ESM for TypeScript
 // (without it, attw flags the .d.ts files as "masquerading as CJS").
 //
-// Declaration and implementation files also get their relative imports
-// rewritten to carry explicit .mjs extensions: real ESM (Node) and
-// node16 TypeScript resolution both reject extensionless specifiers.
+// Declarations are renamed to .d.mts to match the .mjs implementations, and
+// their relative imports rewritten to explicit .mjs specifiers: real ESM
+// (Node) and node16 TypeScript resolution both reject extensionless imports.
 import { readdirSync, renameSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
-const root = new URL('../es', import.meta.url).pathname
+const root = fileURLToPath(new URL('../es', import.meta.url))
 
 function walk(dir, fn) {
   for (const entry of readdirSync(dir)) {
@@ -39,11 +40,12 @@ walk(root, (file) => {
     const rewritten = rewriteImports(src)
     if (rewritten !== src) writeFileSync(target, rewritten)
   } else if (file.endsWith('.d.ts')) {
+    const target = file.replace(/\.d\.ts$/, '.d.mts')
     const src = readFileSync(file, 'utf8')
-    const rewritten = rewriteImports(src)
-    if (rewritten !== src) writeFileSync(file, rewritten)
+    renameSync(file, target)
+    writeFileSync(target, rewriteImports(src))
   }
 })
 
 writeFileSync(join(root, 'package.json'), '{ "type": "module" }\n')
-console.log('renamed es/**/*.js -> es/**/*.mjs; rewrote d.ts imports; wrote es/package.json marker')
+console.log('rewrote es/: *.js -> *.mjs, *.d.ts -> *.d.mts, imports extended')
