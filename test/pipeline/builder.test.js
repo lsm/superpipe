@@ -1,5 +1,4 @@
-import { expect } from 'chai'
-import { describe, it } from 'mocha'
+import { describe, expect, it } from 'vitest'
 import {
   createPipe,
   createErrorPipe,
@@ -81,7 +80,7 @@ describe('Test pipe builder', () => {
   })
 
   describe('createErrorPipe(errorFn, input)', () => {
-    it('should create an error pipe (injected) from string', (done) => {
+    it('should create an error pipe (injected) from string', () => new Promise((done) => {
       const pipe = createErrorPipe('errorHandlerFunc', 'MyError')
       const container = { MyError: 'My error message' }
       const functions = {
@@ -93,9 +92,9 @@ describe('Test pipe builder', () => {
 
       expect(pipe).to.be.a('function')
       pipe(container, functions)
-    })
+    }))
 
-    it('should create an error pipe from a function', (done) => {
+    it('should create an error pipe from a function', () => new Promise((done) => {
       const myErrorHandlerFunc = function (error) {
         expect(error).to.equal(container.error)
         done()
@@ -106,7 +105,7 @@ describe('Test pipe builder', () => {
       expect(pipe).to.be.a('function')
 
       pipe(container)
-    })
+    }))
 
     it('should throw if the format of the error pipe is unsupported', () => {
       expect(() => createErrorPipe('', [ 'input' ])).to.throw('Error handler must be a string or function')

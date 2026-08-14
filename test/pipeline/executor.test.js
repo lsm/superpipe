@@ -1,6 +1,5 @@
-import { expect } from 'chai'
+import { describe, expect, it } from 'vitest'
 import superpipe from '../../src'
-import { describe, it } from 'mocha'
 
 describe('Executor', () => {
   const input = {
@@ -91,7 +90,7 @@ describe('Executor', () => {
   })
 
   describe('Test async pipes', () => {
-    it('should control the execution of the pipeline by calling next', (done) => {
+    it('should control the execution of the pipeline by calling next', () => new Promise((done) => {
       const asyncFunc1 = function (arg1, next) {
         setTimeout(function () {
           expect(arg1).to.equal(input.arg1)
@@ -132,7 +131,7 @@ describe('Executor', () => {
       const result = func(input)
       expect(typeof result).to.equal('object')
       expect(Object.keys(result).length).to.equal(5) // five undefineds
-    })
+    }))
 
     it('should not invoke next pipe if next is not called', () => {
       const func = sp()
@@ -145,7 +144,7 @@ describe('Executor', () => {
   })
 
   describe('Test optional pipe', () => {
-    it('should ignore the optional pipe if it is not provided', (done) => {
+    it('should ignore the optional pipe if it is not provided', () => new Promise((done) => {
       const func = sp('call optional pipe')
         .input([ 'someFunc', 'arg2' ])
         .pipe('?someFunc', 'arg2')
@@ -162,11 +161,11 @@ describe('Executor', () => {
       }
 
       func2()
-    })
+    }))
   })
 
   describe('Test error handling', () => {
-    it('should trigger error when pipe function throws', (done) => {
+    it('should trigger error when pipe function throws', () => new Promise((done) => {
       let error
       const func = sp('test sync error')
         .pipe(() => {
@@ -183,9 +182,9 @@ describe('Executor', () => {
         .end()
 
       func()
-    })
+    }))
 
-    it('should trigger error when calling next with error', (done) => {
+    it('should trigger error when calling next with error', () => new Promise((done) => {
       const asyncErrorFunc = function (next) {
         setTimeout(function () {
           next(output.key4)
@@ -200,9 +199,9 @@ describe('Executor', () => {
         .end()
 
       func()
-    })
+    }))
 
-    it('should trigger error with result', (done) => {
+    it('should trigger error with result', () => new Promise((done) => {
       const asyncErrorFunc = function (next) {
         setTimeout(function () {
           next(output.key4, { key1: output.key1 })
@@ -221,7 +220,7 @@ describe('Executor', () => {
         .end()
 
       func()
-    })
+    }))
   })
 
   describe('Exceptions', () => {

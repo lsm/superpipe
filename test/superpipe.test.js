@@ -1,5 +1,4 @@
-import { expect } from 'chai'
-import { describe, it } from 'mocha'
+import { describe, expect, it } from 'vitest'
 import superpipe from '../src'
 
 describe('Superpipe', function () {
@@ -17,7 +16,7 @@ describe('Superpipe', function () {
   })
 
   describe('superpipe(functions)', function () {
-    it('should use `functions` as dependencies when creating pipeline', (done) => {
+    it('should use `functions` as dependencies when creating pipeline', () => new Promise((done) => {
       const functions = {
         func (key) {
           expect(key).to.equal('value')
@@ -30,7 +29,7 @@ describe('Superpipe', function () {
         .pipe('func', 'key')
         .end()
       pipeline('value')
-    })
+    }))
 
     it('should create pipeline function directly from definitions', () => {
       const sp = superpipe()

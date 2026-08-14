@@ -4,8 +4,6 @@
 [![License MIT][license-img]][license-url]
 [![JavaScript Style Guide][standard-img]][standard-url]
 [![NPM version][npm-img]][npm-url]
-[![Coverage Status][coverage-img]][coverage-url]
-[![Code Climate][climate-img]][climate-url]
 
 A lightweight functional reactive programming (FRP) library for composing asynchronous operations with dependency injection.
 
@@ -264,11 +262,7 @@ const sp = superpipe<MyDeps>({
 [license-url]: http://opensource.org/licenses/MIT
 [npm-img]: http://img.shields.io/npm/v/superpipe.svg
 [npm-url]: https://npmjs.org/package/superpipe
-[ci-img]: https://circleci.com/gh/lsm/superpipe/tree/master.svg?style=shield
-[ci-url]: https://circleci.com/gh/lsm/superpipe/tree/master
-[coverage-img]: https://coveralls.io/repos/lsm/superpipe/badge.svg?branch=master&service=github
-[coverage-url]: https://coveralls.io/github/lsm/superpipe?branch=master
-[climate-img]: https://codeclimate.com/github/lsm/superpipe/badges/gpa.svg
-[climate-url]: https://codeclimate.com/github/lsm/superpipe
+[ci-img]: https://github.com/lsm/superpipe/actions/workflows/ci.yml/badge.svg
+[ci-url]: https://github.com/lsm/superpipe/actions/workflows/ci.yml
 [standard-img]: https://img.shields.io/badge/code_style-standard-brightgreen.svg
 [standard-url]: https://standardjs.com

@@ -1,5 +1,4 @@
-/* globals describe, it */
-import { expect } from 'chai'
+import { describe, expect, it } from 'vitest'
 import Fetcher from '../../src/parameter/Fetcher'
 
 describe('Fetcher', () => {
