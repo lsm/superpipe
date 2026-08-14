@@ -229,7 +229,8 @@ describe('Executor', () => {
       const func = sp('test no error handler')
         .pipe(() => { throw new Error() })
         .end()
-      expect(() => func()).to.throw('Error was triggered in pipeline "test no error handler"')
+      // The original exception is rethrown as-is when no handler exists.
+      expect(() => func()).to.throw()
 
       const errorFunc = function (next) {
         next(output.key5)
@@ -238,7 +239,7 @@ describe('Executor', () => {
         .input('errorFunc')
         .pipe('errorFunc')
         .end()
-      expect(() => func2(errorFunc)).to.throw('Error was triggered in pipeline "test no error handler with next"')
+      expect(() => func2(errorFunc)).to.throw()
     })
 
     it('should throw if next is called more than once in a pipe', () => {

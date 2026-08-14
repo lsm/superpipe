@@ -48,7 +48,9 @@ function executePipe (
       if (err instanceof NextCalledTwiceError) {
         throw err
       }
-      return next(state, pipeline, err as Error)
+      // A falsey thrown value must not be mistaken for successful
+      // completion by the error truthiness check downstream.
+      return next(state, pipeline, (err || new Error('Pipe threw a falsey value')) as Error)
     }
   } else if (typeof fn === 'boolean') {
     // Raw boolean dependency used for flow control.
@@ -100,7 +102,7 @@ function next (
       errorHandler(container, pipeline.functions)
     } else {
       // Throw the error if we don't have error handling function.
-      throwNoErrorHandlerError(error, step - 1, pipeline)
+      throwNoErrorHandlerError(error)
     }
   } else if (pipes.length > state.step) {
     // When we have more pipe, execute current one and increase the step by 1.

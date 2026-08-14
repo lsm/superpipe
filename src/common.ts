@@ -19,8 +19,9 @@ export type PipeFunction = string | Function
 export type PipeParameter = string | string[]
 
 export interface FunctionContainer {
-  // Dependencies may also be raw booleans, usable as pipe flow control.
-  [key: string]: Function | boolean;
+  // Dependencies are callables, raw booleans (flow control), or data values
+  // injected as pipe inputs.
+  [key: string]: unknown;
 }
 
 export interface PipelineBase {
@@ -57,20 +58,8 @@ export function isValidArrayParameters<T>(array: T): boolean {
   )
 }
 
-export function throwNoErrorHandlerError (
-  error: Error, step: number,
-  pipeline: PipelineBase
-): never {
-  const pipe = pipeline.pipes[step]
-  const { name } = pipeline
-  const { fnName } = pipe
-
-  const err = new Error()
-  err.name = 'PipelineError'
-  err.message = `\nError was triggered in pipeline "${name}" step "${step}:[${fnName}]":\n(Tips: use .error(errorHandlerFn, 'error') to handle this error within your pipeline.)`
-  err.stack = error.stack
-  // Preserve the original exception for `instanceof` checks and inspection.
-  err.cause = error
-
-  throw err
+export function throwNoErrorHandlerError (error: Error): never {
+  // Surface the original exception as-is — wrapping it would change the
+  // error's identity and class for `instanceof` checks downstream.
+  throw error
 }

@@ -17,4 +17,4 @@ export interface InputPipe {
   producer: Producer;
 }
 
-export type PipeDefinition = [ PipeFunction, PipeParameter, PipeParameter ]
+export type PipeDefinition = [ PipeFunction, PipeParameter?, PipeParameter? ]

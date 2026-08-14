@@ -285,10 +285,10 @@ describe('review-fix contract (parity behaviors)', function () {
     expect(observed).to.equal(8)
   })
 
-  it('preserves the original error on the wrapping PipelineError', function () {
+  it('rethrows the original exception when no error handler exists', function () {
     const original = new TypeError('boom')
     const sp = superpipe({})
-    const run = sp('error-cause')
+    const run = sp('error-rethrow')
       .pipe(() => { throw original })
       .end()
 
@@ -296,8 +296,63 @@ describe('review-fix contract (parity behaviors)', function () {
       run()
       throw new Error('expected pipeline to throw')
     } catch (err) {
-      expect(err.name).to.equal('PipelineError')
-      expect(err.cause).to.equal(original)
+      expect(err).to.equal(original)
     }
+  })
+})
+
+// --- review round 3: parity behaviors pinned from the second codex round ---
+describe('review-fix contract (round 2 parity behaviors)', function () {
+  it('resolves error-handler inputs from configured dependencies', function (done) {
+    const sp = superpipe({ config: { retries: 3 } })
+    const run = sp('error-deps')
+      .pipe(() => { throw new Error('boom') })
+      .error((error, config) => {
+        expect(error.message).to.equal('boom')
+        expect(config.retries).to.equal(3)
+        done()
+      }, ['error', 'config'])
+      .end()
+
+    run()
+  })
+
+  it('merges a plain-object return into the store when no output is declared', function () {
+    let observed
+    const sp = superpipe({})
+    const run = sp('object-merge')
+      .pipe(() => ({ user: 'alice', role: 'admin' }))
+      .pipe((user, role) => { observed = [user, role] }, ['user', 'role'])
+      .end()
+
+    run()
+    expect(observed).to.deep.equal(['alice', 'admin'])
+  })
+
+  it('rethrows the original falsy thrown value as an error, not success', function () {
+    let afterRan = false
+    const sp = superpipe({})
+    const run = sp('falsy-throw')
+      .pipe(() => { throw null })   // eslint-disable-line no-throw-literal
+      .pipe(() => { afterRan = true })
+      .end()
+
+    expect(() => run()).to.throw()
+    expect(afterRan).to.equal(false)
+  })
+
+  it('throws when multiple outputs receive a primitive return value', function () {
+    const sp = superpipe({})
+    const run = sp('primitive-multi-output')
+      .pipe(() => 'ab', null, ['x', 'y'])
+      .end()
+
+    expect(() => run()).to.throw('Multiple pipe outputs require an array or object return value.')
+  })
+
+  it('rejects empty input declarations at construction', function () {
+    const sp = superpipe({})
+    expect(() => sp('bad-input').input([])).to.throw('Input pipe requires a non-empty string')
+    expect(() => sp('bad-input2').input('')).to.throw('Input pipe requires a non-empty string')
   })
 })

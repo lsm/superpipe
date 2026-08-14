@@ -119,7 +119,7 @@ Sets an error handler for the pipeline. Only one error handler is allowed per pi
 
 Finalizes the pipeline and returns an executor function. When `output` is
 provided, the executor returns the requested output value (or an object of the
-requested keys) once the pipeline completes; otherwise it returns `null`.
+requested keys) once the pipeline completes; otherwise it returns `undefined`.
 
 ```javascript
 const run = sp('my-pipeline')

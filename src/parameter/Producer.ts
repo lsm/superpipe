@@ -57,7 +57,12 @@ export default class Producer {
     return this._produce(result)
   }
 
-  produceNothing(): PipeOutput {
+  produceNothing(result: PipeResult): PipeOutput {
+    // With no output declared, a plain-object return is merged into the
+    // runtime store so its keys stay available to later pipes.
+    if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+      return result
+    }
     return {}
   }
 
@@ -100,7 +105,11 @@ export default class Producer {
       return output
     }
 
-    // Positional mapping over an array return value.
+    // Positional mapping is only meaningful for array return values.
+    if (!Array.isArray(result)) {
+      throw new Error('Multiple pipe outputs require an array or object return value.')
+    }
+
     let i = 0
     for (const key of this.keys) {
       applyKey(output, key, result[i])

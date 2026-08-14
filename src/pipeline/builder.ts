@@ -15,8 +15,8 @@ export enum FN_TYPE {
 
 export function createPipe (
   fn: PipeFunction,
-  input: PipeParameter,
-  output: PipeParameter
+  input?: PipeParameter,
+  output?: PipeParameter
 ): Pipe | never {
   const pipe: Pipe = {
     fn: null,
@@ -68,9 +68,9 @@ export function createInputPipe (input: PipeParameter): InputPipe {
 
 export function createErrorPipe (
   errorFn: PipeFunction,
-  input: PipeParameter = 'error'
+  input?: PipeParameter
 ): Function {
-  const fetcher = new Fetcher(input)
+  const fetcher = new Fetcher(input === undefined ? 'error' : input)
 
   if (fetcher.hasNext) {
     throw new Error('"next" could not be used in error pipe.')
@@ -99,7 +99,7 @@ export function createErrorPipe (
     container: PipeResult,
     functions: FunctionContainer
   ): void {
-    const inputArgs = fetcher.fetch(container)
+    const inputArgs = fetcher.fetch(container, [], functions)
     const fn = getErrorFn(container, functions)
     if (typeof fn === 'function') {
       fn.apply(0, inputArgs)

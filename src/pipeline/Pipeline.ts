@@ -33,9 +33,12 @@ export default class Pipeline implements PipelineBase {
     this.functions = { ...functions }
   }
 
-  input (input: PipeParameter): Pipeline {
+  input (input?: PipeParameter): Pipeline {
     if (this.pipes.length > 0) {
       throw new Error('Input pipe must be the first pipe in the pipeline.')
+    }
+    if (input == null || input === '' || (Array.isArray(input) && input.length === 0)) {
+      throw new Error('Input pipe requires a non-empty string or array of non-empty strings.')
     }
 
     this.inputPipe = createInputPipe(input)
@@ -44,7 +47,7 @@ export default class Pipeline implements PipelineBase {
 
   pipe (
     fn: PipeFunction,
-    input: PipeParameter, output: PipeParameter
+    input?: PipeParameter, output?: PipeParameter
   ): Pipeline {
     if (this.errorHandler) {
       throw new Error('Adding new pipe after error pipe is not allowed.')
@@ -54,7 +57,7 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
-  error (fn: PipeFunction, input: PipeParameter): Pipeline {
+  error (fn: PipeFunction, input?: PipeParameter): Pipeline {
     if (this.errorHandler) {
       throw new Error('Each pipeline could only have one error handler.')
     }
