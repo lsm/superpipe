@@ -15,12 +15,12 @@ interface ResultContainer {
   [key: string]: PipeResult
 }
 
-// Standard thenable detection: any object with a callable `then`. A pipe
-// returning one is sugar for calling `next`.
+// Standard thenable detection: any object or function with a callable
+// `then`. A pipe returning one is sugar for calling `next`.
 function isThenable(value: PipeResult): value is PromiseLike<PipeResult> {
   return (
     value !== null &&
-    typeof value === 'object' &&
+    (typeof value === 'object' || typeof value === 'function') &&
     typeof (value as { then?: unknown }).then === 'function'
   )
 }
@@ -114,10 +114,15 @@ function executePipe(
     try {
       result = fn.apply(0, inputArgs as PipeResult[])
     } catch (err) {
-      // The duplicate-`next` guard and namespace violations must surface as
-      // themselves, not be routed to the pipeline's error handler — they are
-      // programming errors in the pipeline definition, not runtime failures.
-      if (err instanceof NextCalledTwiceError || err instanceof OutputNameError) {
+      // The duplicate-`next` guard, namespace violations, and continuation
+      // ambiguity must surface as themselves, not be routed to the
+      // pipeline's error handler — they are programming errors in the
+      // pipeline definition, not runtime failures.
+      if (
+        err instanceof NextCalledTwiceError ||
+        err instanceof OutputNameError ||
+        err instanceof AmbiguousContinuationError
+      ) {
         throw err
       }
       // An exception raised by an error handler (or by the no-handler
@@ -163,12 +168,19 @@ function executePipe(
   // rejection triggers the error path. Fully synchronous pipelines stay
   // synchronous — the desugar only engages when a thenable appears.
   if (pipe.fetcher.hasNext === false && isThenable(result)) {
-    const promise = result as PromiseLike<PipeResult>
-    promise.then(
+    // Adopt through a real promise: standard assimilation treats a `then`
+    // that throws as rejection, so such exceptions reach the error handler
+    // instead of escaping synchronously.
+    Promise.resolve(result).then(
       (value: PipeResult) => {
-        // Mirrors the synchronous auto-advance rule: `false` halts.
-        if (value !== false) {
-          next(state, pipeline, null, value)
+        // Mirrors the synchronous path: `!` inverts a boolean result, and
+        // `false` halts the pipeline.
+        let resolved = value
+        if (pipe.not && typeof resolved === 'boolean') {
+          resolved = !resolved
+        }
+        if (resolved !== false) {
+          next(state, pipeline, null, resolved)
         }
       },
       (reason: unknown) => {

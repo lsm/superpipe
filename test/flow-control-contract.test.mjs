@@ -946,3 +946,95 @@ describe('promise continuation contract', () => {
     expect(run()).to.equal('v')
   })
 })
+
+// --- review round: thenable edge cases ---
+describe('promise continuation contract (thenable edge cases)', () => {
+  it('inverts a !-pipe whose async dependency resolves true (halts)', () => {
+    let afterRan = false
+    const sp = superpipe({ isBlocked: async () => true })
+    const run = sp('not-async-true')
+      .input(['user'])
+      .pipe('!isBlocked', 'user') // resolves true → \!true === false → must halt
+      .pipe(() => {
+        afterRan = true
+      })
+      .end()
+
+    run({ role: 'admin' })
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(afterRan).to.equal(false)
+        resolve()
+      }, 20)
+    })
+  })
+
+  it('inverts a !-pipe whose async dependency resolves false (continues)', () =>
+    new Promise((done) => {
+      const sp = superpipe({ isBlocked: async () => false })
+      const run = sp('not-async-false')
+        .input(['user'])
+        .pipe('!isBlocked', 'user') // resolves false → \!false === true → must continue
+        .pipe(() => {
+          done()
+        })
+        .end()
+
+      run({ role: 'admin' })
+    }))
+
+  it('adopts callable thenables (functions with a then method)', () =>
+    new Promise((done) => {
+      const callableThenable = Object.assign(() => {}, {
+        then(resolve) {
+          resolve('from-callable')
+        },
+      })
+      const sp = superpipe({})
+      const run = sp('callable-thenable')
+        .pipe(() => callableThenable, null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('from-callable')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+
+  it('routes a throwing then method to the error handler, not a sync throw', () =>
+    new Promise((done) => {
+      const throwingThenable = {
+        then() {
+          throw new Error('then threw')
+        },
+      }
+      const sp = superpipe({})
+      const run = sp('throwing-then')
+        .pipe(() => throwingThenable, null, 'out')
+        .error((error) => {
+          expect(error.message).to.equal('then threw')
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('surfaces ambiguity errors through a synchronous nested next', () => {
+    let handlerCalled = false
+    const sp = superpipe({})
+    const run = sp('nested-ambiguity')
+      .pipe((next) => {
+        next() // advances into the next pipe inside this fn.apply
+      }, 'next')
+      .pipe((_next) => Promise.resolve('x'), 'next') // ambiguous continuation
+      .error(() => {
+        handlerCalled = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    expect(handlerCalled).to.equal(false)
+  })
+})
