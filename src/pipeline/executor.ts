@@ -15,16 +15,6 @@ interface ResultContainer {
   [key: string]: PipeResult
 }
 
-// Standard thenable detection: any object or function with a callable
-// `then`. A pipe returning one is sugar for calling `next`.
-function isThenable(value: PipeResult): value is PromiseLike<PipeResult> {
-  return (
-    value !== null &&
-    (typeof value === 'object' || typeof value === 'function') &&
-    typeof (value as { then?: unknown }).then === 'function'
-  )
-}
-
 // Control fields live in the container under reserved names; a pipe output
 // (or invocation input) writing one must fail loudly rather than silently
 // break continuation.
@@ -154,10 +144,40 @@ function executePipe(
     result = !result
   }
 
+  // Read `then` exactly once, guarded: promise assimilation treats an
+  // exception while reading (or calling) `then` as a rejection, so such
+  // failures reach the error handler instead of escaping synchronously —
+  // and a stateful accessor is not probed a second time.
+  let thenFn: unknown
+  if (result !== null && (typeof result === 'object' || typeof result === 'function')) {
+    try {
+      thenFn = (result as { then?: unknown }).then
+    } catch (err) {
+      return next(
+        state,
+        pipeline,
+        (err || new Error('Pipe promise rejected with a falsey value')) as Error,
+      )
+    }
+  }
+  const thenable = typeof thenFn === 'function'
+
   // A pipe that requests `next` owns its own continuation; a thenable
   // return alongside it is ambiguous — which channel advances the
-  // pipeline? Fail loudly rather than guess.
-  if (pipe.fetcher.hasNext && isThenable(result)) {
+  // pipeline? Fail loudly, invalidate the pipe's callback so a late
+  // `next` cannot fire, and neutralize the returned rejection so it
+  // cannot surface later as unhandled.
+  if (pipe.fetcher.hasNext && thenable) {
+    pipe.fetcher.activeNext?.disable()
+    try {
+      ;(thenFn as AnyFunction).call(
+        result,
+        () => {},
+        () => {},
+      )
+    } catch {
+      // A one-shot `then` that throws here is already consumed.
+    }
     throw new AmbiguousContinuationError(
       `Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName}] : Pipe declares "next" as an input and returned a thenable — use one continuation channel, not both.`,
     )
@@ -166,12 +186,17 @@ function executePipe(
   // A thenable return from a pipe that did not request `next` is sugar for
   // calling next: resolution continues the pipeline with the value,
   // rejection triggers the error path. Fully synchronous pipelines stay
-  // synchronous — the desugar only engages when a thenable appears.
-  if (pipe.fetcher.hasNext === false && isThenable(result)) {
-    // Adopt through a real promise: standard assimilation treats a `then`
-    // that throws as rejection, so such exceptions reach the error handler
-    // instead of escaping synchronously.
-    Promise.resolve(result).then(
+  // synchronous — the desugar only engages when a thenable appears. The
+  // captured `then` is assimilated through a real promise so a throwing
+  // `then` call becomes a rejection.
+  if (pipe.fetcher.hasNext === false && thenable) {
+    new Promise<PipeResult>((resolve, reject) => {
+      try {
+        ;(thenFn as AnyFunction).call(result, resolve, reject)
+      } catch (err) {
+        reject(err)
+      }
+    }).then(
       (value: PipeResult) => {
         // Mirrors the synchronous path: `!` inverts a boolean result, and
         // `false` halts the pipeline.

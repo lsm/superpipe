@@ -1038,3 +1038,54 @@ describe('promise continuation contract (thenable edge cases)', () => {
     expect(handlerCalled).to.equal(false)
   })
 })
+
+// --- review round 2: guarded assimilation and ambiguity invalidation ---
+describe('promise continuation contract (guarded assimilation)', () => {
+  it('routes a throwing then accessor to the error handler', () =>
+    new Promise((done) => {
+      const throwingAccessor = {
+        get then() {
+          throw new Error('accessor threw')
+        },
+      }
+      const sp = superpipe({})
+      const run = sp('throwing-accessor')
+        .pipe(() => throwingAccessor, null, 'out')
+        .error((error) => {
+          expect(error.message).to.equal('accessor threw')
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('consumes a rejected promise returned alongside next', () => {
+    // The ambiguity error must surface without leaving the returned
+    // rejection unhandled behind it.
+    const sp = superpipe({})
+    const run = sp('ambiguous-rejected')
+      .pipe((_next) => Promise.reject(new Error('mixed channels')), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+  })
+
+  it('refuses a late next after an ambiguous continuation', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('late-next')
+      .pipe(async (next) => {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        next()
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(advanced).to.equal(false)
+  })
+})

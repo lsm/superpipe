@@ -13,16 +13,28 @@ import {
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
 // to the pipe that received the callback, not to a mutable step counter, so
 // a stale `next` retained by an earlier pipe cannot advance the pipeline
-// around a pipe that is still waiting for its own `next`.
-function once(next: AnyFunction): AnyFunction {
+// around a pipe that is still waiting for its own `next`. `disable` voids
+// the callback outright — used when the executor rejects an ambiguous
+// continuation, so a late `next` cannot fire afterwards.
+function once(next: AnyFunction): AnyFunction & { disable: () => void } {
   let called = false
-  return (error?: Error, value?: PipeResult): void => {
+  let disabled = false
+  const wrapped = (error?: Error, value?: PipeResult): void => {
     if (called) {
       throw new NextCalledTwiceError()
+    }
+    if (disabled) {
+      throw new Error(
+        '"next" is disabled: the pipe declared "next" as an input and also returned a thenable.',
+      )
     }
     called = true
     next(error, value)
   }
+  wrapped.disable = (): void => {
+    disabled = true
+  }
+  return wrapped
 }
 
 export default class Fetcher {
@@ -36,6 +48,11 @@ export default class Fetcher {
   private raw: boolean = false
 
   hasNext: boolean = false
+
+  // The once-wrapped `next` handed out by the most recent fetch, so the
+  // executor can invalidate it when a pipe declares `next` and also
+  // returns a thenable.
+  activeNext: { disable: () => void } | null = null
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'raw') {
@@ -76,6 +93,7 @@ export default class Fetcher {
   // no inputs. `functions` is the configured dependency container, consulted
   // for keys that are not present in `container`.
   fetch(container: PipeResult, args?: PipeResult[], functions?: FunctionContainer): PipeOutput {
+    this.activeNext = null
     return this._fetch(container, args || [], functions)
   }
 
@@ -98,7 +116,12 @@ export default class Fetcher {
     functions: FunctionContainer | undefined,
     key: string,
   ): PipeResult {
-    return key === 'next' ? once(container.next) : this.lookup(container, functions, key)
+    if (key !== 'next') {
+      return this.lookup(container, functions, key)
+    }
+    const wrapped = once(container.next)
+    this.activeNext = wrapped
+    return wrapped
   }
 
   // True when any requested input (except `next`) resolves to undefined.
