@@ -1,7 +1,7 @@
 import {
   type AnyFunction,
-  NextCalledTwiceError,
   type FunctionContainer,
+  NextCalledTwiceError,
   OutputNameError,
   type PipelineBase,
   type PipeOutput,
