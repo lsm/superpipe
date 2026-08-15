@@ -43,7 +43,10 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   // Cleared on disable: the underlying continuation closes over the whole
   // per-run execution state, and a wrapper retained by a long-lived timer
   // or listener must not keep that state reachable after invalidation.
-  let advance: AnyFunction | null = next
+  let advance: ((error?: Error, value?: PipeResult) => void) | null = next as (
+    error?: Error,
+    value?: PipeResult,
+  ) => void
   const wrapped = ((error?: Error, value?: PipeResult): void => {
     // Invalidation is checked before the duplicate-call guard: a late call
     // on a disabled callback (even a repeat of an earlier held call) must
@@ -72,7 +75,12 @@ export default class Fetcher {
   // Array of property name to fetch.
   private keys: string[] = []
 
-  private _fetch: AnyFunction = this.fetchNothing
+  private _fetch: (
+    container: PipeResult,
+    args: PipeResult[],
+    functions?: FunctionContainer,
+    nextCallbacks?: NextCallbacks,
+  ) => PipeOutput = this.fetchNothing
 
   // Set for the fetcher created by `.end(output)`, whose result is returned
   // to the caller rather than spread as invocation arguments.
@@ -138,8 +146,9 @@ export default class Fetcher {
     functions: FunctionContainer | undefined,
     key: string,
   ): PipeResult {
-    if (Object.prototype.hasOwnProperty.call(container, key)) {
-      return container[key]
+    const box = container as { [key: string]: PipeResult }
+    if (Object.prototype.hasOwnProperty.call(box, key)) {
+      return box[key]
     }
     if (functions && Object.prototype.hasOwnProperty.call(functions, key)) {
       return functions[key]
@@ -156,7 +165,8 @@ export default class Fetcher {
     if (key !== 'next') {
       return this.lookup(container, functions, key)
     }
-    const wrapped = once(container.next, nextCallbacks)
+    const box = container as { [key: string]: PipeResult }
+    const wrapped = once(box.next as AnyFunction, nextCallbacks)
     if (nextCallbacks) {
       nextCallbacks.wrappers.push(wrapped)
     }
@@ -207,7 +217,7 @@ export default class Fetcher {
     functions?: FunctionContainer,
     nextCallbacks?: NextCallbacks,
   ): PipeOutput {
-    const result: PipeResult = {}
+    const result: Record<string, PipeResult> = {}
 
     for (const key of this.keys) {
       result[key] = this.value(container, functions, key, nextCallbacks)
