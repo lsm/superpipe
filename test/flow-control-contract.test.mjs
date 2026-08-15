@@ -806,3 +806,46 @@ describe('output namespace contract (reserved names and shadowing)', () => {
     expect(observed).to.equal('VALUE')
   })
 })
+
+// --- review round: namespace errors surface regardless of delivery path ---
+describe('output namespace contract (delivery parity)', () => {
+  it('surfaces a namespace error raised through a synchronous next, not the error handler', () => {
+    const sp = superpipe({ shared: (v) => v })
+    let handlerCalled = false
+    const run = sp('sync-next-namespace')
+      .pipe(
+        (next) => {
+          next(null, 'value') // merge happens inside fn.apply's try block
+        },
+        'next',
+        'shared',
+      )
+      .error(() => {
+        handlerCalled = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('shadows a configured dependency')
+    expect(handlerCalled).to.equal(false)
+  })
+
+  it('detects shadowing of inherited (prototype) configured dependencies', () => {
+    const sp = superpipe(Object.create({ shared: (v) => v }))
+    const run = sp('proto-shadow')
+      .pipe(() => 'value', null, 'shared')
+      .end()
+
+    expect(() => run()).to.throw('shadows a configured dependency')
+  })
+
+  it('allows standard Object.prototype names as outputs', () => {
+    // Object.prototype built-ins are not user-configured dependencies;
+    // a data output named like one must not trip the shadow guard.
+    const sp = superpipe({})
+    const run = sp('proto-ok')
+      .pipe(() => 'value', null, 'toString')
+      .end()
+
+    expect(() => run()).to.not.throw()
+  })
+})

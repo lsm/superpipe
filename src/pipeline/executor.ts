@@ -1,6 +1,8 @@
 import {
   type AnyFunction,
   NextCalledTwiceError,
+  type FunctionContainer,
+  OutputNameError,
   type PipelineBase,
   type PipeOutput,
   type PipeResult,
@@ -17,6 +19,18 @@ interface ResultContainer {
 // break continuation.
 const RESERVED_OUTPUT_NAMES = ['next']
 
+// Dependency resolution reads through the prototype chain (plain property
+// access), so a class-based or Object.create container exposes inherited
+// names. Detect collisions with the same semantics, but stop at the standard
+// Object.prototype — its built-ins are not user-configured dependencies.
+function hasConfiguredDependency(functions: FunctionContainer, key: string): boolean {
+  for (let obj: unknown = functions; obj != null; obj = Object.getPrototypeOf(obj)) {
+    if (obj === Object.prototype) return false
+    if (Object.prototype.hasOwnProperty.call(obj, key)) return true
+  }
+  return false
+}
+
 // Merge a produced result into the container. Reserved control names throw
 // for both inputs and outputs. Shadowing throws for pipe outputs — mid-flight
 // collisions with a configured dependency are accidents, and the container-
@@ -32,12 +46,12 @@ function mergeIntoContainer(
 ): void {
   for (const key of Object.keys(produced)) {
     if (RESERVED_OUTPUT_NAMES.includes(key)) {
-      throw new Error(
+      throw new OutputNameError(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" is reserved.`,
       )
     }
-    if (!isInvocationInput && Object.prototype.hasOwnProperty.call(pipeline.functions, key)) {
-      throw new Error(
+    if (!isInvocationInput && hasConfiguredDependency(pipeline.functions, key)) {
+      throw new OutputNameError(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" shadows a configured dependency of the same name.`,
       )
     }
@@ -89,8 +103,10 @@ function executePipe(
     try {
       result = fn.apply(0, inputArgs as PipeResult[])
     } catch (err) {
-      // The duplicate-`next` guard must surface as itself, not be wrapped.
-      if (err instanceof NextCalledTwiceError) {
+      // The duplicate-`next` guard and namespace violations must surface as
+      // themselves, not be routed to the pipeline's error handler — they are
+      // programming errors in the pipeline definition, not runtime failures.
+      if (err instanceof NextCalledTwiceError || err instanceof OutputNameError) {
         throw err
       }
       // An exception raised by an error handler (or by the no-handler
