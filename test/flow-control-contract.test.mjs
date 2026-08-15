@@ -1142,6 +1142,7 @@ describe('promise continuation contract (next buffering)', () => {
       .pipe((next) => {
         retainedNext = next
         return {
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
           get then() {
             throw new Error('accessor threw')
           },
@@ -1177,4 +1178,33 @@ describe('promise continuation contract (next buffering)', () => {
 
       run()
     }))
+})
+
+// --- review round 4: invocation-local callback state ---
+describe('promise continuation contract (reentrancy)', () => {
+  it('keeps buffered next callbacks invocation-local under reentrancy', () => {
+    let downstreamRuns = 0
+    const sp = superpipe({})
+    let run
+    run = sp('reentrant')
+      .input(['depth'])
+      .pipe(
+        (next, depth) => {
+          if (depth === undefined) {
+            run(1) // nested synchronous invocation of the same executor
+          }
+          next()
+        },
+        ['next', 'depth'],
+      )
+      .pipe(() => {
+        downstreamRuns += 1
+      })
+      .end()
+
+    run()
+    // Both the nested and the outer invocation must reach the downstream
+    // pipe — a shared per-fetcher buffer would stall the outer one.
+    expect(downstreamRuns).to.equal(2)
+  })
 })

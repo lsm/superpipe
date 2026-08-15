@@ -11,7 +11,7 @@ import {
 } from '../common'
 
 // A once-wrapped `next` callback handed to a pipe.
-interface NextWrapper extends AnyFunction {
+export interface NextWrapper extends AnyFunction {
   // Hold a synchronous invocation in a buffer instead of advancing — the
   // executor flushes it once the pipe's return channel is known.
   beginBuffering: () => void
@@ -75,35 +75,12 @@ export default class Fetcher {
 
   hasNext: boolean = false
 
-  // Every once-wrapped `next` handed out by the most recent fetch — an
-  // input list may declare `next` more than once, and the executor must be
-  // able to buffer or invalidate all of them.
-  private nextWrappers: NextWrapper[] = []
-
-  // Hold synchronous `next` invocations until the pipe's return channel is
-  // known: a pipe that both calls `next` and returns a thenable must not
-  // advance the pipeline before the ambiguity is detected.
-  beginNextBuffering(): void {
-    for (const wrapper of this.nextWrappers) {
-      wrapper.beginBuffering()
-    }
-  }
-
-  // Release held invocations (unless invalidated), preserving the order a
-  // synchronous `next` would have advanced in.
-  flushNextBuffer(): void {
-    for (const wrapper of this.nextWrappers) {
-      wrapper.endBuffering()
-    }
-  }
-
-  // Void the callbacks and discard any held invocation — used when the
-  // executor rejects an ambiguous or unobservable continuation.
-  invalidateNext(): void {
-    for (const wrapper of this.nextWrappers) {
-      wrapper.disable()
-    }
-  }
+  // Collects the once-wrapped `next` callbacks created by the fetch in
+  // progress. The caller owns the array, keeping callback state
+  // invocation-local — this fetcher is shared across runs, so storing the
+  // wrappers here would let a reentrant nested run clobber the outer
+  // invocation's callbacks.
+  private nextCollector: NextWrapper[] | null = null
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'raw') {
@@ -143,9 +120,19 @@ export default class Fetcher {
   // `args` are the wrapped invocation arguments, handed to pipes that declare
   // no inputs. `functions` is the configured dependency container, consulted
   // for keys that are not present in `container`.
-  fetch(container: PipeResult, args?: PipeResult[], functions?: FunctionContainer): PipeOutput {
-    this.nextWrappers = []
-    return this._fetch(container, args || [], functions)
+  // `nextCallbacks`, when given, collects the once-wrapped `next` callbacks
+  // created by this fetch — an input list may declare `next` more than once,
+  // and the executor must be able to buffer or invalidate all of them.
+  fetch(
+    container: PipeResult,
+    args?: PipeResult[],
+    functions?: FunctionContainer,
+    nextCallbacks?: NextWrapper[],
+  ): PipeOutput {
+    this.nextCollector = nextCallbacks || []
+    const output = this._fetch(container, args || [], functions)
+    this.nextCollector = null
+    return output
   }
 
   private lookup(
@@ -171,7 +158,7 @@ export default class Fetcher {
       return this.lookup(container, functions, key)
     }
     const wrapped = once(container.next)
-    this.nextWrappers.push(wrapped)
+    this.nextCollector?.push(wrapped)
     return wrapped
   }
 
