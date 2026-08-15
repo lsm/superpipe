@@ -1,7 +1,10 @@
 import {
   type AnyFunction,
+  type FunctionContainer,
   NextCalledTwiceError,
+  OutputNameError,
   type PipelineBase,
+  type PipeOutput,
   type PipeResult,
   throwNoErrorHandlerError,
 } from '../common'
@@ -9,6 +12,51 @@ import type Pipe from './Pipe'
 
 interface ResultContainer {
   [key: string]: PipeResult
+}
+
+// Control fields live in the container under reserved names; a pipe output
+// (or invocation input) writing one must fail loudly rather than silently
+// break continuation.
+const RESERVED_OUTPUT_NAMES = ['next']
+
+// Dependency resolution reads through the prototype chain (plain property
+// access), so a class-based or Object.create container exposes inherited
+// names. Detect collisions with the same semantics, but stop at the standard
+// Object.prototype — its built-ins are not user-configured dependencies.
+function hasConfiguredDependency(functions: FunctionContainer, key: string): boolean {
+  for (let obj: unknown = functions; obj != null; obj = Object.getPrototypeOf(obj)) {
+    if (obj === Object.prototype) return false
+    if (Object.prototype.hasOwnProperty.call(obj, key)) return true
+  }
+  return false
+}
+
+// Merge a produced result into the container. Reserved control names throw
+// for both inputs and outputs. Shadowing throws for pipe outputs — mid-flight
+// collisions with a configured dependency are accidents, and the container-
+// first lookup would make them silent and permanent. Invocation inputs may
+// deliberately override a configured dependency, so they are allowed.
+function mergeIntoContainer(
+  state: PipeState,
+  pipeline: PipelineBase,
+  step: number,
+  fnName: string,
+  produced: PipeOutput,
+  isInvocationInput: boolean,
+): void {
+  for (const key of Object.keys(produced)) {
+    if (RESERVED_OUTPUT_NAMES.includes(key)) {
+      throw new OutputNameError(
+        `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" is reserved.`,
+      )
+    }
+    if (!isInvocationInput && hasConfiguredDependency(pipeline.functions, key)) {
+      throw new OutputNameError(
+        `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" shadows a configured dependency of the same name.`,
+      )
+    }
+  }
+  Object.assign(state.container, produced)
 }
 
 interface PipeState {
@@ -55,8 +103,10 @@ function executePipe(
     try {
       result = fn.apply(0, inputArgs as PipeResult[])
     } catch (err) {
-      // The duplicate-`next` guard must surface as itself, not be wrapped.
-      if (err instanceof NextCalledTwiceError) {
+      // The duplicate-`next` guard and namespace violations must surface as
+      // themselves, not be routed to the pipeline's error handler — they are
+      // programming errors in the pipeline definition, not runtime failures.
+      if (err instanceof NextCalledTwiceError || err instanceof OutputNameError) {
         throw err
       }
       // An exception raised by an error handler (or by the no-handler
@@ -111,7 +161,14 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
 
   if (value != null) {
     // Merge the output of previous pipe with container.
-    Object.assign(state.container, pipes[step - 1].producer.produce(value))
+    mergeIntoContainer(
+      state,
+      pipeline,
+      step - 1,
+      pipes[step - 1].fnName,
+      pipes[step - 1].producer.produce(value),
+      false,
+    )
   }
 
   // The active error is the one passed to `next` — data named `error`
@@ -160,7 +217,14 @@ export function runPipeline(args: PipeResult, pipeline: PipelineBase): ResultCon
   // Start from the input pipes, if any: each maps the invocation arguments
   // into the shared container.
   for (const inputPipe of pipeline.inputPipes || []) {
-    Object.assign(state.container, inputPipe.producer.produce(state.args))
+    mergeIntoContainer(
+      state,
+      pipeline,
+      0,
+      inputPipe.fnName,
+      inputPipe.producer.produce(state.args),
+      true,
+    )
   }
 
   // Start executing pipeline

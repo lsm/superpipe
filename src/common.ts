@@ -12,6 +12,17 @@ export class NextCalledTwiceError extends Error {
   }
 }
 
+// Thrown when a pipe output or invocation input collides with a reserved
+// control name or a configured dependency. Surfaced as-is rather than
+// dispatched to the pipeline's error handler — a namespace violation is a
+// programming error in the pipeline definition, not a runtime failure.
+export class OutputNameError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'OutputNameError'
+  }
+}
+
 type AnyValue = any
 // Generic callable — the runtime accepts any function shape
 // (next callbacks, pipe fns, error handlers) and validates at the call site.
