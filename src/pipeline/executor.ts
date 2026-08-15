@@ -51,11 +51,14 @@ interface ResultContainer {
 
 // Typed continuation view: AnyFunction's `never[]` parameters maximize
 // assignability, but invoking the continuation needs a concrete signature.
+// `fromStep` names the pipe a continuation's value belongs to — an adopted
+// promise may settle after the step counter advanced past its pipe.
 type Continuation = (
   state: PipeState,
   pipeline: PipelineBase,
   error?: Error | null,
   value?: PipeResult,
+  fromStep?: number,
 ) => void
 
 // Typed error-handler view, same reasoning as Continuation.
@@ -174,6 +177,11 @@ interface PipeState {
   // job so an error dispatched during the same synchronous unwind (a held
   // next flushed from a throwing pipe's catch) wins over it.
   settling: boolean
+  // Adopted promise continuations still in flight. Reaching the end of the
+  // pipes is not completion while one is pending — with duplicate `next`
+  // inputs, a later callback can advance past a pipe whose promise has
+  // not settled yet.
+  pending: number
   // Optional run-completion observer (`.endAsync`): receives the container
   // snapshot and the active error, if any. Absent for sync `.end()` runs.
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
@@ -367,7 +375,15 @@ function executePipe(
   // captured `then` is assimilated through a real promise so a throwing
   // `then` call becomes a rejection.
   if (pipe.fetcher.hasNext === false && thenable) {
+    // The step this pipe occupies: its settled value merges through this
+    // pipe's producer even if the step counter advanced past it (duplicate
+    // next callbacks can run later pipes while this promise is in flight).
+    const pipeIndex = state.step - 1
+    // An adopted promise is a continuation in flight: reaching the end of
+    // the pipes is not completion until it settles.
+    state.pending += 1
     const onFulfilled = (value: PipeResult): void => {
+      state.pending -= 1
       // A terminal error already won this execution: a continuation that
       // was pending when the error path was entered resolves too late and
       // is discarded.
@@ -387,7 +403,7 @@ function executePipe(
           settle(state, null)
           return
         }
-        advance(state, pipeline, null, resolved)
+        advance(state, pipeline, null, resolved, pipeIndex)
       } catch (err) {
         // The continuation threw in a job with no caller stack (for
         // example a namespace violation raised while merging its output):
@@ -401,6 +417,7 @@ function executePipe(
       }
     }
     const onRejected = (reason: unknown): void => {
+      state.pending -= 1
       if (state.activeError != null) {
         return
       }
@@ -411,6 +428,7 @@ function executePipe(
           state,
           pipeline,
           (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+          pipeIndex,
         )
       } catch (err) {
         if (!state.onSettled) {
@@ -492,9 +510,11 @@ function executePipe(
   // not here.
   if (pipe.fetcher.hasNext === false && !(isFlowControl && result === false)) {
     advance(state, pipeline, null, result)
-  } else if (pipe.fetcher.hasNext === false) {
-    // Flow-control halt: a terminal outcome. Resolve with the partial
-    // snapshot — a guard declining is a normal result, not a failure.
+  } else if (pipe.fetcher.hasNext === false && state.pending === 0) {
+    // Flow-control halt with nothing in flight: a terminal outcome.
+    // Resolve with the partial snapshot — a guard declining is a normal
+    // result, not a failure. A pending continuation settles the run when
+    // it lands.
     settle(state, null)
   }
 }
@@ -514,9 +534,15 @@ function executePipe(
 // throwing error handler) must reach the completion observer as a
 // rejection rather than escape uncatchable — and without an observer it
 // surfaces on the invoking stack, as it did before observers existed.
-function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: PipeResult): void {
+function next(
+  state: PipeState,
+  pipeline: PipelineBase,
+  error?: Error,
+  value?: PipeResult,
+  fromStep?: number,
+): void {
   try {
-    continuePipeline(state, pipeline, error, value)
+    continuePipeline(state, pipeline, error, value, fromStep)
   } catch (err) {
     if (state.onSettled && !state.settled) {
       settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
@@ -531,18 +557,22 @@ function continuePipeline(
   pipeline: PipelineBase,
   error?: Error,
   value?: PipeResult,
+  fromStep?: number,
 ): void {
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
   if (value != null) {
-    // Merge the output of previous pipe with container.
+    // Merge the output of the pipe the value belongs to — normally the
+    // previous step, but an adopted promise settling late names its own
+    // pipe: the step counter may have advanced past it.
+    const producerIndex = fromStep === undefined ? step - 1 : fromStep
     mergeIntoContainer(
       state,
       pipeline,
-      step - 1,
-      pipes[step - 1].fnName,
-      pipes[step - 1].producer.produce(value),
+      producerIndex,
+      pipes[producerIndex].fnName,
+      pipes[producerIndex].producer.produce(value),
       false,
     )
   }
@@ -560,8 +590,8 @@ function continuePipeline(
     if (pipes.length > state.step) {
       // When we have more pipe, execute current one and increase the step by 1.
       executePipe(pipes[state.step++], state, pipeline, next)
-    } else {
-      // Every pipe executed — the run completed.
+    } else if (state.pending === 0) {
+      // Every pipe executed and nothing is in flight — the run completed.
       settle(state, null)
     }
     return
@@ -603,6 +633,7 @@ export function runPipeline(
     handlingError: false,
     settled: false,
     settling: false,
+    pending: 0,
     onSettled,
   }
 

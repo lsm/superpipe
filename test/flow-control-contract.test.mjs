@@ -2055,3 +2055,44 @@ describe('endAsync contract (foreign-stack exceptions)', () => {
     expect(seen[0].message).to.equal('boom')
   })
 })
+
+// --- review round 3 on endAsync: in-flight continuations ---
+describe('endAsync contract (in-flight continuations)', () => {
+  it('waits for an in-flight continuation before settling and merges through its own pipe', async () => {
+    let resolveAsync
+    let settledEarly = false
+    const sp = superpipe({})
+    const run = sp('endasync-inflight')
+      .pipe(
+        (first, second) => {
+          first() // starts the pending promise pipe below
+          second() // advances past it while it is in flight
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveAsync = resolve
+          }),
+        null,
+        'late',
+      )
+      .pipe(() => 'done', null, 'out')
+      .endAsync('{late, out}')
+
+    const outcome = run()
+    outcome.then(() => {
+      settledEarly = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // Still waiting: the second next advanced past the pending pipe, but
+    // the run cannot complete while its promise is in flight.
+    expect(settledEarly).to.equal(false)
+
+    resolveAsync('late-value')
+    // The late value merges through its own pipe's producer, not the
+    // final pipe's.
+    await expect(outcome).resolves.toEqual({ late: 'late-value', out: 'done' })
+  })
+})
