@@ -1726,6 +1726,7 @@ describe('promise continuation contract (verified observation)', () => {
     // internal slots; the intrinsic then cannot run on it.
     let consumed = false
     const slotless = Object.create(Promise.prototype)
+    // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
     slotless.then = (resolve) => {
       consumed = true
       resolve('slotless-value')
