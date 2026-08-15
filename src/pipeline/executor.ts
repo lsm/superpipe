@@ -182,6 +182,10 @@ interface PipeState {
   // inputs, a later callback can advance past a pipe whose promise has
   // not settled yet.
   pending: number
+  // True once a flow-control halt ended progression. Late sibling
+  // continuations still merge their own outputs, but no further pipes
+  // run — the run settles with the partial snapshot.
+  halted: boolean
   // Optional run-completion observer (`.endAsync`): receives the container
   // snapshot and the active error, if any. Absent for sync `.end()` runs.
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
@@ -407,7 +411,8 @@ function executePipe(
           // A flow-control halt through a resolved boolean — the
           // synchronous halt branch is never reached on this path. Other
           // continuations may still be in flight; the last one to land
-          // settles the run.
+          // merges its output and settles the run.
+          state.halted = true
           if (state.pending === 0) {
             settle(state, null)
           }
@@ -521,12 +526,14 @@ function executePipe(
   // not here.
   if (pipe.fetcher.hasNext === false && !(isFlowControl && result === false)) {
     advance(state, pipeline, null, result)
-  } else if (pipe.fetcher.hasNext === false && state.pending === 0) {
-    // Flow-control halt with nothing in flight: a terminal outcome.
-    // Resolve with the partial snapshot — a guard declining is a normal
-    // result, not a failure. A pending continuation settles the run when
-    // it lands.
-    settle(state, null)
+  } else if (pipe.fetcher.hasNext === false) {
+    // Flow-control halt: progression ended. A guard declining is a normal
+    // result, not a failure — resolve with the partial snapshot once no
+    // sibling continuation is in flight.
+    state.halted = true
+    if (state.pending === 0) {
+      settle(state, null)
+    }
   }
 }
 
@@ -598,6 +605,14 @@ function continuePipeline(
   if (state.activeError == null) {
     // Clear any stale flag from a previous, fully-handled error path.
     state.handlingError = false
+    if (state.halted) {
+      // A flow-control halt ended progression: a late sibling continuation
+      // merges its own output above, but no further pipes run.
+      if (state.pending === 0) {
+        settle(state, null)
+      }
+      return
+    }
     if (pipes.length > state.step) {
       // When we have more pipe, execute current one and increase the step by 1.
       executePipe(pipes[state.step++], state, pipeline, next)
@@ -645,6 +660,7 @@ export function runPipeline(
     settled: false,
     settling: false,
     pending: 0,
+    halted: false,
     onSettled,
   }
 

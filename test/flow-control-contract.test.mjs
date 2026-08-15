@@ -2180,11 +2180,53 @@ describe('endAsync contract (sibling continuations)', () => {
       .endAsync('late')
 
     const outcome = run()
+    // Attach the handler immediately so the eventual rejection is never
+    // unhandled while the test waits out the timers.
+    const assertion = expect(outcome).rejects.toThrow('reserved')
     await new Promise((resolve) => setTimeout(resolve, 10)) // exception lands
     resolveOther('late-value')
     await new Promise((resolve) => setTimeout(resolve, 10))
-    await expect(outcome).rejects.toThrow('reserved')
+    await assertion
     // The sibling continuation is discarded: no post-rejection execution.
+    expect(sideEffect).to.equal(false)
+  })
+})
+
+// --- review round 5 on endAsync: halt preserved across siblings ---
+describe('endAsync contract (halt preservation)', () => {
+  it('preserves a halt while sibling continuations finish', async () => {
+    let sideEffect = false
+    let resolveSlow
+    const sp = superpipe({ allow: async () => true })
+    const run = sp('endasync-halt-preserved')
+      .input(['user'])
+      .pipe(
+        (first, second) => {
+          first()
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveSlow = resolve
+          }),
+        null,
+        'late',
+      )
+      .pipe('!allow', 'user') // async halt: resolves true, inverted to false
+      .pipe(() => {
+        sideEffect = true
+      }, 'late') // after the guard — must never run
+      .endAsync('{late}')
+
+    const outcome = run({ role: 'admin' })
+    await new Promise((resolve) => setTimeout(resolve, 10)) // guard halted
+    resolveSlow('late-value')
+    const result = await outcome
+    // The sibling merged its own output, but nothing after the halt ran.
+    expect(result.late).to.equal('late-value')
     expect(sideEffect).to.equal(false)
   })
 })
