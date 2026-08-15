@@ -31,7 +31,7 @@ function flushNextCallbacks(
   while (callbacks.held.length > 0) {
     const held = callbacks.held.shift()
     if (held) {
-      next(state, pipeline, held.error, held.value)
+      next(state, pipeline, held.error, held.value, callbacks.pipeIndex)
     }
   }
 }
@@ -583,8 +583,15 @@ function next(
   try {
     continuePipeline(state, pipeline, error, value, fromStep)
   } catch (err) {
-    if (state.onSettled && !state.settled) {
-      settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+    if (state.onSettled) {
+      // An observer is watching: an unsettled failure becomes its
+      // rejection. After settlement (for example an error handler that
+      // throws during dispatch) there is nothing left to report, and
+      // rethrowing would escape onto the foreign callback stack that
+      // invoked the continuation.
+      if (!state.settled) {
+        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+      }
       return
     }
     throw err

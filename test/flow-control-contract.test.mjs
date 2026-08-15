@@ -2350,3 +2350,55 @@ describe('endAsync contract (wrapper lifecycle)', () => {
     })
   })
 })
+
+// --- review round 8 on endAsync: handler throws from late callbacks, held fromStep ---
+describe('endAsync contract (late-callback handlers)', () => {
+  it('swallows a throwing handler invoked from a late callback', async () => {
+    let retained
+    const seen = []
+    const onUnhandled = (err) => seen.push(err)
+    const sp = superpipe({})
+    const run = sp('endasync-throwing-handler-late')
+      .pipe(
+        (_first, second) => {
+          retained = second
+        },
+        ['next', 'next'],
+      )
+      .error(() => {
+        throw new Error('handler exploded')
+      }, 'error')
+      .endAsync('out')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('late error')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    process.on('unhandledRejection', onUnhandled)
+    setTimeout(() => retained(new Error('late error')), 5)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    process.off('unhandledRejection', onUnhandled)
+    await assertion
+    // The run already rejected with the original error; the handler's own
+    // throw must not escape onto the timer stack.
+    expect(seen).to.deep.equal([])
+  })
+
+  it('binds held next values to their originating pipe', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-held-fromstep')
+      .pipe(
+        (first, second) => {
+          first(null, 'first-value')
+          second(null, 'second-value') // both held; both belong to this pipe
+        },
+        ['next', 'next'],
+        'value',
+      )
+      .pipe((v) => 'next:' + v, 'value', 'downstream')
+      .endAsync('{value, downstream}')
+
+    const result = await run()
+    // The second held value merges through the first pipe's producer.
+    expect(result).toEqual({ value: 'second-value', downstream: 'next:first-value' })
+  })
+})
