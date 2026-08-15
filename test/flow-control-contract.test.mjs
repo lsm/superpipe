@@ -1208,3 +1208,41 @@ describe('promise continuation contract (reentrancy)', () => {
     expect(downstreamRuns).to.equal(2)
   })
 })
+
+// --- review round 5: reentrancy inside dependency lookup ---
+describe('promise continuation contract (getter reentrancy)', () => {
+  it('keeps the next collector invocation-local when a dependency getter re-enters', async () => {
+    let advanced = false
+    let reentered = false
+    let run
+    const sp = superpipe({
+      get dep() {
+        if (!reentered) {
+          reentered = true
+          try {
+            run() // synchronous re-entry during dependency lookup
+          } catch {
+            // the nested invocation's own ambiguity surfaces here
+          }
+        }
+        return 'value'
+      },
+    })
+    run = sp('getter-reentrancy')
+      .pipe(
+        (_dep, next) => {
+          next()
+          return Promise.resolve('x') // ambiguous — must throw before advancing
+        },
+        ['dep', 'next'],
+      )
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(advanced).to.equal(false)
+  })
+})

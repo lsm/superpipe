@@ -75,13 +75,6 @@ export default class Fetcher {
 
   hasNext: boolean = false
 
-  // Collects the once-wrapped `next` callbacks created by the fetch in
-  // progress. The caller owns the array, keeping callback state
-  // invocation-local — this fetcher is shared across runs, so storing the
-  // wrappers here would let a reentrant nested run clobber the outer
-  // invocation's callbacks.
-  private nextCollector: NextWrapper[] | null = null
-
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'raw') {
       this.raw = true
@@ -122,17 +115,17 @@ export default class Fetcher {
   // for keys that are not present in `container`.
   // `nextCallbacks`, when given, collects the once-wrapped `next` callbacks
   // created by this fetch — an input list may declare `next` more than once,
-  // and the executor must be able to buffer or invalidate all of them.
+  // and the executor must be able to buffer or invalidate all of them. It is
+  // threaded through the call chain rather than stored on the instance: this
+  // fetcher is shared, and a dependency accessor that re-enters the executor
+  // mid-fetch would otherwise overwrite the outer invocation's collector.
   fetch(
     container: PipeResult,
     args?: PipeResult[],
     functions?: FunctionContainer,
     nextCallbacks?: NextWrapper[],
   ): PipeOutput {
-    this.nextCollector = nextCallbacks || []
-    const output = this._fetch(container, args || [], functions)
-    this.nextCollector = null
-    return output
+    return this._fetch(container, args || [], functions, nextCallbacks)
   }
 
   private lookup(
@@ -153,12 +146,13 @@ export default class Fetcher {
     container: PipeResult,
     functions: FunctionContainer | undefined,
     key: string,
+    nextCallbacks?: NextWrapper[],
   ): PipeResult {
     if (key !== 'next') {
       return this.lookup(container, functions, key)
     }
     const wrapped = once(container.next)
-    this.nextCollector?.push(wrapped)
+    nextCallbacks?.push(wrapped)
     return wrapped
   }
 
@@ -170,7 +164,12 @@ export default class Fetcher {
     )
   }
 
-  fetchNothing(_container: PipeResult, args: PipeResult[]): PipeOutput {
+  fetchNothing(
+    _container: PipeResult,
+    args: PipeResult[],
+    _functions?: FunctionContainer,
+    _nextCallbacks?: NextWrapper[],
+  ): PipeOutput {
     // Pipes without an input declaration receive the original invocation args.
     return args
   }
@@ -179,6 +178,7 @@ export default class Fetcher {
     container: PipeResult,
     _args: PipeResult[],
     functions?: FunctionContainer,
+    _nextCallbacks?: NextWrapper[],
   ): PipeOutput {
     return this.lookup(container, functions, this.keys[0])
   }
@@ -187,19 +187,23 @@ export default class Fetcher {
     container: PipeResult,
     _args: PipeResult[],
     functions?: FunctionContainer,
+    nextCallbacks?: NextWrapper[],
   ): PipeOutput {
-    return this.keys.map((key: string): PipeResult => this.value(container, functions, key))
+    return this.keys.map(
+      (key: string): PipeResult => this.value(container, functions, key, nextCallbacks),
+    )
   }
 
   fetchAsObject(
     container: PipeResult,
     _args: PipeResult[],
     functions?: FunctionContainer,
+    nextCallbacks?: NextWrapper[],
   ): PipeOutput {
     const result: PipeResult = {}
 
     for (const key of this.keys) {
-      result[key] = this.value(container, functions, key)
+      result[key] = this.value(container, functions, key, nextCallbacks)
     }
 
     // The array wrapper suits function invocation; the `.end()` fetcher
