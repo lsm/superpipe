@@ -81,7 +81,9 @@ function swallow(value: unknown): void {
 function ignoreReason(): void {}
 
 // Native-promise brand check, guarded: a Proxy whose getPrototypeOf trap
-// throws must answer false rather than escape the caller.
+// throws must answer false rather than escape the caller. A value that
+// merely inherits from Promise.prototype still answers true here; the
+// observation attempt below self-verifies against such false positives.
 function isNativePromiseBrand(value: PipeResult): boolean {
   try {
     return value instanceof Promise
@@ -90,37 +92,22 @@ function isNativePromiseBrand(value: PipeResult): boolean {
   }
 }
 
-// True when attaching a reaction through the intrinsic then is expected to
-// succeed. The species lookup happens before any reaction is registered, so
-// a hostile `constructor`/`Symbol.species` getter makes `then` throw without
-// observing the promise — and no userland mechanism can observe it (only
-// the engine's internal species-free path, used by `await`, can).
-function canObserveRejection(value: PipeResult): boolean {
-  try {
-    const ctor = (value as { constructor?: unknown }).constructor
-    if (ctor === Promise) {
-      return true
-    }
-    const species = (ctor as { [Symbol.species]?: unknown })[Symbol.species]
-    return typeof species === 'function'
-  } catch {
+// Attempt to observe a native promise's rejection through the intrinsic
+// then, reporting whether a reaction actually attached. The intrinsic
+// reaches the promise's original state regardless of any `then` override;
+// a branded but slotless receiver, or a species constructor that throws
+// when constructed, makes the attach throw before registering anything —
+// and no userland mechanism can observe such an object (only the engine's
+// internal species-free path, used by `await`, can).
+function observeOriginalRejection(value: PipeResult): boolean {
+  if (!isNativePromiseBrand(value)) {
     return false
-  }
-}
-
-// Observe a native promise's rejection through the intrinsic then, so a
-// hostile subclass override that throws before attaching cannot strand the
-// original rejection as unhandled. The fulfillment observer assimilates a
-// nested thenable resolved by the hostile override; the rejection observer
-// must not touch its opaque reason.
-function observeOriginalRejection(value: PipeResult): void {
-  if (!isNativePromiseBrand(value) || !canObserveRejection(value)) {
-    return
   }
   try {
     Reflect.apply(Promise.prototype.then, value, [swallow, ignoreReason])
+    return true
   } catch {
-    // The observation attempt itself consumed the intent.
+    return false
   }
 }
 
@@ -281,16 +268,18 @@ function executePipe(
   if (pipe.fetcher.hasNext && thenable) {
     invalidateNextCallbacks(nextCallbacks)
     Promise.resolve().then(() => {
+      // Attempt the intrinsic observer first: it reaches a native promise's
+      // original state regardless of overrides and self-reports whether a
+      // reaction attached — a branded but slotless receiver falls through
+      // to the captured then below.
+      observeOriginalRejection(result)
       try {
-        if (isNativePromiseBrand(result)) {
-          observeOriginalRejection(result)
-        } else {
-          // Reflect.apply invokes the callable directly; an own `call`
-          // property on the then function cannot affect adoption. The
-          // fulfillment callback assimilates a nested thenable; the
-          // rejection callback must not touch its opaque reason.
-          Reflect.apply(thenFn as AnyFunction, result, [swallow, ignoreReason])
-        }
+        // Consume the captured thenable itself. Reflect.apply invokes the
+        // callable directly; an own `call` property on the then function
+        // cannot affect it. The fulfillment callback assimilates a nested
+        // thenable; the rejection callback must not touch its opaque
+        // reason.
+        Reflect.apply(thenFn as AnyFunction, result, [swallow, ignoreReason])
       } catch {
         // A one-shot `then` that throws here is already consumed.
       }
@@ -308,6 +297,12 @@ function executePipe(
   // `then` call becomes a rejection.
   if (pipe.fetcher.hasNext === false && thenable) {
     const onFulfilled = (value: PipeResult): void => {
+      // A terminal error already won this execution: a continuation that
+      // was pending when the error path was entered resolves too late and
+      // is discarded.
+      if (state.activeError != null) {
+        return
+      }
       // Mirrors the synchronous path: `!` inverts a boolean result, and
       // `false` halts the pipeline.
       let resolved = value
@@ -319,6 +314,9 @@ function executePipe(
       }
     }
     const onRejected = (reason: unknown): void => {
+      if (state.activeError != null) {
+        return
+      }
       // A falsey rejection reason must not be mistaken for success by
       // the error truthiness check downstream.
       next(
@@ -379,10 +377,12 @@ function executePipe(
           Reflect.apply(thenFn as AnyFunction, result, [resolve, reject])
         } catch (err) {
           reject(err)
-          // An invocation failure must not strand the original rejection
-          // of an already-rejected native promise.
-          observeOriginalRejection(result)
         }
+        // An override may swallow the rejection — return normally without
+        // registering the supplied callbacks — or throw before attaching;
+        // either way, observe a branded promise's original rejection
+        // regardless of how the override behaved.
+        observeOriginalRejection(result)
       })
     }).then(onFulfilled, onRejected)
     return

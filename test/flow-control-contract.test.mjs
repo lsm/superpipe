@@ -1718,3 +1718,92 @@ describe('promise continuation contract (rejection observation)', () => {
     expect(reasonThenCalls).to.equal(0)
   })
 })
+
+// --- review round 15: verified observation and terminal-error discards ---
+describe('promise continuation contract (verified observation)', () => {
+  it('consumes the captured thenable when the brand check false-positives', () => {
+    // Object.create(Promise.prototype) passes instanceof Promise but has no
+    // internal slots; the intrinsic then cannot run on it.
+    let consumed = false
+    const slotless = Object.create(Promise.prototype)
+    slotless.then = (resolve) => {
+      consumed = true
+      resolve('slotless-value')
+    }
+    const sp = superpipe({})
+    const run = sp('slotless-brand')
+      .pipe(() => slotless, 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(consumed).to.equal(true)
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('observes a rejected subclass whose override swallows the rejection', () => {
+    class SwallowingOverride extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then(onFulfilled) {
+        if (onFulfilled) {
+          onFulfilled('synthetic')
+        }
+        return new Promise(() => {})
+      }
+    }
+    let observed
+    const sp = superpipe({})
+    const run = sp('swallowing-override')
+      .pipe(
+        () => new SwallowingOverride((_res, reject) => reject(new Error('original'))),
+        null,
+        'out',
+      )
+      .pipe((out) => {
+        observed = out
+      }, 'out')
+      .end()
+
+    run()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(observed).to.equal('synthetic')
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('discards a pending promise continuation after an error wins', async () => {
+    let handlerRuns = 0
+    let resolveLate
+    const sp = superpipe({})
+    const run = sp('error-wins')
+      .pipe((next) => {
+        next() // advance synchronously; the downstream pipe starts a promise
+        throw new Error('first error')
+      }, 'next')
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveLate = resolve
+          }),
+        null,
+        'late',
+      )
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(handlerRuns).to.equal(1)
+    resolveLate('late-value')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The late resolution must not merge into or re-run the failed execution.
+    expect(handlerRuns).to.equal(1)
+  })
+})
