@@ -9,32 +9,40 @@ import {
   type PipeResult,
   throwNoErrorHandlerError,
 } from '../common'
-import type { NextWrapper } from '../parameter/Fetcher'
+import type { NextCallbacks } from '../parameter/Fetcher'
 import type Pipe from './Pipe'
 
-// Hold a synchronous `next` invocation until the pipe's return channel is
+// Hold synchronous `next` invocations until the pipe's return channel is
 // known: a pipe that both calls `next` and returns a thenable must not
 // advance the pipeline before the ambiguity is detected.
-function holdNextCallbacks(callbacks: NextWrapper[]): void {
-  for (const wrapper of callbacks) {
-    wrapper.beginBuffering()
+function holdNextCallbacks(callbacks: NextCallbacks): void {
+  callbacks.holding = true
+}
+
+// Release held invocations in the order the pipe made them — two declared
+// `next` callbacks flush in call order, not declaration order.
+function flushNextCallbacks(
+  state: PipeState,
+  pipeline: PipelineBase,
+  next: AnyFunction,
+  callbacks: NextCallbacks,
+): void {
+  callbacks.holding = false
+  while (callbacks.held.length > 0) {
+    const held = callbacks.held.shift()
+    if (held) {
+      next(state, pipeline, held.error, held.value)
+    }
   }
 }
 
-// Release held invocations (unless invalidated), preserving the order a
-// synchronous `next` would have advanced in.
-function flushNextCallbacks(callbacks: NextWrapper[]): void {
-  for (const wrapper of callbacks) {
-    wrapper.endBuffering()
-  }
-}
-
-// Void the callbacks and discard any held invocation — used when the
-// executor rejects an ambiguous or unobservable continuation.
-function invalidateNextCallbacks(callbacks: NextWrapper[]): void {
-  for (const wrapper of callbacks) {
+// Void the callbacks and discard any held invocation and its payload — used
+// when the executor rejects an ambiguous or unobservable continuation.
+function invalidateNextCallbacks(callbacks: NextCallbacks): void {
+  for (const wrapper of callbacks.wrappers) {
     wrapper.disable()
   }
+  callbacks.held.length = 0
 }
 
 interface ResultContainer {
@@ -116,9 +124,9 @@ function executePipe(
       ? container[fnName]
       : functions[fnName]
     : pipe.fn
-  // Once-wrapped `next` callbacks handed to this pipe, owned locally so a
-  // reentrant nested run of the same pipeline cannot clobber them.
-  const nextCallbacks: NextWrapper[] = []
+  // `next` callback state for this pipe invocation, owned locally so a
+  // reentrant nested run of the same pipeline cannot clobber it.
+  const nextCallbacks: NextCallbacks = { wrappers: [], holding: false, held: [] }
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
 
   let result: PipeResult
@@ -139,7 +147,7 @@ function executePipe(
     } catch (err) {
       // Release any held invocation first, preserving the order a
       // synchronous `next` would have advanced in.
-      flushNextCallbacks(nextCallbacks)
+      flushNextCallbacks(state, pipeline, next, nextCallbacks)
       // The duplicate-`next` guard, namespace violations, and continuation
       // ambiguity must surface as themselves, not be routed to the
       // pipeline's error handler — they are programming errors in the
@@ -209,15 +217,17 @@ function executePipe(
   // unhandled.
   if (pipe.fetcher.hasNext && thenable) {
     invalidateNextCallbacks(nextCallbacks)
-    try {
-      ;(thenFn as AnyFunction).call(
-        result,
-        () => {},
-        () => {},
-      )
-    } catch {
-      // A one-shot `then` that throws here is already consumed.
-    }
+    Promise.resolve().then(() => {
+      try {
+        ;(thenFn as AnyFunction).call(
+          result,
+          () => {},
+          () => {},
+        )
+      } catch {
+        // A one-shot `then` that throws here is already consumed.
+      }
+    })
     throw new AmbiguousContinuationError(
       `Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName}] : Pipe declares "next" as an input and returned a thenable — use one continuation channel, not both.`,
     )
@@ -231,11 +241,15 @@ function executePipe(
   // `then` call becomes a rejection.
   if (pipe.fetcher.hasNext === false && thenable) {
     new Promise<PipeResult>((resolve, reject) => {
-      try {
-        ;(thenFn as AnyFunction).call(result, resolve, reject)
-      } catch (err) {
-        reject(err)
-      }
+      // Native assimilation invokes `then` in a later promise job, after
+      // the caller's synchronous initialization completes.
+      Promise.resolve().then(() => {
+        try {
+          ;(thenFn as AnyFunction).call(result, resolve, reject)
+        } catch (err) {
+          reject(err)
+        }
+      })
     }).then(
       (value: PipeResult) => {
         // Mirrors the synchronous path: `!` inverts a boolean result, and
@@ -263,7 +277,7 @@ function executePipe(
 
   // Release any held synchronous `next` invocation now that the return
   // channel is known to be unambiguous.
-  flushNextCallbacks(nextCallbacks)
+  flushNextCallbacks(state, pipeline, next, nextCallbacks)
 
   // Auto-advance only when the pipe does not request `next` AND does not
   // return `false` (boolean flow control — `false` halts the pipeline).

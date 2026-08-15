@@ -11,25 +11,32 @@ import {
 } from '../common'
 
 // A once-wrapped `next` callback handed to a pipe.
-export interface NextWrapper extends AnyFunction {
-  // Hold a synchronous invocation in a buffer instead of advancing — the
-  // executor flushes it once the pipe's return channel is known.
-  beginBuffering: () => void
-  // Release a held invocation (unless the wrapper was disabled).
-  endBuffering: () => void
-  // Void the callback and discard any buffered invocation.
+export interface NextCallback {
+  (error?: Error, value?: PipeResult): void
+  // Void the callback outright — used when the executor rejects an
+  // ambiguous continuation, so a late `next` cannot fire afterwards.
   disable: () => void
+}
+
+// Per-invocation state shared by the `next` callbacks handed to one pipe:
+// the wrappers created by the fetch, and the buffer holding their
+// synchronous invocations (in call order) until the pipe's return channel
+// is known. Owned by the executor, so reentrant runs of the same pipeline
+// never share buffer state.
+export interface NextCallbacks {
+  wrappers: NextCallback[]
+  holding: boolean
+  held: { error?: Error; value?: PipeResult }[]
 }
 
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
 // to the pipe that received the callback, not to a mutable step counter, so
 // a stale `next` retained by an earlier pipe cannot advance the pipeline
-// around a pipe that is still waiting for its own `next`.
-function once(next: AnyFunction): NextWrapper {
+// around a pipe that is still waiting for its own `next`. While the shared
+// buffer is holding, an invocation is queued there instead of advancing.
+function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
-  let buffering = false
-  let buffered: { error?: Error; value?: PipeResult } | null = null
   const wrapped = ((error?: Error, value?: PipeResult): void => {
     if (called) {
       throw new NextCalledTwiceError()
@@ -40,23 +47,12 @@ function once(next: AnyFunction): NextWrapper {
       )
     }
     called = true
-    if (buffering) {
-      buffered = { error, value }
+    if (callbacks?.holding) {
+      callbacks.held.push({ error, value })
       return
     }
     next(error, value)
-  }) as NextWrapper
-  wrapped.beginBuffering = (): void => {
-    buffering = true
-  }
-  wrapped.endBuffering = (): void => {
-    buffering = false
-    if (buffered && !disabled) {
-      const held = buffered
-      buffered = null
-      next(held.error, held.value)
-    }
-  }
+  }) as NextCallback
   wrapped.disable = (): void => {
     disabled = true
   }
@@ -113,17 +109,17 @@ export default class Fetcher {
   // `args` are the wrapped invocation arguments, handed to pipes that declare
   // no inputs. `functions` is the configured dependency container, consulted
   // for keys that are not present in `container`.
-  // `nextCallbacks`, when given, collects the once-wrapped `next` callbacks
+  // `nextCallbacks`, when given, receives the once-wrapped `next` callbacks
   // created by this fetch — an input list may declare `next` more than once,
   // and the executor must be able to buffer or invalidate all of them. It is
   // threaded through the call chain rather than stored on the instance: this
   // fetcher is shared, and a dependency accessor that re-enters the executor
-  // mid-fetch would otherwise overwrite the outer invocation's collector.
+  // mid-fetch would otherwise interfere with the outer invocation's state.
   fetch(
     container: PipeResult,
     args?: PipeResult[],
     functions?: FunctionContainer,
-    nextCallbacks?: NextWrapper[],
+    nextCallbacks?: NextCallbacks,
   ): PipeOutput {
     return this._fetch(container, args || [], functions, nextCallbacks)
   }
@@ -146,13 +142,15 @@ export default class Fetcher {
     container: PipeResult,
     functions: FunctionContainer | undefined,
     key: string,
-    nextCallbacks?: NextWrapper[],
+    nextCallbacks?: NextCallbacks,
   ): PipeResult {
     if (key !== 'next') {
       return this.lookup(container, functions, key)
     }
-    const wrapped = once(container.next)
-    nextCallbacks?.push(wrapped)
+    const wrapped = once(container.next, nextCallbacks)
+    if (nextCallbacks) {
+      nextCallbacks.wrappers.push(wrapped)
+    }
     return wrapped
   }
 
@@ -168,7 +166,7 @@ export default class Fetcher {
     _container: PipeResult,
     args: PipeResult[],
     _functions?: FunctionContainer,
-    _nextCallbacks?: NextWrapper[],
+    _nextCallbacks?: NextCallbacks,
   ): PipeOutput {
     // Pipes without an input declaration receive the original invocation args.
     return args
@@ -178,7 +176,7 @@ export default class Fetcher {
     container: PipeResult,
     _args: PipeResult[],
     functions?: FunctionContainer,
-    _nextCallbacks?: NextWrapper[],
+    _nextCallbacks?: NextCallbacks,
   ): PipeOutput {
     return this.lookup(container, functions, this.keys[0])
   }
@@ -187,7 +185,7 @@ export default class Fetcher {
     container: PipeResult,
     _args: PipeResult[],
     functions?: FunctionContainer,
-    nextCallbacks?: NextWrapper[],
+    nextCallbacks?: NextCallbacks,
   ): PipeOutput {
     return this.keys.map(
       (key: string): PipeResult => this.value(container, functions, key, nextCallbacks),
@@ -198,7 +196,7 @@ export default class Fetcher {
     container: PipeResult,
     _args: PipeResult[],
     functions?: FunctionContainer,
-    nextCallbacks?: NextWrapper[],
+    nextCallbacks?: NextCallbacks,
   ): PipeOutput {
     const result: PipeResult = {}
 

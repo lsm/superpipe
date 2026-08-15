@@ -1246,3 +1246,59 @@ describe('promise continuation contract (getter reentrancy)', () => {
     expect(advanced).to.equal(false)
   })
 })
+
+// --- review round 6: promise-job adoption and call-order flushing ---
+describe('promise continuation contract (adoption timing and flush order)', () => {
+  it('invokes a custom then method in a later promise job', () =>
+    new Promise((done) => {
+      let afterRun = false
+      let observedInThen
+      const sp = superpipe({})
+      const run = sp('deferred-then')
+        .pipe(
+          () => ({
+            // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+            then(resolve) {
+              observedInThen = afterRun
+              resolve('value')
+            },
+          }),
+          null,
+          'out',
+        )
+        .pipe((out) => {
+          expect(out).to.equal('value')
+          expect(observedInThen).to.equal(true)
+          done()
+        }, 'out')
+        .end()
+
+      run()
+      afterRun = true // the then method must observe post-run state
+    }))
+
+  it('flushes buffered next calls in invocation order, not declaration order', () =>
+    new Promise((done) => {
+      let observed
+      const sp = superpipe({})
+      const run = sp('flush-order')
+        .pipe(
+          (first, second) => {
+            second(null, 'first-invoked') // invoked first, declared second
+            first(null, 'invoked-second')
+          },
+          ['next', 'next'],
+          'val',
+        )
+        .pipe((val) => {
+          observed = val
+        }, 'val')
+        .pipe(() => {
+          expect(observed).to.equal('first-invoked')
+          done()
+        })
+        .end()
+
+      run()
+    }))
+})
