@@ -221,6 +221,11 @@ Errors can be triggered by:
 1. Calling `next(error)` with an error
 2. Throwing an exception in a pipe function
 
+The active error travels on the pipeline's execution state, not the data
+container: a pipe result or output named `error` is ordinary data and does
+not trigger the error handler. The handler's `error` input always receives
+the active failure.
+
 ```javascript
 sp('safe-pipeline')
   .input(['data'])

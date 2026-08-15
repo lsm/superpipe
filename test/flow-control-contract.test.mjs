@@ -621,24 +621,6 @@ describe('review-fix contract (round 5 parity behaviors)', () => {
 
 // --- review round 7: behaviors pinned from the sixth codex round ---
 describe('review-fix contract (round 6 parity behaviors)', () => {
-  it('dispatches an error property merged from a pipe result', () =>
-    new Promise((done) => {
-      const failure = new Error('from-result')
-      const sp = superpipe({})
-      const run = sp('error-in-result')
-        .pipe(() => ({ error: failure }), null, '{error}')
-        .pipe(() => {
-          throw new Error('should never run')
-        })
-        .error((error) => {
-          expect(error).to.equal(failure)
-          done()
-        }, 'error')
-        .end()
-
-      run()
-    }))
-
   it('wraps non-Error values passed to next(error)', () => {
     const sp = superpipe({})
     const run = sp('string-error')
@@ -685,5 +667,63 @@ describe('review-fix contract (round 7 parity behaviors)', () => {
 
     run()
     expect(observed).to.equal(undefined)
+  })
+})
+
+// --- error channel contract: active error lives on execution state (#39) ---
+describe('error channel contract (state-based error)', () => {
+  it('treats an error property merged from a pipe result as data', () =>
+    new Promise((done) => {
+      const failure = new Error('from-result')
+      const sp = superpipe({})
+      const run = sp('error-in-result')
+        .pipe(() => ({ error: failure }), null, '{error}')
+        .pipe((error) => {
+          // The pipeline continues past the data named `error`; it is an
+          // ordinary input here, not a failure signal.
+          expect(error).to.equal(failure)
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('resolves the error handler `error` input from state, not container data', () => {
+    const dataError = new Error('data-named-error')
+    const realError = new Error('real-failure')
+    const sp = superpipe({})
+    const run = sp('error-input-from-state')
+      .pipe(() => ({ error: dataError }), null, '{error}')
+      .pipe(() => {
+        throw realError
+      })
+      .error((error) => {
+        expect(error).to.equal(realError)
+      }, 'error')
+      .end()
+
+    run()
+  })
+
+  it('delivers a result value alongside an error to the handler inputs', () => {
+    const failure = new Error('with-result')
+    const sp = superpipe({})
+    const run = sp('error-with-value')
+      .pipe(
+        (next) => {
+          next(failure, { key1: 'value1' })
+        },
+        'next',
+        '{key1, key2}',
+      )
+      .error(({ error, key1, key2 }) => {
+        expect(error).to.equal(failure)
+        expect(key1).to.equal('value1')
+        expect(key2).to.equal(undefined)
+      }, '{error, key2, key1}')
+      .end()
+
+    run()
   })
 })

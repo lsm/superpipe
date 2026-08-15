@@ -104,16 +104,17 @@ describe('Test pipe builder', () => {
 
     it('should create an error pipe from a function', () =>
       new Promise((done) => {
+        const activeError = new Error('My error message')
         const myErrorHandlerFunc = (error) => {
-          expect(error).to.equal(container.error)
+          expect(error).to.equal(activeError)
           done()
         }
         const pipe = createErrorPipe(myErrorHandlerFunc)
-        const container = { error: 'My error message' }
+        const container = {}
 
         expect(pipe).to.be.a('function')
 
-        pipe(container)
+        pipe(container, {}, activeError)
       }))
 
     it('should throw if the format of the error pipe is unsupported', () => {
