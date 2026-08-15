@@ -249,9 +249,39 @@ function executePipe(
   // captured `then` is assimilated through a real promise so a throwing
   // `then` call becomes a rejection.
   if (pipe.fetcher.hasNext === false && thenable) {
+    const onFulfilled = (value: PipeResult): void => {
+      // Mirrors the synchronous path: `!` inverts a boolean result, and
+      // `false` halts the pipeline.
+      let resolved = value
+      if (pipe.not && typeof resolved === 'boolean') {
+        resolved = !resolved
+      }
+      if (resolved !== false) {
+        next(state, pipeline, null, resolved)
+      }
+    }
+    const onRejected = (reason: unknown): void => {
+      // A falsey rejection reason must not be mistaken for success by
+      // the error truthiness check downstream.
+      next(
+        state,
+        pipeline,
+        (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+      )
+    }
+
+    if (result instanceof Promise) {
+      // A native promise already defers its reactions — adopt it directly
+      // so the pipeline continues in ordinary promise ordering without an
+      // extra job.
+      ;(result as Promise<PipeResult>).then(onFulfilled, onRejected)
+      return
+    }
+
     new Promise<PipeResult>((resolve, reject) => {
-      // Native assimilation invokes `then` in a later promise job, after
-      // the caller's synchronous initialization completes.
+      // Native assimilation invokes a custom thenable's `then` in a later
+      // promise job, after the caller's synchronous initialization
+      // completes.
       Promise.resolve().then(() => {
         try {
           // Reflect.apply invokes the callable directly; an own `call`
@@ -261,28 +291,7 @@ function executePipe(
           reject(err)
         }
       })
-    }).then(
-      (value: PipeResult) => {
-        // Mirrors the synchronous path: `!` inverts a boolean result, and
-        // `false` halts the pipeline.
-        let resolved = value
-        if (pipe.not && typeof resolved === 'boolean') {
-          resolved = !resolved
-        }
-        if (resolved !== false) {
-          next(state, pipeline, null, resolved)
-        }
-      },
-      (reason: unknown) => {
-        // A falsey rejection reason must not be mistaken for success by
-        // the error truthiness check downstream.
-        next(
-          state,
-          pipeline,
-          (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
-        )
-      },
-    )
+    }).then(onFulfilled, onRejected)
     return
   }
 

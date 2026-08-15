@@ -41,11 +41,14 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
   const wrapped = ((error?: Error, value?: PipeResult): void => {
-    if (called) {
-      throw new NextCalledTwiceError()
-    }
+    // Invalidation is checked before the duplicate-call guard: a late call
+    // on a disabled callback (even a repeat of an earlier held call) must
+    // be discarded, never thrown from an unrelated callback stack.
     if (disabled) {
       return
+    }
+    if (called) {
+      throw new NextCalledTwiceError()
     }
     called = true
     if (callbacks?.holding) {

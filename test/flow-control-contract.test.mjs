@@ -1404,3 +1404,49 @@ describe('promise continuation contract (failure timing and discards)', () => {
     expect(advanced).to.equal(false)
   })
 })
+
+// --- review round 9: guard ordering and native-promise adoption ---
+describe('promise continuation contract (guard order and native adoption)', () => {
+  it('discards a repeat call on a disabled callback before the duplicate check', async () => {
+    let advanced = false
+    let retained
+    const sp = superpipe({})
+    const run = sp('disabled-before-called')
+      .pipe((next) => {
+        retained = next
+        next() // first call — held, then discarded by invalidation
+        return Promise.resolve('x')
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The invalidation guard runs first: no NextCalledTwiceError, no crash.
+    expect(() => retained()).to.not.throw()
+    expect(advanced).to.equal(false)
+  })
+
+  it('adopts a settled native promise in ordinary reaction ordering', () =>
+    new Promise((done) => {
+      const order = []
+      const sp = superpipe({})
+      const run = sp('native-ordering')
+        .pipe(() => Promise.resolve('v'), null, 'out')
+        .pipe(() => {
+          order.push('pipeline')
+        }, 'out')
+        .end()
+
+      run()
+      Promise.resolve().then(() => {
+        order.push('caller-microtask')
+        // The pipeline's reaction was attached directly to the native
+        // promise, so it runs before a caller microtask queued after run().
+        expect(order).to.deep.equal(['pipeline', 'caller-microtask'])
+        done()
+      })
+    }))
+})
