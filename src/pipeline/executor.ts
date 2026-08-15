@@ -230,7 +230,15 @@ function executePipe(
     }
     Promise.resolve().then(() => {
       try {
-        if (result instanceof Promise) {
+        // The brand check is guarded: a Proxy whose getPrototypeOf trap
+        // throws must fall through to the captured then, not escape.
+        let isNativePromise = false
+        try {
+          isNativePromise = result instanceof Promise
+        } catch {
+          isNativePromise = false
+        }
+        if (isNativePromise) {
           // Observe a native-promise rejection through the intrinsic then:
           // a hostile subclass override that throws before attaching would
           // otherwise leave the original rejection unhandled.
@@ -277,30 +285,15 @@ function executePipe(
       )
     }
 
-    if (result instanceof Promise) {
-      // A native promise already defers its reactions — invoke the captured
-      // `then` directly so the pipeline continues in ordinary promise
-      // ordering without an extra job. The captured callable is used (not
-      // re-read) and guarded, and the callbacks are once-settled: a hostile
-      // subclass override that settles twice must not advance the pipeline
-      // twice.
-      let settled = false
-      const settleFulfilled = (value: PipeResult): void => {
-        if (settled) {
-          return
-        }
-        settled = true
-        onFulfilled(value)
-      }
-      const settleRejected = (reason: unknown): void => {
-        if (settled) {
-          return
-        }
-        settled = true
-        onRejected(reason)
-      }
+    if (thenFn === Promise.prototype.then) {
+      // The intrinsic native then already defers its reactions — invoke it
+      // directly so the pipeline continues in ordinary promise ordering
+      // without an extra job. Anything else (subclass overrides, proxies)
+      // is adopted through the deferred path below, whose real promise
+      // settles at most once. The identity comparison cannot trip a proxy
+      // trap the way an instanceof brand check can.
       try {
-        Reflect.apply(thenFn as AnyFunction, result, [settleFulfilled, settleRejected])
+        Reflect.apply(thenFn as AnyFunction, result, [onFulfilled, onRejected])
       } catch (err) {
         Promise.reject(err).catch(onRejected)
       }

@@ -1534,3 +1534,58 @@ describe('promise continuation contract (hostile overrides)', () => {
     return new Promise((resolve) => setTimeout(resolve, 20))
   })
 })
+
+// --- review round 12: proxy traps and deferred override adoption ---
+describe('promise continuation contract (proxies and deferred overrides)', () => {
+  it('adopts a proxied thenable whose prototype trap throws', () =>
+    new Promise((done) => {
+      const target = {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then(resolve) {
+          resolve('proxied')
+        },
+      }
+      const proxy = new Proxy(target, {
+        getPrototypeOf() {
+          throw new Error('trap threw')
+        },
+      })
+      const sp = superpipe({})
+      const run = sp('proxy-thenable')
+        .pipe(() => proxy, null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('proxied')
+          done()
+        }, 'out')
+        .end()
+
+      expect(() => run()).to.not.throw()
+    }))
+
+  it('defers a then override that invokes its callback synchronously', () =>
+    new Promise((done) => {
+      let afterRun = false
+      class SyncThen extends Promise {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then(onFulfilled) {
+          if (onFulfilled) {
+            onFulfilled('sync')
+          }
+          return new Promise(() => {})
+        }
+      }
+      const sp = superpipe({})
+      const run = sp('sync-override-deferred')
+        .pipe(() => new SyncThen(() => {}), null, 'out')
+        .pipe(() => {
+          // The downstream pipe runs after the caller's initialization,
+          // like every other thenable adoption.
+          expect(afterRun).to.equal(true)
+          done()
+        }, 'out')
+        .end()
+
+      run()
+      afterRun = true
+    }))
+})
