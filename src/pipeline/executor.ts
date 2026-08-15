@@ -217,13 +217,20 @@ function executePipe(
   // unhandled.
   if (pipe.fetcher.hasNext && thenable) {
     invalidateNextCallbacks(nextCallbacks)
+    // The cleanup callbacks must assimilate whatever the thenable resolves
+    // with — a nested rejected promise resolved here would otherwise die as
+    // an unhandled rejection.
+    const swallow = (value: unknown): void => {
+      Promise.resolve(value).then(
+        () => {},
+        () => {},
+      )
+    }
     Promise.resolve().then(() => {
       try {
-        ;(thenFn as AnyFunction).call(
-          result,
-          () => {},
-          () => {},
-        )
+        // Reflect.apply invokes the callable directly; an own `call`
+        // property on the then function cannot affect adoption.
+        Reflect.apply(thenFn as AnyFunction, result, [swallow, swallow])
       } catch {
         // A one-shot `then` that throws here is already consumed.
       }
@@ -245,7 +252,9 @@ function executePipe(
       // the caller's synchronous initialization completes.
       Promise.resolve().then(() => {
         try {
-          ;(thenFn as AnyFunction).call(result, resolve, reject)
+          // Reflect.apply invokes the callable directly; an own `call`
+          // property on the then function cannot affect adoption.
+          Reflect.apply(thenFn as AnyFunction, result, [resolve, reject])
         } catch (err) {
           reject(err)
         }

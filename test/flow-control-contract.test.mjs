@@ -1302,3 +1302,47 @@ describe('promise continuation contract (adoption timing and flush order)', () =
       run()
     }))
 })
+
+// --- review round 7: nested assimilation and intrinsic invocation ---
+describe('promise continuation contract (cleanup assimilation)', () => {
+  it('consumes a nested rejected promise resolved during ambiguity cleanup', () => {
+    const sp = superpipe({})
+    const run = sp('nested-reject-ambiguity')
+      .pipe(
+        (_next) => ({
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+          then(resolve) {
+            resolve(Promise.reject(new Error('nested')))
+          },
+        }),
+        'next',
+      )
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    // An unhandled rejection would fail the test run once microtasks drain.
+    return new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('invokes a then method whose call property is shadowed', () =>
+    new Promise((done) => {
+      const then = Object.assign((resolve) => resolve('ok'), { call: null })
+      const sp = superpipe({})
+      const run = sp('shadowed-call')
+        .pipe(
+          () => ({
+            // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+            then: then,
+          }),
+          null,
+          'out',
+        )
+        .pipe((out) => {
+          expect(out).to.equal('ok')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+})
