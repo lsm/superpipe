@@ -101,9 +101,16 @@ function executePipe(
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
     return next(state, pipeline)
   } else if (typeof fn === 'function') {
+    // Hold a synchronous `next` call until the pipe's return channel is
+    // known, so a pipe that both calls `next` and returns a thenable
+    // cannot advance the pipeline before the ambiguity is detected.
+    pipe.fetcher.beginNextBuffering()
     try {
       result = fn.apply(0, inputArgs as PipeResult[])
     } catch (err) {
+      // Release any held invocation first, preserving the order a
+      // synchronous `next` would have advanced in.
+      pipe.fetcher.flushNextBuffer()
       // The duplicate-`next` guard, namespace violations, and continuation
       // ambiguity must surface as themselves, not be routed to the
       // pipeline's error handler — they are programming errors in the
@@ -153,6 +160,9 @@ function executePipe(
     try {
       thenFn = (result as { then?: unknown }).then
     } catch (err) {
+      // The pipe still holds a live `next`: void it so a later call cannot
+      // re-run the error handler on the same failure.
+      pipe.fetcher.invalidateNext()
       return next(
         state,
         pipeline,
@@ -164,11 +174,12 @@ function executePipe(
 
   // A pipe that requests `next` owns its own continuation; a thenable
   // return alongside it is ambiguous — which channel advances the
-  // pipeline? Fail loudly, invalidate the pipe's callback so a late
-  // `next` cannot fire, and neutralize the returned rejection so it
-  // cannot surface later as unhandled.
+  // pipeline? Fail loudly, invalidate the pipe's callbacks (discarding any
+  // held synchronous invocation) so a late `next` cannot fire, and
+  // neutralize the returned rejection so it cannot surface later as
+  // unhandled.
   if (pipe.fetcher.hasNext && thenable) {
-    pipe.fetcher.activeNext?.disable()
+    pipe.fetcher.invalidateNext()
     try {
       ;(thenFn as AnyFunction).call(
         result,
@@ -220,6 +231,10 @@ function executePipe(
     )
     return
   }
+
+  // Release any held synchronous `next` invocation now that the return
+  // channel is known to be unambiguous.
+  pipe.fetcher.flushNextBuffer()
 
   // Auto-advance only when the pipe does not request `next` AND does not
   // return `false` (boolean flow control — `false` halts the pipeline).

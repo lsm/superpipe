@@ -10,16 +10,27 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
+// A once-wrapped `next` callback handed to a pipe.
+interface NextWrapper extends AnyFunction {
+  // Hold a synchronous invocation in a buffer instead of advancing — the
+  // executor flushes it once the pipe's return channel is known.
+  beginBuffering: () => void
+  // Release a held invocation (unless the wrapper was disabled).
+  endBuffering: () => void
+  // Void the callback and discard any buffered invocation.
+  disable: () => void
+}
+
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
 // to the pipe that received the callback, not to a mutable step counter, so
 // a stale `next` retained by an earlier pipe cannot advance the pipeline
-// around a pipe that is still waiting for its own `next`. `disable` voids
-// the callback outright — used when the executor rejects an ambiguous
-// continuation, so a late `next` cannot fire afterwards.
-function once(next: AnyFunction): AnyFunction & { disable: () => void } {
+// around a pipe that is still waiting for its own `next`.
+function once(next: AnyFunction): NextWrapper {
   let called = false
   let disabled = false
-  const wrapped = (error?: Error, value?: PipeResult): void => {
+  let buffering = false
+  let buffered: { error?: Error; value?: PipeResult } | null = null
+  const wrapped = ((error?: Error, value?: PipeResult): void => {
     if (called) {
       throw new NextCalledTwiceError()
     }
@@ -29,7 +40,22 @@ function once(next: AnyFunction): AnyFunction & { disable: () => void } {
       )
     }
     called = true
+    if (buffering) {
+      buffered = { error, value }
+      return
+    }
     next(error, value)
+  }) as NextWrapper
+  wrapped.beginBuffering = (): void => {
+    buffering = true
+  }
+  wrapped.endBuffering = (): void => {
+    buffering = false
+    if (buffered && !disabled) {
+      const held = buffered
+      buffered = null
+      next(held.error, held.value)
+    }
   }
   wrapped.disable = (): void => {
     disabled = true
@@ -49,10 +75,35 @@ export default class Fetcher {
 
   hasNext: boolean = false
 
-  // The once-wrapped `next` handed out by the most recent fetch, so the
-  // executor can invalidate it when a pipe declares `next` and also
-  // returns a thenable.
-  activeNext: { disable: () => void } | null = null
+  // Every once-wrapped `next` handed out by the most recent fetch — an
+  // input list may declare `next` more than once, and the executor must be
+  // able to buffer or invalidate all of them.
+  private nextWrappers: NextWrapper[] = []
+
+  // Hold synchronous `next` invocations until the pipe's return channel is
+  // known: a pipe that both calls `next` and returns a thenable must not
+  // advance the pipeline before the ambiguity is detected.
+  beginNextBuffering(): void {
+    for (const wrapper of this.nextWrappers) {
+      wrapper.beginBuffering()
+    }
+  }
+
+  // Release held invocations (unless invalidated), preserving the order a
+  // synchronous `next` would have advanced in.
+  flushNextBuffer(): void {
+    for (const wrapper of this.nextWrappers) {
+      wrapper.endBuffering()
+    }
+  }
+
+  // Void the callbacks and discard any held invocation — used when the
+  // executor rejects an ambiguous or unobservable continuation.
+  invalidateNext(): void {
+    for (const wrapper of this.nextWrappers) {
+      wrapper.disable()
+    }
+  }
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'raw') {
@@ -93,7 +144,7 @@ export default class Fetcher {
   // no inputs. `functions` is the configured dependency container, consulted
   // for keys that are not present in `container`.
   fetch(container: PipeResult, args?: PipeResult[], functions?: FunctionContainer): PipeOutput {
-    this.activeNext = null
+    this.nextWrappers = []
     return this._fetch(container, args || [], functions)
   }
 
@@ -120,7 +171,7 @@ export default class Fetcher {
       return this.lookup(container, functions, key)
     }
     const wrapped = once(container.next)
-    this.activeNext = wrapped
+    this.nextWrappers.push(wrapped)
     return wrapped
   }
 

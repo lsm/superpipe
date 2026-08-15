@@ -986,6 +986,7 @@ describe('promise continuation contract (thenable edge cases)', () => {
   it('adopts callable thenables (functions with a then method)', () =>
     new Promise((done) => {
       const callableThenable = Object.assign(() => {}, {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then(resolve) {
           resolve('from-callable')
         },
@@ -1005,6 +1006,7 @@ describe('promise continuation contract (thenable edge cases)', () => {
   it('routes a throwing then method to the error handler, not a sync throw', () =>
     new Promise((done) => {
       const throwingThenable = {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then() {
           throw new Error('then threw')
         },
@@ -1044,6 +1046,7 @@ describe('promise continuation contract (guarded assimilation)', () => {
   it('routes a throwing then accessor to the error handler', () =>
     new Promise((done) => {
       const throwingAccessor = {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         get then() {
           throw new Error('accessor threw')
         },
@@ -1088,4 +1091,90 @@ describe('promise continuation contract (guarded assimilation)', () => {
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(advanced).to.equal(false)
   })
+})
+
+// --- review round 3: next buffering and invalidation ---
+describe('promise continuation contract (next buffering)', () => {
+  it('does not advance when a pipe calls next and returns a thenable', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('sync-next-thenable')
+      .pipe((next) => {
+        next() // synchronous call, held until the return channel is known
+        return Promise.resolve('x')
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(advanced).to.equal(false)
+  })
+
+  it('invalidates every next callback when next is declared twice', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('double-next')
+      .pipe(
+        async (_first, second) => {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(advanced).to.equal(false)
+  })
+
+  it('invalidates a retained next when thenable inspection fails', async () => {
+    let handlerRuns = 0
+    let retainedNext
+    const sp = superpipe({})
+    const run = sp('accessor-invalidates')
+      .pipe((next) => {
+        retainedNext = next
+        return {
+          get then() {
+            throw new Error('accessor threw')
+          },
+        }
+      }, 'next')
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(handlerRuns).to.equal(1)
+    expect(() => retainedNext()).to.throw('"next" is disabled')
+  })
+
+  it('advances normally when a pipe declares next and returns undefined', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('buffer-flush')
+        .pipe(
+          (next) => {
+            next(null, 'flushed')
+          },
+          'next',
+          'value',
+        )
+        .pipe((value) => {
+          expect(value).to.equal('flushed')
+          done()
+        }, 'value')
+        .end()
+
+      run()
+    }))
 })
