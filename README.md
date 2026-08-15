@@ -210,8 +210,21 @@ configured dependency by passing a per-run value under the same name.
 
 ### Asynchronous Pipelines and `.end(output)`
 
+A pipe that does not request `next` may return a Promise (or any thenable):
+resolution continues the pipeline with the value, rejection triggers the error
+handler. Returning a thenable from a pipe that declares `next` throws — pick
+one continuation channel.
+
+```javascript
+sp('async-pipeline')
+  .pipe(() => repository.getWorkflow(), null, 'workflow')  // Promise-returning
+  .pipe((workflow) => render(workflow), 'workflow')
+  .error((error) => console.error('Failed:', error.message), 'error')
+  .end()
+```
+
 The executor returned by `.end()` completes synchronously. When a pipe uses
-`next` and resolves asynchronously, values produced later are not reflected in
+`next` or returns a Promise, values produced later are not reflected in
 `.end(output)`'s return value — deliver async results through a final pipe,
 `next`, or an error handler instead.
 

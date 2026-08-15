@@ -849,3 +849,100 @@ describe('output namespace contract (delivery parity)', () => {
     expect(() => run()).to.not.throw()
   })
 })
+
+// --- promise continuation contract: thenable returns are next sugar (#41) ---
+describe('promise continuation contract', () => {
+  it('continues the pipeline with the resolved value', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('promise-value')
+        .pipe(() => Promise.resolve('async-value'), null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('async-value')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+
+  it('supports async function pipes', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('async-fn')
+        .pipe(async () => 'from-async', null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('from-async')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+
+  it('routes rejections to the error handler', () =>
+    new Promise((done) => {
+      const failure = new Error('rejected')
+      const sp = superpipe({})
+      const run = sp('promise-reject')
+        .pipe(() => Promise.reject(failure), null, 'out')
+        .error((error) => {
+          expect(error).to.equal(failure)
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('wraps falsey rejection reasons as errors, not success', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('falsey-reject')
+        .pipe(() => Promise.reject(undefined), null, 'out')
+        .error((error) => {
+          expect(error).to.be.an.instanceof(Error)
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('throws when a pipe declares next and returns a thenable', () => {
+    const sp = superpipe({})
+    const run = sp('ambiguous-continuation')
+      .pipe((_next) => Promise.resolve('x'), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel, not both')
+  })
+
+  it('halts when a promise resolves to false (sync/async parity)', () => {
+    let afterRan = false
+    const sp = superpipe({})
+    const run = sp('promise-false')
+      .pipe(() => Promise.resolve(false))
+      .pipe(() => {
+        afterRan = true
+      })
+      .end()
+
+    run()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(afterRan).to.equal(false)
+        resolve()
+      }, 20)
+    })
+  })
+
+  it('keeps fully synchronous pipelines synchronous', () => {
+    const sp = superpipe({})
+    const run = sp('sync-still')
+      .pipe(() => 'v', null, 'out')
+      .end('out')
+    // .end(output) returns populated data synchronously for sync pipelines.
+    expect(run()).to.equal('v')
+  })
+})

@@ -23,6 +23,16 @@ export class OutputNameError extends Error {
   }
 }
 
+// Thrown when a pipe declares `next` as an input and also returns a
+// thenable — both are continuation channels and the executor refuses to
+// guess which one advances the pipeline.
+export class AmbiguousContinuationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AmbiguousContinuationError'
+  }
+}
+
 type AnyValue = any
 // Generic callable — the runtime accepts any function shape
 // (next callbacks, pipe fns, error handlers) and validates at the call site.

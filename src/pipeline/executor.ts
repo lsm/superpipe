@@ -1,4 +1,5 @@
 import {
+  AmbiguousContinuationError,
   type AnyFunction,
   type FunctionContainer,
   NextCalledTwiceError,
@@ -12,6 +13,16 @@ import type Pipe from './Pipe'
 
 interface ResultContainer {
   [key: string]: PipeResult
+}
+
+// Standard thenable detection: any object with a callable `then`. A pipe
+// returning one is sugar for calling `next`.
+function isThenable(value: PipeResult): value is PromiseLike<PipeResult> {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { then?: unknown }).then === 'function'
+  )
 }
 
 // Control fields live in the container under reserved names; a pipe output
@@ -136,6 +147,41 @@ function executePipe(
   // the dependency is falsey.
   if (pipe.not && typeof result === 'boolean') {
     result = !result
+  }
+
+  // A pipe that requests `next` owns its own continuation; a thenable
+  // return alongside it is ambiguous — which channel advances the
+  // pipeline? Fail loudly rather than guess.
+  if (pipe.fetcher.hasNext && isThenable(result)) {
+    throw new AmbiguousContinuationError(
+      `Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName}] : Pipe declares "next" as an input and returned a thenable — use one continuation channel, not both.`,
+    )
+  }
+
+  // A thenable return from a pipe that did not request `next` is sugar for
+  // calling next: resolution continues the pipeline with the value,
+  // rejection triggers the error path. Fully synchronous pipelines stay
+  // synchronous — the desugar only engages when a thenable appears.
+  if (pipe.fetcher.hasNext === false && isThenable(result)) {
+    const promise = result as PromiseLike<PipeResult>
+    promise.then(
+      (value: PipeResult) => {
+        // Mirrors the synchronous auto-advance rule: `false` halts.
+        if (value !== false) {
+          next(state, pipeline, null, value)
+        }
+      },
+      (reason: unknown) => {
+        // A falsey rejection reason must not be mistaken for success by
+        // the error truthiness check downstream.
+        next(
+          state,
+          pipeline,
+          (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+        )
+      },
+    )
+    return
   }
 
   // Auto-advance only when the pipe does not request `next` AND does not
