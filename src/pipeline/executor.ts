@@ -641,10 +641,17 @@ function continuePipeline(
       }
       return
     }
+    if (state.pending > 0) {
+      // Continuations from earlier pipes are still in flight: executing
+      // the next pipe now would race their outputs. Defer — the last
+      // continuation to land advances (or settles) the run with every
+      // sibling output merged.
+      return
+    }
     if (pipes.length > state.step) {
       // When we have more pipe, execute current one and increase the step by 1.
       executePipe(pipes[state.step++], state, pipeline, next)
-    } else if (state.pending === 0) {
+    } else {
       // Every pipe executed and nothing is in flight — the run completed.
       settle(state, null)
     }

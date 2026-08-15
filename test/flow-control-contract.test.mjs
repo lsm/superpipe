@@ -2154,37 +2154,31 @@ describe('endAsync contract (sibling continuations)', () => {
 
   it('marks continuation exceptions terminal for other in-flight continuations', async () => {
     let sideEffect = false
-    let resolveOther
+    let retained
     const sp = superpipe({})
     const run = sp('endasync-exception-terminal')
       .pipe(
         (first, second) => {
           first()
-          second()
+          retained = second // the sibling stays live past the exception
         },
         ['next', 'next'],
       )
       // Resolves with a reserved name — its merge raises OutputNameError.
       .pipe(() => Promise.resolve({ next: () => {} }), null)
-      .pipe(
-        () =>
-          new Promise((resolve) => {
-            resolveOther = resolve
-          }),
-        null,
-        'late',
-      )
       .pipe(() => {
         sideEffect = true
-      }, 'late')
-      .endAsync('late')
+      })
+      .endAsync('out')
 
     const outcome = run()
     // Attach the handler immediately so the eventual rejection is never
     // unhandled while the test waits out the timers.
     const assertion = expect(outcome).rejects.toThrow('reserved')
     await new Promise((resolve) => setTimeout(resolve, 10)) // exception lands
-    resolveOther('late-value')
+    // The late sibling would also violate the namespace — it must be
+    // discarded, not merged or executed.
+    retained(null, { next: () => {} })
     await new Promise((resolve) => setTimeout(resolve, 10))
     await assertion
     // The sibling continuation is discarded: no post-rejection execution.
@@ -2400,5 +2394,38 @@ describe('endAsync contract (late-callback handlers)', () => {
     const result = await run()
     // The second held value merges through the first pipe's producer.
     expect(result).toEqual({ value: 'second-value', downstream: 'next:first-value' })
+  })
+})
+
+// --- review round 9 on endAsync: downstream deferral ---
+describe('endAsync contract (downstream deferral)', () => {
+  it('defers downstream pipes until sibling continuations merge', async () => {
+    let resolveA
+    const sp = superpipe({})
+    const run = sp('endasync-sibling-order')
+      .pipe(
+        (first, second) => {
+          first()
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveA = resolve
+          }),
+        null,
+        'a',
+      )
+      .pipe((a, b) => [a, b], ['a', 'b'], ['first', 'second'])
+      .endAsync('{first, second}')
+
+    const outcome = run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The consumer pipe waits for the promise pipe's output — it must not
+    // run early with undefined inputs.
+    resolveA('a-value')
+    await expect(outcome).resolves.toEqual({ first: 'a-value', second: undefined })
   })
 })
