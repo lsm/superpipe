@@ -2,6 +2,7 @@ import {
   type AnyFunction,
   NextCalledTwiceError,
   type PipelineBase,
+  type PipeOutput,
   type PipeResult,
   throwNoErrorHandlerError,
 } from '../common'
@@ -9,6 +10,39 @@ import type Pipe from './Pipe'
 
 interface ResultContainer {
   [key: string]: PipeResult
+}
+
+// Control fields live in the container under reserved names; a pipe output
+// (or invocation input) writing one must fail loudly rather than silently
+// break continuation.
+const RESERVED_OUTPUT_NAMES = ['next']
+
+// Merge a produced result into the container. Reserved control names throw
+// for both inputs and outputs. Shadowing throws for pipe outputs — mid-flight
+// collisions with a configured dependency are accidents, and the container-
+// first lookup would make them silent and permanent. Invocation inputs may
+// deliberately override a configured dependency, so they are allowed.
+function mergeIntoContainer(
+  state: PipeState,
+  pipeline: PipelineBase,
+  step: number,
+  fnName: string,
+  produced: PipeOutput,
+  isInvocationInput: boolean,
+): void {
+  for (const key of Object.keys(produced)) {
+    if (RESERVED_OUTPUT_NAMES.includes(key)) {
+      throw new Error(
+        `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" is reserved.`,
+      )
+    }
+    if (!isInvocationInput && Object.prototype.hasOwnProperty.call(pipeline.functions, key)) {
+      throw new Error(
+        `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" shadows a configured dependency of the same name.`,
+      )
+    }
+  }
+  Object.assign(state.container, produced)
 }
 
 interface PipeState {
@@ -111,7 +145,14 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
 
   if (value != null) {
     // Merge the output of previous pipe with container.
-    Object.assign(state.container, pipes[step - 1].producer.produce(value))
+    mergeIntoContainer(
+      state,
+      pipeline,
+      step - 1,
+      pipes[step - 1].fnName,
+      pipes[step - 1].producer.produce(value),
+      false,
+    )
   }
 
   // The active error is the one passed to `next` — data named `error`
@@ -160,7 +201,14 @@ export function runPipeline(args: PipeResult, pipeline: PipelineBase): ResultCon
   // Start from the input pipes, if any: each maps the invocation arguments
   // into the shared container.
   for (const inputPipe of pipeline.inputPipes || []) {
-    Object.assign(state.container, inputPipe.producer.produce(state.args))
+    mergeIntoContainer(
+      state,
+      pipeline,
+      0,
+      inputPipe.fnName,
+      inputPipe.producer.produce(state.args),
+      true,
+    )
   }
 
   // Start executing pipeline

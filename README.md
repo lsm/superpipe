@@ -192,6 +192,22 @@ Rename an output as it is stored, using `source:destination` syntax:
 .pipe(getData, 'id', 'result:userProfile')  // Stores the returned `result` as `userProfile`
 ```
 
+### Reserved Output Names and Shadowing
+
+The runtime container reserves `next` as a control name. A pipe output —
+declared, renamed, or merged from a returned plain object — or an invocation
+input that writes a reserved name throws. A pipe output whose name matches a
+configured dependency also throws, since it would silently shadow it:
+
+```javascript
+superpipe({ shared: fn })
+// throws on execution:
+.pipe(() => 'value', null, 'shared')
+```
+
+Invocation inputs are the exception: a caller may deliberately override a
+configured dependency by passing a per-run value under the same name.
+
 ### Asynchronous Pipelines and `.end(output)`
 
 The executor returned by `.end()` completes synchronously. When a pipe uses

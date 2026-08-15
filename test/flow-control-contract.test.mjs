@@ -727,3 +727,82 @@ describe('error channel contract (state-based error)', () => {
     run()
   })
 })
+
+// --- output namespace contract: reserved names and shadowing (#40) ---
+describe('output namespace contract (reserved names and shadowing)', () => {
+  it('throws when a declared output writes the reserved name next', () => {
+    const sp = superpipe({})
+    const run = sp('reserved-output')
+      .pipe(() => 'x', null, 'next')
+      .end()
+
+    expect(() => run()).to.throw('Output name "next" is reserved')
+  })
+
+  it('throws when an undeclared plain-object return contains next', () => {
+    const sp = superpipe({})
+    const run = sp('reserved-undeclared')
+      .pipe(() => ({ a: 1, next: () => {} }))
+      .end()
+
+    expect(() => run()).to.throw('Output name "next" is reserved')
+  })
+
+  it('throws when an output rename maps onto next', () => {
+    const sp = superpipe({})
+    const run = sp('reserved-rename')
+      .pipe(() => 'x', null, ['a:next'])
+      .end()
+
+    expect(() => run()).to.throw('Output name "next" is reserved')
+  })
+
+  it('throws when a runtime output shadows a configured dependency', () => {
+    const sp = superpipe({ shared: (v) => v })
+    const run = sp('shadow-output')
+      .pipe(() => 'value', null, 'shared')
+      .end()
+
+    expect(() => run()).to.throw('shadows a configured dependency')
+  })
+
+  it('allows an invocation input to override a configured dependency', () => {
+    // Invocation inputs are the caller's per-run values — overriding a
+    // configured dependency here is deliberate (the runtime-false parity
+    // behavior), unlike mid-flight output shadowing.
+    let observed
+    const sp = superpipe({ data: () => 'configured' })
+    const run = sp('override-input')
+      .input(['data'])
+      .pipe((data) => data, 'data', 'out')
+      .pipe((out) => {
+        observed = out
+      }, 'out')
+      .end()
+
+    run('invoked')
+    expect(observed).to.equal('invoked')
+  })
+
+  it('throws when an invocation input writes the reserved name next', () => {
+    const sp = superpipe({})
+    const run = sp('reserved-input').input(['next']).end()
+
+    expect(() => run(() => {})).to.throw('Output name "next" is reserved')
+  })
+
+  it('allows non-colliding outputs and inputs to merge normally', () => {
+    const sp = superpipe({ dep: (v) => v })
+    let observed
+    const run = sp('clean-merge')
+      .input(['arg1'])
+      .pipe((arg1) => arg1.toUpperCase(), 'arg1', 'out')
+      .pipe((out) => {
+        observed = out
+      }, 'out')
+      .end()
+
+    run('value')
+    expect(observed).to.equal('VALUE')
+  })
+})
