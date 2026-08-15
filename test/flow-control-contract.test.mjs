@@ -1670,3 +1670,51 @@ describe('promise continuation contract (settlement edge cases)', () => {
       run()
     }))
 })
+
+// --- review round 14: opaque rejection reasons and getter-throw observation ---
+describe('promise continuation contract (rejection observation)', () => {
+  it('observes the original rejection when the then getter throws', () => {
+    const promise = Promise.reject(new Error('original'))
+    Object.defineProperty(promise, 'then', {
+      get() {
+        throw new Error('getter threw')
+      },
+    })
+    let observed
+    const sp = superpipe({})
+    const run = sp('getter-throw-rejection')
+      .pipe(() => promise, null, 'out')
+      .error((error) => {
+        observed = error.message
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(observed).to.equal('getter threw')
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('never invokes a thenable rejection reason during cleanup', async () => {
+    let reasonThenCalls = 0
+    const reason = {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then() {
+        reasonThenCalls += 1
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('opaque-reason')
+      .pipe(() => Promise.reject(reason), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // The rejection reason is opaque: observing the rejection must not
+    // assimilate (and thereby invoke) the then-looking reason.
+    expect(reasonThenCalls).to.equal(0)
+  })
+})

@@ -75,6 +75,11 @@ function swallow(value: unknown): void {
   )
 }
 
+// Rejection reasons are opaque values, never assimilated: invoking a
+// then-looking reason's `then` would run arbitrary side effects during
+// cleanup.
+function ignoreReason(): void {}
+
 // Native-promise brand check, guarded: a Proxy whose getPrototypeOf trap
 // throws must answer false rather than escape the caller.
 function isNativePromiseBrand(value: PipeResult): boolean {
@@ -85,16 +90,37 @@ function isNativePromiseBrand(value: PipeResult): boolean {
   }
 }
 
+// True when attaching a reaction through the intrinsic then is expected to
+// succeed. The species lookup happens before any reaction is registered, so
+// a hostile `constructor`/`Symbol.species` getter makes `then` throw without
+// observing the promise — and no userland mechanism can observe it (only
+// the engine's internal species-free path, used by `await`, can).
+function canObserveRejection(value: PipeResult): boolean {
+  try {
+    const ctor = (value as { constructor?: unknown }).constructor
+    if (ctor === Promise) {
+      return true
+    }
+    const species = (ctor as { [Symbol.species]?: unknown })[Symbol.species]
+    return typeof species === 'function'
+  } catch {
+    return false
+  }
+}
+
 // Observe a native promise's rejection through the intrinsic then, so a
 // hostile subclass override that throws before attaching cannot strand the
-// original rejection as unhandled.
+// original rejection as unhandled. The fulfillment observer assimilates a
+// nested thenable resolved by the hostile override; the rejection observer
+// must not touch its opaque reason.
 function observeOriginalRejection(value: PipeResult): void {
-  if (isNativePromiseBrand(value)) {
-    try {
-      Reflect.apply(Promise.prototype.then, value, [swallow, swallow])
-    } catch {
-      // The observation attempt itself consumed the intent.
-    }
+  if (!isNativePromiseBrand(value) || !canObserveRejection(value)) {
+    return
+  }
+  try {
+    Reflect.apply(Promise.prototype.then, value, [swallow, ignoreReason])
+  } catch {
+    // The observation attempt itself consumed the intent.
   }
 }
 
@@ -232,6 +258,9 @@ function executePipe(
       // The pipe still holds a live `next`: void it so a later call cannot
       // re-run the error handler on the same failure.
       invalidateNextCallbacks(nextCallbacks)
+      // An already-rejected branded promise must not lose its rejection
+      // observer just because reading its `then` getter failed.
+      observeOriginalRejection(result)
       // Native assimilation surfaces an accessor failure as an async
       // rejection — same timing as a throwing `then` method below.
       const failure = (err || new Error('Pipe promise rejected with a falsey value')) as Error
@@ -258,8 +287,9 @@ function executePipe(
         } else {
           // Reflect.apply invokes the callable directly; an own `call`
           // property on the then function cannot affect adoption. The
-          // callbacks assimilate whatever the thenable resolves with.
-          Reflect.apply(thenFn as AnyFunction, result, [swallow, swallow])
+          // fulfillment callback assimilates a nested thenable; the
+          // rejection callback must not touch its opaque reason.
+          Reflect.apply(thenFn as AnyFunction, result, [swallow, ignoreReason])
         }
       } catch {
         // A one-shot `then` that throws here is already consumed.
