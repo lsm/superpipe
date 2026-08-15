@@ -130,11 +130,19 @@ export default class Pipeline implements PipelineBase {
             return
           }
           // With no output spec the run's completion is the result; fetch
-          // the requested names from the settled container otherwise.
-          const result = fetcher
-            ? fetcher.fetch(outcome.container, [], pipeline.functions)
-            : undefined
-          resolve(result as PipeOutput)
+          // the requested names from the settled container otherwise. The
+          // fetch runs in the settlement job — a throwing dependency
+          // accessor here must reject the returned promise, not die as an
+          // unhandled rejection while it hangs.
+          if (fetcher === null) {
+            resolve(undefined as PipeOutput)
+            return
+          }
+          try {
+            resolve(fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput)
+          } catch (err) {
+            reject(err as Error)
+          }
         })
       })
     }

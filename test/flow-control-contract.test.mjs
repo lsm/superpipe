@@ -2007,3 +2007,51 @@ describe('endAsync contract (settlement edge cases)', () => {
     await expect(run()).rejects.toThrow('pipe error')
   })
 })
+
+// --- review round 2 on endAsync: foreign-stack exceptions and fetch failures ---
+describe('endAsync contract (foreign-stack exceptions)', () => {
+  it('rejects when a retained next raises from a foreign callback stack', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-late-next-throw')
+      .pipe((next) => {
+        // The reserved-name merge throws after runPipeline returned, on
+        // the timer's stack.
+        setTimeout(() => next(null, { next: () => {} }), 5)
+      }, 'next')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('reserved')
+  })
+
+  it('rejects when the settled output lookup throws', async () => {
+    const functions = {
+      get out() {
+        throw new Error('getter threw')
+      },
+    }
+    const sp = superpipe(functions)
+    const run = sp('endasync-fetch-throw')
+      .pipe(() => 'v', null, 'value')
+      .endAsync('out') // 'out' falls back to the configured getter
+
+    await expect(run()).rejects.toThrow('getter threw')
+  })
+
+  it('surfaces async failures as unhandled rejections for sync .end() runs', async () => {
+    const seen = []
+    const onUnhandled = (err) => seen.push(err)
+    process.on('unhandledRejection', onUnhandled)
+    const sp = superpipe({})
+    const run = sp('end-async-unhandled')
+      .pipe(() => Promise.reject(new Error('boom'))) // no handler, no observer
+      .end()
+
+    run()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    process.off('unhandledRejection', onUnhandled)
+    // Preserved pre-endAsync behavior: the failure surfaces on the
+    // reaction stack instead of being swallowed.
+    expect(seen.length).to.equal(1)
+    expect(seen[0].message).to.equal('boom')
+  })
+})

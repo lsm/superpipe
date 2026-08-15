@@ -185,6 +185,12 @@ interface PipeState {
 // flush while a pipe error is still unwinding, and that error takes
 // priority over the not-yet-final success.
 function settle(state: PipeState, error: Error | null): void {
+  // Without a completion observer there is nothing to report — and no
+  // settlement job should be scheduled: high-throughput synchronous runs
+  // must not accumulate microtask backlog.
+  if (!state.onSettled) {
+    return
+  }
   if (error == null) {
     if (state.settled || state.settling) {
       return
@@ -385,8 +391,12 @@ function executePipe(
       } catch (err) {
         // The continuation threw in a job with no caller stack (for
         // example a namespace violation raised while merging its output):
-        // finalize the run with the failure so an observer rejects instead
-        // of hanging while the exception dies unhandled.
+        // an observer receives it as a rejection; without one, the
+        // exception surfaces as an unhandled rejection, as before
+        // observers existed.
+        if (!state.onSettled) {
+          throw err
+        }
         settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
     }
@@ -403,6 +413,9 @@ function executePipe(
           (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
         )
       } catch (err) {
+        if (!state.onSettled) {
+          throw err
+        }
         settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
     }
@@ -494,7 +507,31 @@ function executePipe(
  * @param  {Error|null}     error     Error object if any.
  * @param  {Any}            value     The return value of the previousPipe.
  */
+// Continuation entry point. The pipeline continuation itself may be
+// invoked from a foreign callback stack (a pipe's retained `next` fired
+// from a timer or event emitter) after `runPipeline` has returned; an
+// exception raised there (a namespace violation during the merge, a
+// throwing error handler) must reach the completion observer as a
+// rejection rather than escape uncatchable — and without an observer it
+// surfaces on the invoking stack, as it did before observers existed.
 function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: PipeResult): void {
+  try {
+    continuePipeline(state, pipeline, error, value)
+  } catch (err) {
+    if (state.onSettled && !state.settled) {
+      settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+      return
+    }
+    throw err
+  }
+}
+
+function continuePipeline(
+  state: PipeState,
+  pipeline: PipelineBase,
+  error?: Error,
+  value?: PipeResult,
+): void {
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
