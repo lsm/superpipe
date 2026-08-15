@@ -1589,3 +1589,84 @@ describe('promise continuation contract (proxies and deferred overrides)', () =>
       afterRun = true
     }))
 })
+
+// --- review round 13: hostile-settlement edge cases and release-on-disable ---
+describe('promise continuation contract (settlement edge cases)', () => {
+  it('ignores an override throw after fulfillment', () => {
+    let handlerRuns = 0
+    class SettleThenThrow extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then(resolve) {
+        resolve('value')
+        throw new Error('threw after settling')
+      }
+    }
+    const sp = superpipe({})
+    const run = sp('settle-then-throw')
+      .pipe(() => new SettleThenThrow(() => {}), null, 'out')
+      .pipe((out) => {
+        expect(out).to.equal('value')
+      }, 'out')
+      .error(() => {
+        handlerRuns += 1
+      })
+      .end()
+
+    expect(() => run()).to.not.throw()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(handlerRuns).to.equal(0)
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('consumes the original rejection when an adoption override throws', () => {
+    class RejectedThrowing extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then() {
+        throw new Error('override threw')
+      }
+    }
+    let observed
+    const sp = superpipe({})
+    const run = sp('adoption-rejection')
+      .pipe(
+        () => new RejectedThrowing((_resolve, reject) => reject(new Error('original'))),
+        null,
+        'out',
+      )
+      .error((error) => {
+        observed = error.message
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(observed).to.equal('override threw')
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('assimilates a nested thenable resolved by an override', () =>
+    new Promise((done) => {
+      class NestedResolve extends Promise {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then(resolve) {
+          resolve(Promise.resolve('nested-adopted'))
+        }
+      }
+      const sp = superpipe({})
+      const run = sp('nested-adopt')
+        .pipe(() => new NestedResolve(() => {}), null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('nested-adopted')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+})

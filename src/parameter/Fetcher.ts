@@ -40,6 +40,10 @@ export interface NextCallbacks {
 function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
+  // Cleared on disable: the underlying continuation closes over the whole
+  // per-run execution state, and a wrapper retained by a long-lived timer
+  // or listener must not keep that state reachable after invalidation.
+  let advance: AnyFunction | null = next
   const wrapped = ((error?: Error, value?: PipeResult): void => {
     // Invalidation is checked before the duplicate-call guard: a late call
     // on a disabled callback (even a repeat of an earlier held call) must
@@ -55,10 +59,11 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       callbacks.held.push({ error, value })
       return
     }
-    next(error, value)
+    advance?.(error, value)
   }) as NextCallback
   wrapped.disable = (): void => {
     disabled = true
+    advance = null
   }
   return wrapped
 }

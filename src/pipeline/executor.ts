@@ -66,6 +66,38 @@ function hasConfiguredDependency(functions: FunctionContainer, key: string): boo
   return false
 }
 
+// Sink that assimilates any value — a nested rejected promise resolved by a
+// cleanup path would otherwise die as an unhandled rejection.
+function swallow(value: unknown): void {
+  Promise.resolve(value).then(
+    () => {},
+    () => {},
+  )
+}
+
+// Native-promise brand check, guarded: a Proxy whose getPrototypeOf trap
+// throws must answer false rather than escape the caller.
+function isNativePromiseBrand(value: PipeResult): boolean {
+  try {
+    return value instanceof Promise
+  } catch {
+    return false
+  }
+}
+
+// Observe a native promise's rejection through the intrinsic then, so a
+// hostile subclass override that throws before attaching cannot strand the
+// original rejection as unhandled.
+function observeOriginalRejection(value: PipeResult): void {
+  if (isNativePromiseBrand(value)) {
+    try {
+      Reflect.apply(Promise.prototype.then, value, [swallow, swallow])
+    } catch {
+      // The observation attempt itself consumed the intent.
+    }
+  }
+}
+
 // Merge a produced result into the container. Reserved control names throw
 // for both inputs and outputs. Shadowing throws for pipe outputs — mid-flight
 // collisions with a configured dependency are accidents, and the container-
@@ -219,33 +251,14 @@ function executePipe(
   // unhandled.
   if (pipe.fetcher.hasNext && thenable) {
     invalidateNextCallbacks(nextCallbacks)
-    // The cleanup callbacks must assimilate whatever the thenable resolves
-    // with — a nested rejected promise resolved here would otherwise die as
-    // an unhandled rejection.
-    const swallow = (value: unknown): void => {
-      Promise.resolve(value).then(
-        () => {},
-        () => {},
-      )
-    }
     Promise.resolve().then(() => {
       try {
-        // The brand check is guarded: a Proxy whose getPrototypeOf trap
-        // throws must fall through to the captured then, not escape.
-        let isNativePromise = false
-        try {
-          isNativePromise = result instanceof Promise
-        } catch {
-          isNativePromise = false
-        }
-        if (isNativePromise) {
-          // Observe a native-promise rejection through the intrinsic then:
-          // a hostile subclass override that throws before attaching would
-          // otherwise leave the original rejection unhandled.
-          Reflect.apply(Promise.prototype.then, result, [swallow, swallow])
+        if (isNativePromiseBrand(result)) {
+          observeOriginalRejection(result)
         } else {
           // Reflect.apply invokes the callable directly; an own `call`
-          // property on the then function cannot affect adoption.
+          // property on the then function cannot affect adoption. The
+          // callbacks assimilate whatever the thenable resolves with.
           Reflect.apply(thenFn as AnyFunction, result, [swallow, swallow])
         }
       } catch {
@@ -291,11 +304,33 @@ function executePipe(
       // without an extra job. Anything else (subclass overrides, proxies)
       // is adopted through the deferred path below, whose real promise
       // settles at most once. The identity comparison cannot trip a proxy
-      // trap the way an instanceof brand check can.
+      // trap the way an instanceof brand check can. The callbacks are
+      // once-settled: a hostile invocation (e.g. through a proxy's apply
+      // trap) that settles and then throws must not also run the error
+      // handler.
+      let settled = false
+      const settleFulfilled = (value: PipeResult): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        onFulfilled(value)
+      }
+      const settleRejected = (reason: unknown): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        onRejected(reason)
+      }
       try {
-        Reflect.apply(thenFn as AnyFunction, result, [onFulfilled, onRejected])
+        Reflect.apply(thenFn as AnyFunction, result, [settleFulfilled, settleRejected])
       } catch (err) {
-        Promise.reject(err).catch(onRejected)
+        if (!settled) {
+          settled = true
+          Promise.reject(err).catch(onRejected)
+        }
+        observeOriginalRejection(result)
       }
       return
     }
@@ -307,10 +342,16 @@ function executePipe(
       Promise.resolve().then(() => {
         try {
           // Reflect.apply invokes the callable directly; an own `call`
-          // property on the then function cannot affect adoption.
+          // property on the then function cannot affect adoption. The real
+          // resolve/reject pair settles at most once and assimilates
+          // whatever the override resolves with, including nested
+          // thenables.
           Reflect.apply(thenFn as AnyFunction, result, [resolve, reject])
         } catch (err) {
           reject(err)
+          // An invocation failure must not strand the original rejection
+          // of an already-rejected native promise.
+          observeOriginalRejection(result)
         }
       })
     }).then(onFulfilled, onRejected)
