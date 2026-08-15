@@ -2230,3 +2230,53 @@ describe('endAsync contract (halt preservation)', () => {
     expect(sideEffect).to.equal(false)
   })
 })
+
+// --- review round 6 on endAsync: retained next callbacks ---
+describe('endAsync contract (retained continuations)', () => {
+  it('waits for a retained next callback before resolving', async () => {
+    let settledEarly = false
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-retained-next')
+      .pipe(
+        (first, second) => {
+          first() // drives the pipeline onward
+          retained = second // still live, fired later from a timer
+        },
+        ['next', 'next'],
+      )
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out')
+
+    const outcome = run()
+    outcome.then(() => {
+      settledEarly = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The retained callback is a live continuation — the run stays open.
+    expect(settledEarly).to.equal(false)
+
+    retained()
+    await expect(outcome).resolves.toEqual('done')
+  })
+
+  it('rejects when a retained next callback delivers an error late', async () => {
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-retained-error')
+      .pipe(
+        (_first, second) => {
+          retained = second
+        },
+        ['next', 'next'],
+      )
+      .pipe(() => 'done', null, 'out')
+      .error(() => {}, 'error')
+      .endAsync('out')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('late failure')
+    retained(new Error('late failure'))
+    await assertion
+  })
+})

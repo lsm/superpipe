@@ -251,8 +251,19 @@ function executePipe(
     : pipe.fn
   // `next` callback state for this pipe invocation, owned locally so a
   // reentrant nested run of the same pipeline cannot clobber it.
-  const nextCallbacks: NextCallbacks = { wrappers: [], holding: false, held: [] }
+  const nextCallbacks: NextCallbacks = {
+    wrappers: [],
+    holding: false,
+    held: [],
+    onConsumed: (): void => {
+      state.pending -= 1
+    },
+  }
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
+  // Each wrapper handed to the pipe is a live continuation until invoked
+  // or invalidated: a retained `next` keeps the run open exactly like an
+  // adopted promise does.
+  state.pending += nextCallbacks.wrappers.length
   const advance = next as unknown as Continuation
 
   let result: PipeResult

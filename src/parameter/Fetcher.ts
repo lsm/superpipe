@@ -22,11 +22,13 @@ export interface NextCallback {
 // the wrappers created by the fetch, and the buffer holding their
 // synchronous invocations (in call order) until the pipe's return channel
 // is known. Owned by the executor, so reentrant runs of the same pipeline
-// never share buffer state.
+// never share buffer state. `onConsumed` fires once per wrapper when it is
+// invoked or invalidated, so an outstanding-continuation count can drop.
 export interface NextCallbacks {
   wrappers: NextCallback[]
   holding: boolean
   held: { error?: Error; value?: PipeResult }[]
+  onConsumed?: () => void
 }
 
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
@@ -40,6 +42,15 @@ export interface NextCallbacks {
 function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
+  // The wrapper counts as a live continuation from creation until it is
+  // invoked or invalidated — exactly once.
+  let counted = true
+  const consume = (): void => {
+    if (counted) {
+      counted = false
+      callbacks?.onConsumed?.()
+    }
+  }
   // Cleared on disable: the underlying continuation closes over the whole
   // per-run execution state, and a wrapper retained by a long-lived timer
   // or listener must not keep that state reachable after invalidation.
@@ -58,6 +69,7 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       throw new NextCalledTwiceError()
     }
     called = true
+    consume()
     if (callbacks?.holding) {
       callbacks.held.push({ error, value })
       return
@@ -65,7 +77,11 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
     advance?.(error, value)
   }) as NextCallback
   wrapped.disable = (): void => {
+    if (disabled) {
+      return
+    }
     disabled = true
+    consume()
     advance = null
   }
   return wrapped
