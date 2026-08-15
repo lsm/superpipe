@@ -161,11 +161,21 @@ run(3, 4)  // Output: Sum: 7
 
 ### Boolean Flow Control
 
-When a pipe returns `false`, the pipeline stops (useful for guards/validation):
+`false` steers the pipeline only on the **declarative channels** — a raw
+boolean dependency or a `!`-prefixed injected pipe. A function pipe's
+return value, `false` included, is ordinary data: it is stored under the
+output name and the pipeline continues.
 
 ```javascript
-.pipe(user => user.isAdmin, 'user')  // Stops if not admin
-.pipe(() => console.log('Admin access granted'))
+// Raw boolean dependency — flow control: falsey halts
+superpipe({ isBlocked: false })
+.pipe('isBlocked', 'user')  // Halts unless isBlocked is truthy
+
+// `!`-prefixed injected pipe — inverts the boolean for flow control
+.pipe('!isBlocked', 'user')  // Continues only while isBlocked is falsey
+
+// Function pipe — the boolean return is DATA, the pipeline continues
+.pipe((user) => user.isAdmin, 'user', 'isAdmin')
 ```
 
 ### Not Pipes (`!`)
@@ -270,7 +280,10 @@ sp('safe-pipeline')
 
 ## TypeScript Support
 
-SuperPipe is written in TypeScript and includes type definitions:
+SuperPipe is written in TypeScript and includes type definitions. Values
+flowing through a pipeline (`PipeResult`, `PipeOutput`) are typed
+`unknown` — the executor narrows them; input/output specs accept the
+`source:destination` rename form (`PipeRename`):
 
 ```typescript
 import superpipe, { Dependencies, PipelineAPI } from 'superpipe'

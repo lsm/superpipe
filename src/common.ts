@@ -33,19 +33,28 @@ export class AmbiguousContinuationError extends Error {
   }
 }
 
-type AnyValue = any
 // Generic callable — the runtime accepts any function shape
-// (next callbacks, pipe fns, error handlers) and validates at the call site.
-export type AnyFunction = (...args: any[]) => any
+// (next callbacks, pipe fns, error handlers) and validates at the call
+// site. The `never[]` parameters make every concrete signature assignable
+// without `any`; return values are `unknown` and narrowed by the executor.
+export type AnyFunction = (...args: never[]) => unknown
 
-export type PipeResult = AnyValue
+// Values flowing through a pipeline — invocation arguments, container
+// data, pipe results — are `unknown` at the contract level; the executor
+// narrows (thenable, boolean, object) at each use site.
+export type PipeResult = unknown
 export type PipeOutput = PipeResult | PipeResult[] | { [key: string]: PipeResult }
 // `Function` stays in the public union for backwards compatibility:
 // 0.15.0 accepted variables typed as Function; a lint migration must not
 // narrow the public contract. Internal call sites use AnyFunction.
 // biome-ignore lint/complexity/noBannedTypes: public API compatibility
 export type PipeFunction = string | AnyFunction | Function
-export type PipeParameter = string | string[]
+
+// Pipe input/output specs are name lists; the `source:destination` rename
+// form selects a destination other than the produced name.
+export type PipeName = string
+export type PipeRename = `${string}:${string}`
+export type PipeParameter = PipeName | PipeRename | string[]
 
 export interface FunctionContainer {
   // Dependencies are callables, raw booleans (flow control), or data values

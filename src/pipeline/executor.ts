@@ -24,7 +24,7 @@ function holdNextCallbacks(callbacks: NextCallbacks): void {
 function flushNextCallbacks(
   state: PipeState,
   pipeline: PipelineBase,
-  next: AnyFunction,
+  next: Continuation,
   callbacks: NextCallbacks,
 ): void {
   callbacks.holding = false
@@ -48,6 +48,22 @@ function invalidateNextCallbacks(callbacks: NextCallbacks): void {
 interface ResultContainer {
   [key: string]: PipeResult
 }
+
+// Typed continuation view: AnyFunction's `never[]` parameters maximize
+// assignability, but invoking the continuation needs a concrete signature.
+type Continuation = (
+  state: PipeState,
+  pipeline: PipelineBase,
+  error?: Error | null,
+  value?: PipeResult,
+) => void
+
+// Typed error-handler view, same reasoning as Continuation.
+type ErrorHandler = (
+  container: ResultContainer,
+  functions: FunctionContainer,
+  error?: Error,
+) => void
 
 // Control fields live in the container under reserved names; a pipe output
 // (or invocation input) writing one must fail loudly rather than silently
@@ -124,7 +140,7 @@ function mergeIntoContainer(
   produced: PipeOutput,
   isInvocationInput: boolean,
 ): void {
-  for (const key of Object.keys(produced)) {
+  for (const key of Object.keys(produced as Record<string, PipeResult>)) {
     if (RESERVED_OUTPUT_NAMES.includes(key)) {
       throw new OutputNameError(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" is reserved.`,
@@ -173,6 +189,7 @@ function executePipe(
   // reentrant nested run of the same pipeline cannot clobber it.
   const nextCallbacks: NextCallbacks = { wrappers: [], holding: false, held: [] }
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
+  const advance = next as unknown as Continuation
 
   let result: PipeResult
 
@@ -181,7 +198,8 @@ function executePipe(
   // inside object-string inputs, whose wrapped object hides missing values
   // from a top-level indexOf.
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
-    return next(state, pipeline)
+    advance(state, pipeline)
+    return
   } else if (typeof fn === 'function') {
     // Hold a synchronous `next` call until the pipe's return channel is
     // known, so a pipe that both calls `next` and returns a thenable
@@ -192,7 +210,7 @@ function executePipe(
     } catch (err) {
       // Release any held invocation first, preserving the order a
       // synchronous `next` would have advanced in.
-      flushNextCallbacks(state, pipeline, next, nextCallbacks)
+      flushNextCallbacks(state, pipeline, advance, nextCallbacks)
       // The duplicate-`next` guard, namespace violations, and continuation
       // ambiguity must surface as themselves, not be routed to the
       // pipeline's error handler — they are programming errors in the
@@ -213,7 +231,8 @@ function executePipe(
       }
       // A falsey thrown value must not be mistaken for successful
       // completion by the error truthiness check downstream.
-      return next(state, pipeline, (err || new Error('Pipe threw a falsey value')) as Error)
+      advance(state, pipeline, (err || new Error('Pipe threw a falsey value')) as Error)
+      return
     }
   } else if (typeof fn === 'boolean') {
     // Raw boolean dependency used for flow control.
@@ -232,6 +251,12 @@ function executePipe(
   if (pipe.not && typeof result === 'boolean') {
     result = !result
   }
+
+  // Declarative flow control: a raw boolean dependency or a `!`-pipe uses
+  // its boolean to steer the pipeline — `false` halts. Every other return
+  // value, boolean included, is ordinary data: a function pipe returning
+  // `false` stores it under the output name and the pipeline continues.
+  const isFlowControl = pipe.not === true || typeof fn === 'boolean'
 
   // Read `then` exactly once, guarded: promise assimilation treats an
   // exception while reading (or calling) `then` as a rejection, so such
@@ -252,7 +277,7 @@ function executePipe(
       // rejection — same timing as a throwing `then` method below.
       const failure = (err || new Error('Pipe promise rejected with a falsey value')) as Error
       Promise.reject(failure).catch((reason: Error): void => {
-        next(state, pipeline, reason)
+        advance(state, pipeline, reason)
       })
       return
     }
@@ -303,14 +328,14 @@ function executePipe(
       if (state.activeError != null) {
         return
       }
-      // Mirrors the synchronous path: `!` inverts a boolean result, and
-      // `false` halts the pipeline.
+      // Mirrors the synchronous path: `!` inverts a boolean result, and a
+      // flow-control pipe halts on `false` — a data pipe continues.
       let resolved = value
       if (pipe.not && typeof resolved === 'boolean') {
         resolved = !resolved
       }
-      if (resolved !== false) {
-        next(state, pipeline, null, resolved)
+      if (!(isFlowControl && resolved === false)) {
+        advance(state, pipeline, null, resolved)
       }
     }
     const onRejected = (reason: unknown): void => {
@@ -319,7 +344,7 @@ function executePipe(
       }
       // A falsey rejection reason must not be mistaken for success by
       // the error truthiness check downstream.
-      next(
+      advance(
         state,
         pipeline,
         (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
@@ -390,14 +415,14 @@ function executePipe(
 
   // Release any held synchronous `next` invocation now that the return
   // channel is known to be unambiguous.
-  flushNextCallbacks(state, pipeline, next, nextCallbacks)
+  flushNextCallbacks(state, pipeline, advance, nextCallbacks)
 
-  // Auto-advance only when the pipe does not request `next` AND does not
-  // return `false` (boolean flow control — `false` halts the pipeline).
-  // Duplicate-`next` detection lives on the per-pipe callback handed out by
-  // the Fetcher, not here.
-  if (pipe.fetcher.hasNext === false && result !== false) {
-    next(state, pipeline, null, result)
+  // Auto-advance when the pipe does not request `next`, unless a
+  // flow-control pipe's boolean is `false` (halt). Duplicate-`next`
+  // detection lives on the per-pipe callback handed out by the Fetcher,
+  // not here.
+  if (pipe.fetcher.hasNext === false && !(isFlowControl && result === false)) {
+    advance(state, pipeline, null, result)
   }
 }
 
@@ -446,7 +471,7 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
   // executePipe's catch does not re-dispatch it as a fresh pipe error.
   state.handlingError = true
   if (errorHandler) {
-    errorHandler(state.container, pipeline.functions, state.activeError)
+    ;(errorHandler as ErrorHandler)(state.container, pipeline.functions, state.activeError)
   } else {
     // Throw the error if we don't have error handling function.
     throwNoErrorHandlerError(state.activeError)

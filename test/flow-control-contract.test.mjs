@@ -4,7 +4,9 @@
  * These pin three README-documented behaviors and use only the public API,
  * so the file runs unchanged on any branch:
  *
- *   1. Boolean flow control — a pipe that returns `false` stops the pipeline.
+ *   1. Boolean flow control — `false` steers the pipeline only on the
+ *      declarative channels (raw boolean dependencies, `!`-pipes); a
+ *      function pipe's `false` return is ordinary data.
  *   2. `!` not-pipes — prefixing an injected name with `!` inverts its boolean
  *      result (observed via flow control: `!isBlocked` continues only when
  *      isBlocked is falsey, halts when truthy).
@@ -33,19 +35,50 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
       run('Hello', 'World')
     }))
 
-  // --- 1. false-return stops the pipeline (DISCRIMINATOR) ---
-  describe('boolean flow control — return false stops the pipeline', () => {
-    it('halts when a pipe returns false; no subsequent pipe runs', () => {
-      let afterRan = false
+  // --- 1. function returns are data; false no longer halts (DISCRIMINATOR) ---
+  describe('boolean returns — a function pipe returning false is data', () => {
+    it('stores a returned false under the output name and continues', () => {
+      let observed = 'unset'
       const sp = superpipe({})
-      const run = sp('false-stop')
-        .pipe(() => false) // returns false, does not request next → must halt
+      const run = sp('false-data')
+        .pipe(() => false, null, 'flag') // data return, not flow control
+        .pipe((flag) => {
+          observed = flag
+        }, 'flag')
+        .end()
+
+      run()
+      expect(observed).to.equal(false)
+    })
+
+    it('treats an injected function dependency boolean return as data', () => {
+      let observed = 'unset'
+      const sp = superpipe({ check: () => false })
+      const run = sp('injected-bool-data')
+        .input(['user'])
+        .pipe('check', 'user', 'ok') // injected fn return, no ! → data
+        .pipe((ok) => {
+          observed = ok
+        }, 'ok')
+        .end()
+
+      run('x')
+      expect(observed).to.equal(false)
+    })
+
+    it('halts only on the declarative channels: boolean deps and !-pipes', () => {
+      // Raw boolean dependency false → halt (kept from the README contract).
+      let afterRan = false
+      const sp = superpipe({ isBlocked: false })
+      const run = sp('bool-dep-halt')
+        .input(['user'])
+        .pipe('isBlocked', 'user') // raw boolean dependency → flow control
         .pipe(() => {
           afterRan = true
         }) // sentinel — must NOT run
         .end()
 
-      run()
+      run({ role: 'admin' })
       expect(afterRan).to.equal(false)
     })
   })
@@ -918,20 +951,22 @@ describe('promise continuation contract', () => {
     expect(() => run()).to.throw('one continuation channel, not both')
   })
 
-  it('halts when a promise resolves to false (sync/async parity)', () => {
-    let afterRan = false
+  it('treats a promise resolving to false as data (sync/async parity)', () => {
+    let observed = 'unset'
     const sp = superpipe({})
     const run = sp('promise-false')
-      .pipe(() => Promise.resolve(false))
-      .pipe(() => {
-        afterRan = true
-      })
+      .pipe(() => Promise.resolve(false), null, 'flag')
+      .pipe((flag) => {
+        observed = flag
+      }, 'flag')
       .end()
 
     run()
     return new Promise((resolve) => {
       setTimeout(() => {
-        expect(afterRan).to.equal(false)
+        // Same behavior as a synchronous `return false`: stored as data,
+        // pipeline continues.
+        expect(observed).to.equal(false)
         resolve()
       }, 20)
     })

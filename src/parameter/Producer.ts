@@ -1,5 +1,4 @@
 import {
-  type AnyFunction,
   isValidArrayParameters,
   objectStringToArray,
   type PipeOutput,
@@ -12,7 +11,7 @@ import {
 // stores the returned `arg2` under `mappedArgName`.
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
-function applyKey(output: PipeOutput, key: string, value: PipeResult): void {
+function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
   const rename = RE_RENAME.exec(key)
   if (rename) {
     output[rename[2]] = value
@@ -25,7 +24,7 @@ export default class Producer {
   // Array of property names to produce.
   private keys: string[] = []
 
-  private _produce: AnyFunction
+  private _produce: (result: PipeResult) => PipeOutput
 
   // Input producers receive the wrapped invocation-arguments array, so
   // single-name and object-string specs read from its first element.
@@ -96,7 +95,7 @@ export default class Producer {
   // maps whole under a single name, and with no outputs plain objects
   // merge while everything else is dropped.
   produceOutput(result: PipeResult): PipeOutput {
-    const output: PipeOutput = {}
+    const output: Record<string, PipeResult> = {}
     const keys = this.keys
     const isArray = Array.isArray(result)
     const isObject = !isArray && result !== null && typeof result === 'object'
@@ -117,7 +116,9 @@ export default class Producer {
     if (isObject) {
       for (const key of keys) {
         const rename = RE_RENAME.exec(key)
-        output[rename ? rename[2] : key] = result[rename ? rename[1] : key]
+        output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[
+          rename ? rename[1] : key
+        ]
       }
       return output
     }
@@ -138,19 +139,19 @@ export default class Producer {
   }
 
   produceFromArray(result: PipeResult): PipeOutput {
-    const output: PipeOutput = {}
+    const output: Record<string, PipeResult> = {}
     // Input names are literal — colon renaming applies to outputs only.
     let i = 0
     for (const key of this.keys) {
-      output[key] = result[i]
+      output[key] = (result as PipeResult[])[i]
       i += 1
     }
     return output
   }
 
   produceFromObject(result: PipeResult): PipeOutput {
-    const output: PipeOutput = {}
-    const source = this.inputSource(result)
+    const output: Record<string, PipeResult> = {}
+    const source = this.inputSource(result) as Record<string, PipeResult> | null | undefined
     for (const key of this.keys) {
       // Only take the keys we need; a missing argument maps to undefined.
       output[key] = source == null ? undefined : source[key]

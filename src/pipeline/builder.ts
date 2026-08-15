@@ -77,13 +77,14 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
     throw new Error('"next" could not be used in error pipe.')
   }
 
-  let getErrorFn: AnyFunction
+  let getErrorFn: (container: PipeResult, functions: FunctionContainer) => unknown
 
   if (isNonEmptyString(errorFn)) {
     const fnName: string = errorFn as string
     getErrorFn = (container: PipeResult, functions: FunctionContainer): AnyFunction => {
-      if (Object.prototype.hasOwnProperty.call(container, fnName)) {
-        return container[fnName] as AnyFunction
+      const box = container as Record<string, unknown>
+      if (Object.prototype.hasOwnProperty.call(box, fnName)) {
+        return box[fnName] as AnyFunction
       }
       return functions[fnName] as AnyFunction
     }
@@ -103,9 +104,9 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
     // active failure.
     const source = Object.assign({}, container, { error })
     const inputArgs = fetcher.fetch(source, [], functions)
-    const fn = getErrorFn(container, functions)
+    const fn = getErrorFn(container, functions) as AnyFunction | undefined
     if (typeof fn === 'function') {
-      fn.apply(0, inputArgs)
+      ;(fn as (...args: PipeResult[]) => unknown)(...(inputArgs as PipeResult[]))
     } else {
       throw new Error(`Error handler "${errorFn}" is not a function.`)
     }
