@@ -1,4 +1,5 @@
 import {
+  AmbiguousContinuationError,
   type AnyFunction,
   type FunctionContainer,
   NextCalledTwiceError,
@@ -8,7 +9,41 @@ import {
   type PipeResult,
   throwNoErrorHandlerError,
 } from '../common'
+import type { NextCallbacks } from '../parameter/Fetcher'
 import type Pipe from './Pipe'
+
+// Hold synchronous `next` invocations until the pipe's return channel is
+// known: a pipe that both calls `next` and returns a thenable must not
+// advance the pipeline before the ambiguity is detected.
+function holdNextCallbacks(callbacks: NextCallbacks): void {
+  callbacks.holding = true
+}
+
+// Release held invocations in the order the pipe made them — two declared
+// `next` callbacks flush in call order, not declaration order.
+function flushNextCallbacks(
+  state: PipeState,
+  pipeline: PipelineBase,
+  next: AnyFunction,
+  callbacks: NextCallbacks,
+): void {
+  callbacks.holding = false
+  while (callbacks.held.length > 0) {
+    const held = callbacks.held.shift()
+    if (held) {
+      next(state, pipeline, held.error, held.value)
+    }
+  }
+}
+
+// Void the callbacks and discard any held invocation and its payload — used
+// when the executor rejects an ambiguous or unobservable continuation.
+function invalidateNextCallbacks(callbacks: NextCallbacks): void {
+  for (const wrapper of callbacks.wrappers) {
+    wrapper.disable()
+  }
+  callbacks.held.length = 0
+}
 
 interface ResultContainer {
   [key: string]: PipeResult
@@ -29,6 +64,51 @@ function hasConfiguredDependency(functions: FunctionContainer, key: string): boo
     if (Object.prototype.hasOwnProperty.call(obj, key)) return true
   }
   return false
+}
+
+// Sink that assimilates any value — a nested rejected promise resolved by a
+// cleanup path would otherwise die as an unhandled rejection.
+function swallow(value: unknown): void {
+  Promise.resolve(value).then(
+    () => {},
+    () => {},
+  )
+}
+
+// Rejection reasons are opaque values, never assimilated: invoking a
+// then-looking reason's `then` would run arbitrary side effects during
+// cleanup.
+function ignoreReason(): void {}
+
+// Native-promise brand check, guarded: a Proxy whose getPrototypeOf trap
+// throws must answer false rather than escape the caller. A value that
+// merely inherits from Promise.prototype still answers true here; the
+// observation attempt below self-verifies against such false positives.
+function isNativePromiseBrand(value: PipeResult): boolean {
+  try {
+    return value instanceof Promise
+  } catch {
+    return false
+  }
+}
+
+// Attempt to observe a native promise's rejection through the intrinsic
+// then, reporting whether a reaction actually attached. The intrinsic
+// reaches the promise's original state regardless of any `then` override;
+// a branded but slotless receiver, or a species constructor that throws
+// when constructed, makes the attach throw before registering anything —
+// and no userland mechanism can observe such an object (only the engine's
+// internal species-free path, used by `await`, can).
+function observeOriginalRejection(value: PipeResult): boolean {
+  if (!isNativePromiseBrand(value)) {
+    return false
+  }
+  try {
+    Reflect.apply(Promise.prototype.then, value, [swallow, ignoreReason])
+    return true
+  } catch {
+    return false
+  }
 }
 
 // Merge a produced result into the container. Reserved control names throw
@@ -89,7 +169,10 @@ function executePipe(
       ? container[fnName]
       : functions[fnName]
     : pipe.fn
-  const inputArgs = pipe.fetcher.fetch(container, args, functions)
+  // `next` callback state for this pipe invocation, owned locally so a
+  // reentrant nested run of the same pipeline cannot clobber it.
+  const nextCallbacks: NextCallbacks = { wrappers: [], holding: false, held: [] }
+  const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
 
   let result: PipeResult
 
@@ -100,13 +183,25 @@ function executePipe(
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
     return next(state, pipeline)
   } else if (typeof fn === 'function') {
+    // Hold a synchronous `next` call until the pipe's return channel is
+    // known, so a pipe that both calls `next` and returns a thenable
+    // cannot advance the pipeline before the ambiguity is detected.
+    holdNextCallbacks(nextCallbacks)
     try {
       result = fn.apply(0, inputArgs as PipeResult[])
     } catch (err) {
-      // The duplicate-`next` guard and namespace violations must surface as
-      // themselves, not be routed to the pipeline's error handler — they are
-      // programming errors in the pipeline definition, not runtime failures.
-      if (err instanceof NextCalledTwiceError || err instanceof OutputNameError) {
+      // Release any held invocation first, preserving the order a
+      // synchronous `next` would have advanced in.
+      flushNextCallbacks(state, pipeline, next, nextCallbacks)
+      // The duplicate-`next` guard, namespace violations, and continuation
+      // ambiguity must surface as themselves, not be routed to the
+      // pipeline's error handler — they are programming errors in the
+      // pipeline definition, not runtime failures.
+      if (
+        err instanceof NextCalledTwiceError ||
+        err instanceof OutputNameError ||
+        err instanceof AmbiguousContinuationError
+      ) {
         throw err
       }
       // An exception raised by an error handler (or by the no-handler
@@ -137,6 +232,165 @@ function executePipe(
   if (pipe.not && typeof result === 'boolean') {
     result = !result
   }
+
+  // Read `then` exactly once, guarded: promise assimilation treats an
+  // exception while reading (or calling) `then` as a rejection, so such
+  // failures reach the error handler instead of escaping synchronously —
+  // and a stateful accessor is not probed a second time.
+  let thenFn: unknown
+  if (result !== null && (typeof result === 'object' || typeof result === 'function')) {
+    try {
+      thenFn = (result as { then?: unknown }).then
+    } catch (err) {
+      // The pipe still holds a live `next`: void it so a later call cannot
+      // re-run the error handler on the same failure.
+      invalidateNextCallbacks(nextCallbacks)
+      // An already-rejected branded promise must not lose its rejection
+      // observer just because reading its `then` getter failed.
+      observeOriginalRejection(result)
+      // Native assimilation surfaces an accessor failure as an async
+      // rejection — same timing as a throwing `then` method below.
+      const failure = (err || new Error('Pipe promise rejected with a falsey value')) as Error
+      Promise.reject(failure).catch((reason: Error): void => {
+        next(state, pipeline, reason)
+      })
+      return
+    }
+  }
+  const thenable = typeof thenFn === 'function'
+
+  // A pipe that requests `next` owns its own continuation; a thenable
+  // return alongside it is ambiguous — which channel advances the
+  // pipeline? Fail loudly, invalidate the pipe's callbacks (discarding any
+  // held synchronous invocation) so a late `next` cannot fire, and
+  // neutralize the returned rejection so it cannot surface later as
+  // unhandled.
+  if (pipe.fetcher.hasNext && thenable) {
+    invalidateNextCallbacks(nextCallbacks)
+    Promise.resolve().then(() => {
+      // Attempt the intrinsic observer first: it reaches a native promise's
+      // original state regardless of overrides and self-reports whether a
+      // reaction attached — a branded but slotless receiver falls through
+      // to the captured then below.
+      observeOriginalRejection(result)
+      try {
+        // Consume the captured thenable itself. Reflect.apply invokes the
+        // callable directly; an own `call` property on the then function
+        // cannot affect it. The fulfillment callback assimilates a nested
+        // thenable; the rejection callback must not touch its opaque
+        // reason.
+        Reflect.apply(thenFn as AnyFunction, result, [swallow, ignoreReason])
+      } catch {
+        // A one-shot `then` that throws here is already consumed.
+      }
+    })
+    throw new AmbiguousContinuationError(
+      `Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName}] : Pipe declares "next" as an input and returned a thenable — use one continuation channel, not both.`,
+    )
+  }
+
+  // A thenable return from a pipe that did not request `next` is sugar for
+  // calling next: resolution continues the pipeline with the value,
+  // rejection triggers the error path. Fully synchronous pipelines stay
+  // synchronous — the desugar only engages when a thenable appears. The
+  // captured `then` is assimilated through a real promise so a throwing
+  // `then` call becomes a rejection.
+  if (pipe.fetcher.hasNext === false && thenable) {
+    const onFulfilled = (value: PipeResult): void => {
+      // A terminal error already won this execution: a continuation that
+      // was pending when the error path was entered resolves too late and
+      // is discarded.
+      if (state.activeError != null) {
+        return
+      }
+      // Mirrors the synchronous path: `!` inverts a boolean result, and
+      // `false` halts the pipeline.
+      let resolved = value
+      if (pipe.not && typeof resolved === 'boolean') {
+        resolved = !resolved
+      }
+      if (resolved !== false) {
+        next(state, pipeline, null, resolved)
+      }
+    }
+    const onRejected = (reason: unknown): void => {
+      if (state.activeError != null) {
+        return
+      }
+      // A falsey rejection reason must not be mistaken for success by
+      // the error truthiness check downstream.
+      next(
+        state,
+        pipeline,
+        (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+      )
+    }
+
+    if (thenFn === Promise.prototype.then) {
+      // The intrinsic native then already defers its reactions — invoke it
+      // directly so the pipeline continues in ordinary promise ordering
+      // without an extra job. Anything else (subclass overrides, proxies)
+      // is adopted through the deferred path below, whose real promise
+      // settles at most once. The identity comparison cannot trip a proxy
+      // trap the way an instanceof brand check can. The callbacks are
+      // once-settled: a hostile invocation (e.g. through a proxy's apply
+      // trap) that settles and then throws must not also run the error
+      // handler.
+      let settled = false
+      const settleFulfilled = (value: PipeResult): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        onFulfilled(value)
+      }
+      const settleRejected = (reason: unknown): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        onRejected(reason)
+      }
+      try {
+        Reflect.apply(thenFn as AnyFunction, result, [settleFulfilled, settleRejected])
+      } catch (err) {
+        if (!settled) {
+          settled = true
+          Promise.reject(err).catch(onRejected)
+        }
+        observeOriginalRejection(result)
+      }
+      return
+    }
+
+    new Promise<PipeResult>((resolve, reject) => {
+      // Native assimilation invokes a custom thenable's `then` in a later
+      // promise job, after the caller's synchronous initialization
+      // completes.
+      Promise.resolve().then(() => {
+        try {
+          // Reflect.apply invokes the callable directly; an own `call`
+          // property on the then function cannot affect adoption. The real
+          // resolve/reject pair settles at most once and assimilates
+          // whatever the override resolves with, including nested
+          // thenables.
+          Reflect.apply(thenFn as AnyFunction, result, [resolve, reject])
+        } catch (err) {
+          reject(err)
+        }
+        // An override may swallow the rejection — return normally without
+        // registering the supplied callbacks — or throw before attaching;
+        // either way, observe a branded promise's original rejection
+        // regardless of how the override behaved.
+        observeOriginalRejection(result)
+      })
+    }).then(onFulfilled, onRejected)
+    return
+  }
+
+  // Release any held synchronous `next` invocation now that the return
+  // channel is known to be unambiguous.
+  flushNextCallbacks(state, pipeline, next, nextCallbacks)
 
   // Auto-advance only when the pipe does not request `next` AND does not
   // return `false` (boolean flow control — `false` halts the pipeline).

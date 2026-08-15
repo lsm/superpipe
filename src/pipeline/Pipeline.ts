@@ -83,9 +83,10 @@ export default class Pipeline implements PipelineBase {
     }
 
     // NOTE: the executor returns synchronously. When a pipe completes
-    // asynchronously via `next`, the requested output may not be populated
-    // yet — `.end(output)` is only meaningful for synchronous pipelines;
-    // async flows should deliver results through a final pipe or callbacks.
+    // asynchronously — via `next` or a returned Promise — the requested
+    // output may not be populated yet; `.end(output)` is only meaningful
+    // for synchronous pipelines, async flows should deliver results
+    // through a final pipe, callbacks, or an error handler.
     if (output === undefined) {
       // `.end()` without an output spec returns nothing, like master.
       return function (): undefined {

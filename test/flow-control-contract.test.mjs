@@ -849,3 +849,962 @@ describe('output namespace contract (delivery parity)', () => {
     expect(() => run()).to.not.throw()
   })
 })
+
+// --- promise continuation contract: thenable returns are next sugar (#41) ---
+describe('promise continuation contract', () => {
+  it('continues the pipeline with the resolved value', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('promise-value')
+        .pipe(() => Promise.resolve('async-value'), null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('async-value')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+
+  it('supports async function pipes', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('async-fn')
+        .pipe(async () => 'from-async', null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('from-async')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+
+  it('routes rejections to the error handler', () =>
+    new Promise((done) => {
+      const failure = new Error('rejected')
+      const sp = superpipe({})
+      const run = sp('promise-reject')
+        .pipe(() => Promise.reject(failure), null, 'out')
+        .error((error) => {
+          expect(error).to.equal(failure)
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('wraps falsey rejection reasons as errors, not success', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('falsey-reject')
+        .pipe(() => Promise.reject(undefined), null, 'out')
+        .error((error) => {
+          expect(error).to.be.an.instanceof(Error)
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('throws when a pipe declares next and returns a thenable', () => {
+    const sp = superpipe({})
+    const run = sp('ambiguous-continuation')
+      .pipe((_next) => Promise.resolve('x'), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel, not both')
+  })
+
+  it('halts when a promise resolves to false (sync/async parity)', () => {
+    let afterRan = false
+    const sp = superpipe({})
+    const run = sp('promise-false')
+      .pipe(() => Promise.resolve(false))
+      .pipe(() => {
+        afterRan = true
+      })
+      .end()
+
+    run()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(afterRan).to.equal(false)
+        resolve()
+      }, 20)
+    })
+  })
+
+  it('keeps fully synchronous pipelines synchronous', () => {
+    const sp = superpipe({})
+    const run = sp('sync-still')
+      .pipe(() => 'v', null, 'out')
+      .end('out')
+    // .end(output) returns populated data synchronously for sync pipelines.
+    expect(run()).to.equal('v')
+  })
+})
+
+// --- review round: thenable edge cases ---
+describe('promise continuation contract (thenable edge cases)', () => {
+  it('inverts a !-pipe whose async dependency resolves true (halts)', () => {
+    let afterRan = false
+    const sp = superpipe({ isBlocked: async () => true })
+    const run = sp('not-async-true')
+      .input(['user'])
+      .pipe('!isBlocked', 'user') // resolves true → \!true === false → must halt
+      .pipe(() => {
+        afterRan = true
+      })
+      .end()
+
+    run({ role: 'admin' })
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(afterRan).to.equal(false)
+        resolve()
+      }, 20)
+    })
+  })
+
+  it('inverts a !-pipe whose async dependency resolves false (continues)', () =>
+    new Promise((done) => {
+      const sp = superpipe({ isBlocked: async () => false })
+      const run = sp('not-async-false')
+        .input(['user'])
+        .pipe('!isBlocked', 'user') // resolves false → \!false === true → must continue
+        .pipe(() => {
+          done()
+        })
+        .end()
+
+      run({ role: 'admin' })
+    }))
+
+  it('adopts callable thenables (functions with a then method)', () =>
+    new Promise((done) => {
+      const callableThenable = Object.assign(() => {}, {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then(resolve) {
+          resolve('from-callable')
+        },
+      })
+      const sp = superpipe({})
+      const run = sp('callable-thenable')
+        .pipe(() => callableThenable, null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('from-callable')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+
+  it('routes a throwing then method to the error handler, not a sync throw', () =>
+    new Promise((done) => {
+      const throwingThenable = {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then() {
+          throw new Error('then threw')
+        },
+      }
+      const sp = superpipe({})
+      const run = sp('throwing-then')
+        .pipe(() => throwingThenable, null, 'out')
+        .error((error) => {
+          expect(error.message).to.equal('then threw')
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('surfaces ambiguity errors through a synchronous nested next', () => {
+    let handlerCalled = false
+    const sp = superpipe({})
+    const run = sp('nested-ambiguity')
+      .pipe((next) => {
+        next() // advances into the next pipe inside this fn.apply
+      }, 'next')
+      .pipe((_next) => Promise.resolve('x'), 'next') // ambiguous continuation
+      .error(() => {
+        handlerCalled = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    expect(handlerCalled).to.equal(false)
+  })
+})
+
+// --- review round 2: guarded assimilation and ambiguity invalidation ---
+describe('promise continuation contract (guarded assimilation)', () => {
+  it('routes a throwing then accessor to the error handler', () =>
+    new Promise((done) => {
+      const throwingAccessor = {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        get then() {
+          throw new Error('accessor threw')
+        },
+      }
+      const sp = superpipe({})
+      const run = sp('throwing-accessor')
+        .pipe(() => throwingAccessor, null, 'out')
+        .error((error) => {
+          expect(error.message).to.equal('accessor threw')
+          done()
+        }, 'error')
+        .end()
+
+      run()
+    }))
+
+  it('consumes a rejected promise returned alongside next', () => {
+    // The ambiguity error must surface without leaving the returned
+    // rejection unhandled behind it.
+    const sp = superpipe({})
+    const run = sp('ambiguous-rejected')
+      .pipe((_next) => Promise.reject(new Error('mixed channels')), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+  })
+
+  it('refuses a late next after an ambiguous continuation', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('late-next')
+      .pipe(async (next) => {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        next()
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(advanced).to.equal(false)
+  })
+})
+
+// --- review round 3: next buffering and invalidation ---
+describe('promise continuation contract (next buffering)', () => {
+  it('does not advance when a pipe calls next and returns a thenable', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('sync-next-thenable')
+      .pipe((next) => {
+        next() // synchronous call, held until the return channel is known
+        return Promise.resolve('x')
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(advanced).to.equal(false)
+  })
+
+  it('invalidates every next callback when next is declared twice', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('double-next')
+      .pipe(
+        async (_first, second) => {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(advanced).to.equal(false)
+  })
+
+  it('invalidates a retained next when thenable inspection fails', async () => {
+    let handlerRuns = 0
+    let retainedNext
+    const sp = superpipe({})
+    const run = sp('accessor-invalidates')
+      .pipe((next) => {
+        retainedNext = next
+        return {
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+          get then() {
+            throw new Error('accessor threw')
+          },
+        }
+      }, 'next')
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(handlerRuns).to.equal(1)
+    // A disabled callback discards the late call instead of throwing from
+    // an unrelated callback stack.
+    expect(() => retainedNext()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('advances normally when a pipe declares next and returns undefined', () =>
+    new Promise((done) => {
+      const sp = superpipe({})
+      const run = sp('buffer-flush')
+        .pipe(
+          (next) => {
+            next(null, 'flushed')
+          },
+          'next',
+          'value',
+        )
+        .pipe((value) => {
+          expect(value).to.equal('flushed')
+          done()
+        }, 'value')
+        .end()
+
+      run()
+    }))
+})
+
+// --- review round 4: invocation-local callback state ---
+describe('promise continuation contract (reentrancy)', () => {
+  it('keeps buffered next callbacks invocation-local under reentrancy', () => {
+    let downstreamRuns = 0
+    const sp = superpipe({})
+    let run
+    run = sp('reentrant')
+      .input(['depth'])
+      .pipe(
+        (next, depth) => {
+          if (depth === undefined) {
+            run(1) // nested synchronous invocation of the same executor
+          }
+          next()
+        },
+        ['next', 'depth'],
+      )
+      .pipe(() => {
+        downstreamRuns += 1
+      })
+      .end()
+
+    run()
+    // Both the nested and the outer invocation must reach the downstream
+    // pipe — a shared per-fetcher buffer would stall the outer one.
+    expect(downstreamRuns).to.equal(2)
+  })
+})
+
+// --- review round 5: reentrancy inside dependency lookup ---
+describe('promise continuation contract (getter reentrancy)', () => {
+  it('keeps the next collector invocation-local when a dependency getter re-enters', async () => {
+    let advanced = false
+    let reentered = false
+    let run
+    const sp = superpipe({
+      get dep() {
+        if (!reentered) {
+          reentered = true
+          try {
+            run() // synchronous re-entry during dependency lookup
+          } catch {
+            // the nested invocation's own ambiguity surfaces here
+          }
+        }
+        return 'value'
+      },
+    })
+    run = sp('getter-reentrancy')
+      .pipe(
+        (_dep, next) => {
+          next()
+          return Promise.resolve('x') // ambiguous — must throw before advancing
+        },
+        ['dep', 'next'],
+      )
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(advanced).to.equal(false)
+  })
+})
+
+// --- review round 6: promise-job adoption and call-order flushing ---
+describe('promise continuation contract (adoption timing and flush order)', () => {
+  it('invokes a custom then method in a later promise job', () =>
+    new Promise((done) => {
+      let afterRun = false
+      let observedInThen
+      const sp = superpipe({})
+      const run = sp('deferred-then')
+        .pipe(
+          () => ({
+            // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+            then(resolve) {
+              observedInThen = afterRun
+              resolve('value')
+            },
+          }),
+          null,
+          'out',
+        )
+        .pipe((out) => {
+          expect(out).to.equal('value')
+          expect(observedInThen).to.equal(true)
+          done()
+        }, 'out')
+        .end()
+
+      run()
+      afterRun = true // the then method must observe post-run state
+    }))
+
+  it('flushes buffered next calls in invocation order, not declaration order', () =>
+    new Promise((done) => {
+      let observed
+      const sp = superpipe({})
+      const run = sp('flush-order')
+        .pipe(
+          (first, second) => {
+            second(null, 'first-invoked') // invoked first, declared second
+            first(null, 'invoked-second')
+          },
+          ['next', 'next'],
+          'val',
+        )
+        .pipe((val) => {
+          observed = val
+        }, 'val')
+        .pipe(() => {
+          expect(observed).to.equal('first-invoked')
+          done()
+        })
+        .end()
+
+      run()
+    }))
+})
+
+// --- review round 7: nested assimilation and intrinsic invocation ---
+describe('promise continuation contract (cleanup assimilation)', () => {
+  it('consumes a nested rejected promise resolved during ambiguity cleanup', () => {
+    const sp = superpipe({})
+    const run = sp('nested-reject-ambiguity')
+      .pipe(
+        (_next) => ({
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+          then(resolve) {
+            resolve(Promise.reject(new Error('nested')))
+          },
+        }),
+        'next',
+      )
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    // An unhandled rejection would fail the test run once microtasks drain.
+    return new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('invokes a then method whose call property is shadowed', () =>
+    new Promise((done) => {
+      const then = Object.assign((resolve) => resolve('ok'), { call: null })
+      const sp = superpipe({})
+      const run = sp('shadowed-call')
+        .pipe(
+          () => ({
+            // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+            then: then,
+          }),
+          null,
+          'out',
+        )
+        .pipe((out) => {
+          expect(out).to.equal('ok')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+})
+
+// --- review round 8: failure timing and disabled-callback semantics ---
+describe('promise continuation contract (failure timing and discards)', () => {
+  it('defers a then accessor failure to the rejection path', () => {
+    let handlerObservedAfterRun
+    let afterRun = false
+    const sp = superpipe({})
+    const run = sp('accessor-timing')
+      .pipe(
+        () => ({
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+          get then() {
+            throw new Error('accessor threw')
+          },
+        }),
+        null,
+        'out',
+      )
+      .error((error) => {
+        expect(error.message).to.equal('accessor threw')
+        handlerObservedAfterRun = afterRun
+      }, 'error')
+      .end()
+
+    run()
+    afterRun = true
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // Same timing as a throwing then method: the handler runs in a
+        // microtask after the caller's synchronous initialization.
+        expect(handlerObservedAfterRun).to.equal(true)
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('discards a late externally scheduled next after ambiguity', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('external-late-next')
+      .pipe((next) => {
+        setTimeout(next, 5) // scheduled outside the returned thenable
+        return Promise.resolve('x')
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    // The timer firing must not crash the process nor advance the pipeline.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(advanced).to.equal(false)
+  })
+})
+
+// --- review round 9: guard ordering and native-promise adoption ---
+describe('promise continuation contract (guard order and native adoption)', () => {
+  it('discards a repeat call on a disabled callback before the duplicate check', async () => {
+    let advanced = false
+    let retained
+    const sp = superpipe({})
+    const run = sp('disabled-before-called')
+      .pipe((next) => {
+        retained = next
+        next() // first call — held, then discarded by invalidation
+        return Promise.resolve('x')
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The invalidation guard runs first: no NextCalledTwiceError, no crash.
+    expect(() => retained()).to.not.throw()
+    expect(advanced).to.equal(false)
+  })
+
+  it('adopts a settled native promise in ordinary reaction ordering', () =>
+    new Promise((done) => {
+      const order = []
+      const sp = superpipe({})
+      const run = sp('native-ordering')
+        .pipe(() => Promise.resolve('v'), null, 'out')
+        .pipe(() => {
+          order.push('pipeline')
+        }, 'out')
+        .end()
+
+      run()
+      Promise.resolve().then(() => {
+        order.push('caller-microtask')
+        // The pipeline's reaction was attached directly to the native
+        // promise, so it runs before a caller microtask queued after run().
+        expect(order).to.deep.equal(['pipeline', 'caller-microtask'])
+        done()
+      })
+    }))
+})
+
+// --- review round 10: guarded native-promise adoption ---
+describe('promise continuation contract (native subclass adoption)', () => {
+  it('routes a throwing then override on a native promise subclass to the error handler', () =>
+    new Promise((done) => {
+      class ThrowingThen extends Promise {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then() {
+          throw new Error('subclass then threw')
+        }
+      }
+      const sp = superpipe({})
+      const run = sp('subclass-then')
+        .pipe(() => new ThrowingThen(() => {}), null, 'out')
+        .error((error) => {
+          expect(error.message).to.equal('subclass then threw')
+          done()
+        }, 'error')
+        .end()
+
+      expect(() => run()).to.not.throw()
+    }))
+})
+
+// --- review round 11: hostile native-promise overrides ---
+describe('promise continuation contract (hostile overrides)', () => {
+  it('ignores repeated settlements from a hostile then override', () => {
+    let handlerRuns = 0
+    let downstreamRuns = 0
+    class Hostile extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then(onFulfilled, onRejected) {
+        if (onFulfilled) {
+          onFulfilled('first')
+          // The second settlement must be ignored — without a once-settled
+          // guard this would run the error handler after the pipeline
+          // already completed.
+          onRejected(new Error('should never surface'))
+        }
+        return new Promise(() => {})
+      }
+    }
+    const sp = superpipe({})
+    const run = sp('double-settle')
+      .pipe(() => new Hostile(() => {}), null, 'out')
+      .pipe(() => {
+        downstreamRuns += 1
+      }, 'out')
+      .pipe(() => {
+        downstreamRuns += 1
+      })
+      .error(() => {
+        handlerRuns += 1
+      })
+      .end()
+
+    run()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(downstreamRuns).to.equal(2) // both downstream pipes ran once
+        expect(handlerRuns).to.equal(0) // the second settlement was ignored
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('consumes a rejected native subclass whose then override throws in cleanup', () => {
+    class RejectedThrowing extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then() {
+        throw new Error('override threw')
+      }
+    }
+    const sp = superpipe({})
+    const run = sp('cleanup-rejection')
+      .pipe(() => new RejectedThrowing((_resolve, reject) => reject(new Error('original'))), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    // The original rejection must be observed through the intrinsic then;
+    // an unhandled rejection would fail the run once microtasks drain.
+    return new Promise((resolve) => setTimeout(resolve, 20))
+  })
+})
+
+// --- review round 12: proxy traps and deferred override adoption ---
+describe('promise continuation contract (proxies and deferred overrides)', () => {
+  it('adopts a proxied thenable whose prototype trap throws', () =>
+    new Promise((done) => {
+      const target = {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then(resolve) {
+          resolve('proxied')
+        },
+      }
+      const proxy = new Proxy(target, {
+        getPrototypeOf() {
+          throw new Error('trap threw')
+        },
+      })
+      const sp = superpipe({})
+      const run = sp('proxy-thenable')
+        .pipe(() => proxy, null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('proxied')
+          done()
+        }, 'out')
+        .end()
+
+      expect(() => run()).to.not.throw()
+    }))
+
+  it('defers a then override that invokes its callback synchronously', () =>
+    new Promise((done) => {
+      let afterRun = false
+      class SyncThen extends Promise {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then(onFulfilled) {
+          if (onFulfilled) {
+            onFulfilled('sync')
+          }
+          return new Promise(() => {})
+        }
+      }
+      const sp = superpipe({})
+      const run = sp('sync-override-deferred')
+        .pipe(() => new SyncThen(() => {}), null, 'out')
+        .pipe(() => {
+          // The downstream pipe runs after the caller's initialization,
+          // like every other thenable adoption.
+          expect(afterRun).to.equal(true)
+          done()
+        }, 'out')
+        .end()
+
+      run()
+      afterRun = true
+    }))
+})
+
+// --- review round 13: hostile-settlement edge cases and release-on-disable ---
+describe('promise continuation contract (settlement edge cases)', () => {
+  it('ignores an override throw after fulfillment', () => {
+    let handlerRuns = 0
+    class SettleThenThrow extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then(resolve) {
+        resolve('value')
+        throw new Error('threw after settling')
+      }
+    }
+    const sp = superpipe({})
+    const run = sp('settle-then-throw')
+      .pipe(() => new SettleThenThrow(() => {}), null, 'out')
+      .pipe((out) => {
+        expect(out).to.equal('value')
+      }, 'out')
+      .error(() => {
+        handlerRuns += 1
+      })
+      .end()
+
+    expect(() => run()).to.not.throw()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(handlerRuns).to.equal(0)
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('consumes the original rejection when an adoption override throws', () => {
+    class RejectedThrowing extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then() {
+        throw new Error('override threw')
+      }
+    }
+    let observed
+    const sp = superpipe({})
+    const run = sp('adoption-rejection')
+      .pipe(
+        () => new RejectedThrowing((_resolve, reject) => reject(new Error('original'))),
+        null,
+        'out',
+      )
+      .error((error) => {
+        observed = error.message
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(observed).to.equal('override threw')
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('assimilates a nested thenable resolved by an override', () =>
+    new Promise((done) => {
+      class NestedResolve extends Promise {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+        then(resolve) {
+          resolve(Promise.resolve('nested-adopted'))
+        }
+      }
+      const sp = superpipe({})
+      const run = sp('nested-adopt')
+        .pipe(() => new NestedResolve(() => {}), null, 'out')
+        .pipe((out) => {
+          expect(out).to.equal('nested-adopted')
+          done()
+        }, 'out')
+        .end()
+
+      run()
+    }))
+})
+
+// --- review round 14: opaque rejection reasons and getter-throw observation ---
+describe('promise continuation contract (rejection observation)', () => {
+  it('observes the original rejection when the then getter throws', () => {
+    const promise = Promise.reject(new Error('original'))
+    Object.defineProperty(promise, 'then', {
+      get() {
+        throw new Error('getter threw')
+      },
+    })
+    let observed
+    const sp = superpipe({})
+    const run = sp('getter-throw-rejection')
+      .pipe(() => promise, null, 'out')
+      .error((error) => {
+        observed = error.message
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(observed).to.equal('getter threw')
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('never invokes a thenable rejection reason during cleanup', async () => {
+    let reasonThenCalls = 0
+    const reason = {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then() {
+        reasonThenCalls += 1
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('opaque-reason')
+      .pipe(() => Promise.reject(reason), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // The rejection reason is opaque: observing the rejection must not
+    // assimilate (and thereby invoke) the then-looking reason.
+    expect(reasonThenCalls).to.equal(0)
+  })
+})
+
+// --- review round 15: verified observation and terminal-error discards ---
+describe('promise continuation contract (verified observation)', () => {
+  it('consumes the captured thenable when the brand check false-positives', () => {
+    // Object.create(Promise.prototype) passes instanceof Promise but has no
+    // internal slots; the intrinsic then cannot run on it.
+    let consumed = false
+    const slotless = Object.create(Promise.prototype)
+    // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+    slotless.then = (resolve) => {
+      consumed = true
+      resolve('slotless-value')
+    }
+    const sp = superpipe({})
+    const run = sp('slotless-brand')
+      .pipe(() => slotless, 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(consumed).to.equal(true)
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('observes a rejected subclass whose override swallows the rejection', () => {
+    class SwallowingOverride extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then(onFulfilled) {
+        if (onFulfilled) {
+          onFulfilled('synthetic')
+        }
+        return new Promise(() => {})
+      }
+    }
+    let observed
+    const sp = superpipe({})
+    const run = sp('swallowing-override')
+      .pipe(
+        () => new SwallowingOverride((_res, reject) => reject(new Error('original'))),
+        null,
+        'out',
+      )
+      .pipe((out) => {
+        observed = out
+      }, 'out')
+      .end()
+
+    run()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(observed).to.equal('synthetic')
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('discards a pending promise continuation after an error wins', async () => {
+    let handlerRuns = 0
+    let resolveLate
+    const sp = superpipe({})
+    const run = sp('error-wins')
+      .pipe((next) => {
+        next() // advance synchronously; the downstream pipe starts a promise
+        throw new Error('first error')
+      }, 'next')
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveLate = resolve
+          }),
+        null,
+        'late',
+      )
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(handlerRuns).to.equal(1)
+    resolveLate('late-value')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The late resolution must not merge into or re-run the failed execution.
+    expect(handlerRuns).to.equal(1)
+  })
+})
