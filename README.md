@@ -41,7 +41,8 @@ pipeline('World')  // Output: Hello, World!
 A pipeline is a sequence of pipes that execute in order. Each pipe can:
 - Transform data
 - Produce outputs that become available to subsequent pipes
-- Control flow (stop execution by returning `false`)
+- Control flow through the declarative boolean channels (raw boolean
+  dependencies, `!`-prefixed pipes)
 
 ### Pipes
 
@@ -167,15 +168,22 @@ return value, `false` included, is ordinary data: it is stored under the
 output name and the pipeline continues.
 
 ```javascript
+const sp = superpipe({ isBlocked: false })
+
 // Raw boolean dependency — flow control: falsey halts
-superpipe({ isBlocked: false })
-.pipe('isBlocked', 'user')  // Halts unless isBlocked is truthy
+sp('guard')
+  .pipe('isBlocked', 'user')  // Halts unless isBlocked is truthy
+  .end()
 
 // `!`-prefixed injected pipe — inverts the boolean for flow control
-.pipe('!isBlocked', 'user')  // Continues only while isBlocked is falsey
+sp('not-blocked')
+  .pipe('!isBlocked', 'user')  // Continues only while isBlocked is falsey
+  .end()
 
 // Function pipe — the boolean return is DATA, the pipeline continues
-.pipe((user) => user.isAdmin, 'user', 'isAdmin')
+sp('admin-check')
+  .pipe((user) => user.isAdmin, 'user', 'isAdmin')
+  .end()
 ```
 
 ### Not Pipes (`!`)

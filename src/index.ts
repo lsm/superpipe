@@ -44,11 +44,14 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
 // `PipelineDefinition` are aliases for the names master exported, kept for
 // backwards compatibility.
 export type {
+  AnyFunction,
   FunctionContainer,
   PipeFunction,
   PipelineBase,
+  PipeName,
   PipeOutput,
   PipeParameter,
+  PipeRename,
   PipeResult,
 } from './common'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
