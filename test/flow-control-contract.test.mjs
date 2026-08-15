@@ -1450,3 +1450,25 @@ describe('promise continuation contract (guard order and native adoption)', () =
       })
     }))
 })
+
+// --- review round 10: guarded native-promise adoption ---
+describe('promise continuation contract (native subclass adoption)', () => {
+  it('routes a throwing then override on a native promise subclass to the error handler', () =>
+    new Promise((done) => {
+      class ThrowingThen extends Promise {
+        then() {
+          throw new Error('subclass then threw')
+        }
+      }
+      const sp = superpipe({})
+      const run = sp('subclass-then')
+        .pipe(() => new ThrowingThen(() => {}), null, 'out')
+        .error((error) => {
+          expect(error.message).to.equal('subclass then threw')
+          done()
+        }, 'error')
+        .end()
+
+      expect(() => run()).to.not.throw()
+    }))
+})

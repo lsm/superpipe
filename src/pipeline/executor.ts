@@ -271,10 +271,16 @@ function executePipe(
     }
 
     if (result instanceof Promise) {
-      // A native promise already defers its reactions — adopt it directly
-      // so the pipeline continues in ordinary promise ordering without an
-      // extra job.
-      ;(result as Promise<PipeResult>).then(onFulfilled, onRejected)
+      // A native promise already defers its reactions — invoke the captured
+      // `then` directly so the pipeline continues in ordinary promise
+      // ordering without an extra job. The captured callable is used (not
+      // re-read) and guarded: a subclass `then` override that throws is
+      // routed to the error path, not out of run().
+      try {
+        Reflect.apply(thenFn as AnyFunction, result, [onFulfilled, onRejected])
+      } catch (err) {
+        Promise.reject(err).catch(onRejected)
+      }
       return
     }
 
