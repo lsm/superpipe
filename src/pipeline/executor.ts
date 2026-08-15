@@ -170,13 +170,37 @@ interface PipeState {
   // flow-control halt fired, or an error was dispatched. Exactly one
   // terminal transition reports to `onSettled`.
   settled: boolean
+  // True while a success settlement is queued: success is deferred by one
+  // job so an error dispatched during the same synchronous unwind (a held
+  // next flushed from a throwing pipe's catch) wins over it.
+  settling: boolean
   // Optional run-completion observer (`.endAsync`): receives the container
   // snapshot and the active error, if any. Absent for sync `.end()` runs.
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
 }
 
-// Report the run's terminal transition exactly once.
+// Report the run's terminal transition exactly once. Errors finalize
+// synchronously — an error dispatched after a completed cascade must win.
+// Success is deferred by one job: the cascade may have completed inside a
+// flush while a pipe error is still unwinding, and that error takes
+// priority over the not-yet-final success.
 function settle(state: PipeState, error: Error | null): void {
+  if (error == null) {
+    if (state.settled || state.settling) {
+      return
+    }
+    state.settling = true
+    Promise.resolve().then(() => {
+      if (state.settled) {
+        return
+      }
+      state.settled = true
+      state.onSettled?.({ container: state.container, error: null })
+    })
+    return
+  }
+  // An error overrides a queued success: mark terminal synchronously; the
+  // deferred success job observes `settled` and no-ops.
   if (state.settled) {
     return
   }
@@ -350,8 +374,20 @@ function executePipe(
       if (pipe.not && typeof resolved === 'boolean') {
         resolved = !resolved
       }
-      if (!(isFlowControl && resolved === false)) {
+      try {
+        if (isFlowControl && resolved === false) {
+          // A flow-control halt through a resolved boolean — the
+          // synchronous halt branch is never reached on this path.
+          settle(state, null)
+          return
+        }
         advance(state, pipeline, null, resolved)
+      } catch (err) {
+        // The continuation threw in a job with no caller stack (for
+        // example a namespace violation raised while merging its output):
+        // finalize the run with the failure so an observer rejects instead
+        // of hanging while the exception dies unhandled.
+        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
     }
     const onRejected = (reason: unknown): void => {
@@ -360,11 +396,15 @@ function executePipe(
       }
       // A falsey rejection reason must not be mistaken for success by
       // the error truthiness check downstream.
-      advance(
-        state,
-        pipeline,
-        (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
-      )
+      try {
+        advance(
+          state,
+          pipeline,
+          (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+        )
+      } catch (err) {
+        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+      }
     }
 
     if (thenFn === Promise.prototype.then) {
@@ -525,6 +565,7 @@ export function runPipeline(
     activeError: null,
     handlingError: false,
     settled: false,
+    settling: false,
     onSettled,
   }
 

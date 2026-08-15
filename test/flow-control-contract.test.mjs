@@ -1968,3 +1968,42 @@ describe('endAsync contract', () => {
     await expect(run()).rejects.toThrow('original')
   })
 })
+
+// --- review round 1 on endAsync: async halts, async exceptions, error priority ---
+describe('endAsync contract (settlement edge cases)', () => {
+  it('settles a promise-based flow-control halt', async () => {
+    const sp = superpipe({ isBlocked: async () => true })
+    const run = sp('endasync-promise-halt')
+      .input(['user'])
+      .pipe('!isBlocked', 'user') // resolves true → inverted → halt
+      .pipe(() => 'never', null, 'never')
+      .endAsync('out')
+
+    // Halted: resolves with the partial snapshot — 'out' was never produced.
+    await expect(run()).resolves.toEqual(undefined)
+  })
+
+  it('rejects when an async continuation raises a namespace error', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-async-namespace')
+      // Undeclared object return merges a reserved name from a microtask.
+      .pipe(() => Promise.resolve({ next: () => {} }), null)
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('reserved')
+  })
+
+  it('rejects when an error wins after a synchronous flush completes the run', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-flush-error')
+      .pipe((next) => {
+        next() // held; downstream completes synchronously on flush
+        throw new Error('pipe error')
+      }, 'next')
+      .pipe(() => 'done', null, 'out')
+      .error(() => {}, 'error')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('pipe error')
+  })
+})
