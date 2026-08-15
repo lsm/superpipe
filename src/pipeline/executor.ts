@@ -230,9 +230,16 @@ function executePipe(
     }
     Promise.resolve().then(() => {
       try {
-        // Reflect.apply invokes the callable directly; an own `call`
-        // property on the then function cannot affect adoption.
-        Reflect.apply(thenFn as AnyFunction, result, [swallow, swallow])
+        if (result instanceof Promise) {
+          // Observe a native-promise rejection through the intrinsic then:
+          // a hostile subclass override that throws before attaching would
+          // otherwise leave the original rejection unhandled.
+          Reflect.apply(Promise.prototype.then, result, [swallow, swallow])
+        } else {
+          // Reflect.apply invokes the callable directly; an own `call`
+          // property on the then function cannot affect adoption.
+          Reflect.apply(thenFn as AnyFunction, result, [swallow, swallow])
+        }
       } catch {
         // A one-shot `then` that throws here is already consumed.
       }
@@ -274,10 +281,26 @@ function executePipe(
       // A native promise already defers its reactions — invoke the captured
       // `then` directly so the pipeline continues in ordinary promise
       // ordering without an extra job. The captured callable is used (not
-      // re-read) and guarded: a subclass `then` override that throws is
-      // routed to the error path, not out of run().
+      // re-read) and guarded, and the callbacks are once-settled: a hostile
+      // subclass override that settles twice must not advance the pipeline
+      // twice.
+      let settled = false
+      const settleFulfilled = (value: PipeResult): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        onFulfilled(value)
+      }
+      const settleRejected = (reason: unknown): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        onRejected(reason)
+      }
       try {
-        Reflect.apply(thenFn as AnyFunction, result, [onFulfilled, onRejected])
+        Reflect.apply(thenFn as AnyFunction, result, [settleFulfilled, settleRejected])
       } catch (err) {
         Promise.reject(err).catch(onRejected)
       }

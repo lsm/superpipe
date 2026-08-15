@@ -1456,6 +1456,7 @@ describe('promise continuation contract (native subclass adoption)', () => {
   it('routes a throwing then override on a native promise subclass to the error handler', () =>
     new Promise((done) => {
       class ThrowingThen extends Promise {
+        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then() {
           throw new Error('subclass then threw')
         }
@@ -1471,4 +1472,65 @@ describe('promise continuation contract (native subclass adoption)', () => {
 
       expect(() => run()).to.not.throw()
     }))
+})
+
+// --- review round 11: hostile native-promise overrides ---
+describe('promise continuation contract (hostile overrides)', () => {
+  it('ignores repeated settlements from a hostile then override', () => {
+    let handlerRuns = 0
+    let downstreamRuns = 0
+    class Hostile extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then(onFulfilled, onRejected) {
+        if (onFulfilled) {
+          onFulfilled('first')
+          // The second settlement must be ignored — without a once-settled
+          // guard this would run the error handler after the pipeline
+          // already completed.
+          onRejected(new Error('should never surface'))
+        }
+        return new Promise(() => {})
+      }
+    }
+    const sp = superpipe({})
+    const run = sp('double-settle')
+      .pipe(() => new Hostile(() => {}), null, 'out')
+      .pipe(() => {
+        downstreamRuns += 1
+      }, 'out')
+      .pipe(() => {
+        downstreamRuns += 1
+      })
+      .error(() => {
+        handlerRuns += 1
+      })
+      .end()
+
+    run()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        expect(downstreamRuns).to.equal(2) // both downstream pipes ran once
+        expect(handlerRuns).to.equal(0) // the second settlement was ignored
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('consumes a rejected native subclass whose then override throws in cleanup', () => {
+    class RejectedThrowing extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+      then() {
+        throw new Error('override threw')
+      }
+    }
+    const sp = superpipe({})
+    const run = sp('cleanup-rejection')
+      .pipe(() => new RejectedThrowing((_resolve, reject) => reject(new Error('original'))), 'next')
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    // The original rejection must be observed through the intrinsic then;
+    // an unhandled rejection would fail the run once microtasks drain.
+    return new Promise((resolve) => setTimeout(resolve, 20))
+  })
 })
