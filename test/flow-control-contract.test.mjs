@@ -1843,3 +1843,128 @@ describe('promise continuation contract (verified observation)', () => {
     expect(handlerRuns).to.equal(1)
   })
 })
+
+// --- endAsync contract: promise-returning .end (#48) ---
+describe('endAsync contract', () => {
+  it('resolves a fully synchronous pipeline immediately', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-sync')
+      .pipe(() => 'v', null, 'out')
+      .endAsync('out')
+
+    await expect(run()).resolves.toEqual('v')
+  })
+
+  it('resolves a promise-returning pipeline after it settles', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-promise')
+      .pipe(() => Promise.resolve('async-value'), null, 'out')
+      .endAsync('out')
+
+    await expect(run()).resolves.toEqual('async-value')
+  })
+
+  it('resolves a next-based pipeline after the callback fires', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-next')
+      .pipe(
+        (next) => {
+          setTimeout(() => next(null, 'late-value'), 5)
+        },
+        'next',
+        'out',
+      )
+      .endAsync('out')
+
+    await expect(run()).resolves.toEqual('late-value')
+  })
+
+  it('resolves undefined when no output spec is given', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-no-output')
+      .pipe(() => 'v', null, 'out')
+      .endAsync()
+
+    await expect(run()).resolves.toEqual(undefined)
+  })
+
+  it('rejects a failed run instead of throwing synchronously', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-no-handler')
+      .pipe(() => {
+        throw new Error('boom')
+      })
+      .endAsync('out')
+
+    // The failure becomes a rejection, never a sync throw out of run().
+    await expect(run()).rejects.toThrow('boom')
+  })
+
+  it('runs the error handler and still rejects', async () => {
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('endasync-with-handler')
+      .pipe(() => Promise.reject(new Error('async boom')))
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('async boom')
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('resolves a halted run with the partial snapshot', async () => {
+    const sp = superpipe({ isBlocked: false })
+    const run = sp('endasync-halted')
+      .input(['user'])
+      .pipe(() => 'kept-value', null, 'kept')
+      .pipe('isBlocked', 'user') // raw boolean dep false → halt
+      .pipe(() => 'never', null, 'never')
+      .endAsync('kept')
+
+    await expect(run()).resolves.toEqual('kept-value')
+  })
+
+  it('rejects once when a pending continuation races an error', async () => {
+    let rejections = 0
+    const sp = superpipe({})
+    const run = sp('endasync-error-wins')
+      .pipe((next) => {
+        next() // advance; the downstream pipe starts a pending promise
+        throw new Error('first error')
+      }, 'next')
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(resolve, 5)
+          }),
+        null,
+        'late',
+      )
+      .error(() => {}, 'error')
+      .endAsync('out')
+
+    await run().catch(() => {
+      rejections += 1
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(rejections).to.equal(1)
+  })
+
+  it('rejects even when a throwing handler runs', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-throwing-handler')
+      .pipe(() => {
+        throw new Error('original')
+      })
+      .error(() => {
+        throw new Error('handler exploded')
+      }, 'error')
+      .endAsync('out')
+
+    // Settled before the handler ran, so the promise still rejects with
+    // the original error rather than hanging.
+    await expect(run()).rejects.toThrow('original')
+  })
+})

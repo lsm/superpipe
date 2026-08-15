@@ -1,4 +1,4 @@
-import type { FunctionContainer, PipeFunction, PipeParameter } from './common'
+import type { FunctionContainer, PipeFunction, PipeOutput, PipeParameter } from './common'
 import { FN_TYPE } from './pipeline/builder'
 import type { PipeDefinition } from './pipeline/Pipe'
 import PipelineBuilder from './pipeline/Pipeline'
@@ -86,6 +86,10 @@ export interface PipelineAPI {
   // assignable to PipelineAPI.
   // biome-ignore lint/complexity/noBannedTypes: public API compatibility
   end: (output?: PipeParameter) => Function
+  // Promise-returning counterpart of end: the executor resolves with the
+  // requested output (or undefined) when the run settles, and rejects
+  // with the active error on a failed run.
+  endAsync: (output?: PipeParameter) => (...args: unknown[]) => Promise<PipeOutput>
 }
 
 // Compatibility aliases for the remaining type names master exported.

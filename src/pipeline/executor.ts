@@ -163,9 +163,25 @@ interface PipeState {
   // The active error travels on the execution state, never the container —
   // a data value named `error` must not be mistaken for a failure.
   activeError: Error | null
-  // True while an error handler (or the no-handler throw) is unwinding —
+  // True while an error handler (or the no-handler rethrow) is unwinding —
   // such exceptions must not be treated as fresh pipe errors.
   handlingError: boolean
+  // True once the run reached a terminal state — every pipe executed, a
+  // flow-control halt fired, or an error was dispatched. Exactly one
+  // terminal transition reports to `onSettled`.
+  settled: boolean
+  // Optional run-completion observer (`.endAsync`): receives the container
+  // snapshot and the active error, if any. Absent for sync `.end()` runs.
+  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
+}
+
+// Report the run's terminal transition exactly once.
+function settle(state: PipeState, error: Error | null): void {
+  if (state.settled) {
+    return
+  }
+  state.settled = true
+  state.onSettled?.({ container: state.container, error })
 }
 
 function executePipe(
@@ -423,6 +439,10 @@ function executePipe(
   // not here.
   if (pipe.fetcher.hasNext === false && !(isFlowControl && result === false)) {
     advance(state, pipeline, null, result)
+  } else if (pipe.fetcher.hasNext === false) {
+    // Flow-control halt: a terminal outcome. Resolve with the partial
+    // snapshot — a guard declining is a normal result, not a failure.
+    settle(state, null)
   }
 }
 
@@ -463,6 +483,9 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
     if (pipes.length > state.step) {
       // When we have more pipe, execute current one and increase the step by 1.
       executePipe(pipes[state.step++], state, pipeline, next)
+    } else {
+      // Every pipe executed — the run completed.
+      settle(state, null)
     }
     return
   }
@@ -470,15 +493,25 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
   // Stays set while the handler (or the no-handler rethrow) unwinds, so
   // executePipe's catch does not re-dispatch it as a fresh pipe error.
   state.handlingError = true
+  // Report before running the handler: a throwing handler must not strand
+  // a completion observer, and a run without a handler reports to the
+  // observer instead of throwing — from an async continuation that throw
+  // would escape into a microtask and die unhandled.
+  settle(state, state.activeError)
   if (errorHandler) {
     ;(errorHandler as ErrorHandler)(state.container, pipeline.functions, state.activeError)
-  } else {
-    // Throw the error if we don't have error handling function.
+  } else if (!state.onSettled) {
+    // Throw the error if we don't have error handling function and no
+    // completion observer is watching this run.
     throwNoErrorHandlerError(state.activeError)
   }
 }
 
-export function runPipeline(args: PipeResult, pipeline: PipelineBase): ResultContainer {
+export function runPipeline(
+  args: PipeResult,
+  pipeline: PipelineBase,
+  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void,
+): ResultContainer {
   // Internal pipeline execution state.
   const state: PipeState = {
     step: 0,
@@ -491,6 +524,8 @@ export function runPipeline(args: PipeResult, pipeline: PipelineBase): ResultCon
     args: Array.isArray(args) ? args : args === undefined ? [] : [args],
     activeError: null,
     handlingError: false,
+    settled: false,
+    onSettled,
   }
 
   // Start from the input pipes, if any: each maps the invocation arguments
