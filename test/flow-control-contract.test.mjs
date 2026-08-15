@@ -2096,3 +2096,95 @@ describe('endAsync contract (in-flight continuations)', () => {
     await expect(outcome).resolves.toEqual({ late: 'late-value', out: 'done' })
   })
 })
+
+// --- review round 4 on endAsync: slot, sibling halts, terminal exceptions ---
+describe('endAsync contract (sibling continuations)', () => {
+  it('does not fabricate output from a rejected continuation', async () => {
+    let observedOut = 'unset'
+    const sp = superpipe({})
+    const run = sp('endasync-reject-index')
+      .pipe(() => Promise.reject(new Error('reject')), null, 'out')
+      .error(
+        (_error, out) => {
+          observedOut = out
+        },
+        ['error', 'out'],
+      )
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('reject')
+    expect(observedOut).to.equal(undefined) // no fabricated out: 0
+  })
+
+  it('waits for other in-flight continuations when an async guard halts', async () => {
+    let resolveAsync
+    let settledEarly = false
+    const sp = superpipe({ allow: async () => true })
+    const run = sp('endasync-async-halt-pending')
+      .input(['user'])
+      .pipe(
+        (first, second) => {
+          first()
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveAsync = resolve
+          }),
+        null,
+        'late',
+      )
+      .pipe('!allow', 'user') // resolves true → inverted → async halt
+      .endAsync('{late}')
+
+    const outcome = run({ role: 'admin' })
+    outcome.then(() => {
+      settledEarly = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The guard halted, but the value pipe is still in flight.
+    expect(settledEarly).to.equal(false)
+
+    resolveAsync('late-value')
+    await expect(outcome).resolves.toEqual({ late: 'late-value' })
+  })
+
+  it('marks continuation exceptions terminal for other in-flight continuations', async () => {
+    let sideEffect = false
+    let resolveOther
+    const sp = superpipe({})
+    const run = sp('endasync-exception-terminal')
+      .pipe(
+        (first, second) => {
+          first()
+          second()
+        },
+        ['next', 'next'],
+      )
+      // Resolves with a reserved name — its merge raises OutputNameError.
+      .pipe(() => Promise.resolve({ next: () => {} }), null)
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveOther = resolve
+          }),
+        null,
+        'late',
+      )
+      .pipe(() => {
+        sideEffect = true
+      }, 'late')
+      .endAsync('late')
+
+    const outcome = run()
+    await new Promise((resolve) => setTimeout(resolve, 10)) // exception lands
+    resolveOther('late-value')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await expect(outcome).rejects.toThrow('reserved')
+    // The sibling continuation is discarded: no post-rejection execution.
+    expect(sideEffect).to.equal(false)
+  })
+})

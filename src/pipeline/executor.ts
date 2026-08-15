@@ -218,6 +218,12 @@ function settle(state: PipeState, error: Error | null): void {
   if (state.settled) {
     return
   }
+  // Errors that bypass the dispatch path (continuation exceptions caught
+  // in jobs) still mark the run terminal, so sibling in-flight
+  // continuations are discarded instead of merging into a failed run.
+  if (state.activeError == null) {
+    state.activeError = error
+  }
   state.settled = true
   state.onSettled?.({ container: state.container, error })
 }
@@ -399,8 +405,12 @@ function executePipe(
       try {
         if (isFlowControl && resolved === false) {
           // A flow-control halt through a resolved boolean — the
-          // synchronous halt branch is never reached on this path.
-          settle(state, null)
+          // synchronous halt branch is never reached on this path. Other
+          // continuations may still be in flight; the last one to land
+          // settles the run.
+          if (state.pending === 0) {
+            settle(state, null)
+          }
           return
         }
         advance(state, pipeline, null, resolved, pipeIndex)
@@ -428,6 +438,7 @@ function executePipe(
           state,
           pipeline,
           (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+          undefined,
           pipeIndex,
         )
       } catch (err) {
