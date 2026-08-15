@@ -34,6 +34,9 @@ export interface NextCallbacks {
 // a stale `next` retained by an earlier pipe cannot advance the pipeline
 // around a pipe that is still waiting for its own `next`. While the shared
 // buffer is holding, an invocation is queued there instead of advancing.
+// A disabled callback discards late invocations silently — the ambiguity
+// has already surfaced, and throwing from an unrelated callback stack
+// (a timer, an event emitter) would be uncatchable.
 function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
@@ -42,9 +45,7 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       throw new NextCalledTwiceError()
     }
     if (disabled) {
-      throw new Error(
-        '"next" is disabled: the pipe declared "next" as an input and also returned a thenable.',
-      )
+      return
     }
     called = true
     if (callbacks?.holding) {

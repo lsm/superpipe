@@ -200,11 +200,13 @@ function executePipe(
       // The pipe still holds a live `next`: void it so a later call cannot
       // re-run the error handler on the same failure.
       invalidateNextCallbacks(nextCallbacks)
-      return next(
-        state,
-        pipeline,
-        (err || new Error('Pipe promise rejected with a falsey value')) as Error,
-      )
+      // Native assimilation surfaces an accessor failure as an async
+      // rejection — same timing as a throwing `then` method below.
+      const failure = (err || new Error('Pipe promise rejected with a falsey value')) as Error
+      Promise.reject(failure).catch((reason: Error): void => {
+        next(state, pipeline, reason)
+      })
+      return
     }
   }
   const thenable = typeof thenFn === 'function'

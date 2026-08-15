@@ -1156,7 +1156,10 @@ describe('promise continuation contract (next buffering)', () => {
     expect(() => run()).to.not.throw()
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(handlerRuns).to.equal(1)
-    expect(() => retainedNext()).to.throw('"next" is disabled')
+    // A disabled callback discards the late call instead of throwing from
+    // an unrelated callback stack.
+    expect(() => retainedNext()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
   })
 
   it('advances normally when a pipe declares next and returns undefined', () =>
@@ -1345,4 +1348,59 @@ describe('promise continuation contract (cleanup assimilation)', () => {
 
       run()
     }))
+})
+
+// --- review round 8: failure timing and disabled-callback semantics ---
+describe('promise continuation contract (failure timing and discards)', () => {
+  it('defers a then accessor failure to the rejection path', () => {
+    let handlerObservedAfterRun
+    let afterRun = false
+    const sp = superpipe({})
+    const run = sp('accessor-timing')
+      .pipe(
+        () => ({
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+          get then() {
+            throw new Error('accessor threw')
+          },
+        }),
+        null,
+        'out',
+      )
+      .error((error) => {
+        expect(error.message).to.equal('accessor threw')
+        handlerObservedAfterRun = afterRun
+      }, 'error')
+      .end()
+
+    run()
+    afterRun = true
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // Same timing as a throwing then method: the handler runs in a
+        // microtask after the caller's synchronous initialization.
+        expect(handlerObservedAfterRun).to.equal(true)
+        resolve()
+      }, 10)
+    })
+  })
+
+  it('discards a late externally scheduled next after ambiguity', async () => {
+    let advanced = false
+    const sp = superpipe({})
+    const run = sp('external-late-next')
+      .pipe((next) => {
+        setTimeout(next, 5) // scheduled outside the returned thenable
+        return Promise.resolve('x')
+      }, 'next')
+      .pipe(() => {
+        advanced = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('one continuation channel')
+    // The timer firing must not crash the process nor advance the pipeline.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(advanced).to.equal(false)
+  })
 })
