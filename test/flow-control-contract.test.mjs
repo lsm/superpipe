@@ -2280,3 +2280,73 @@ describe('endAsync contract (retained continuations)', () => {
     await assertion
   })
 })
+
+// --- review round 7 on endAsync: skipped optionals, post-error discards, fromStep ---
+describe('endAsync contract (wrapper lifecycle)', () => {
+  it('settles when an optional pipe declaring next is skipped', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-optional-next')
+      .input(['user'])
+      .pipe('?missing', ['next', 'missingValue'], 'out') // skipped: dep missing
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    // Without wrapper invalidation the skipped pipe's counted callback
+    // holds the run open forever.
+    await expect(run()).resolves.toEqual('done')
+  })
+
+  it('discards a retained next after the run failed', async () => {
+    let retained
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('endasync-retained-after-error')
+      .pipe(
+        (_first, second) => {
+          retained = second
+          throw new Error('pipe error')
+        },
+        ['next', 'next'],
+      )
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('out')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('pipe error')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // Would raise OutputNameError on the test's stack if late callbacks
+    // still entered the pipeline after the terminal error.
+    retained(null, { next: () => {} })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await assertion
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('binds a retained next value to its originating pipe', async () => {
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-retained-fromstep')
+      .pipe(
+        (first, second) => {
+          retained = second // fires later; its value belongs to this pipe
+          first() // advance now
+        },
+        ['next', 'next'],
+        'firstValue',
+      )
+      .pipe(() => 'second-value', null, 'secondValue')
+      .endAsync('{firstValue, secondValue}')
+
+    const outcome = run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    retained(null, 'the-first-value')
+    // The late value merges through the first pipe's producer, not the
+    // last pipe's.
+    await expect(outcome).resolves.toEqual({
+      firstValue: 'the-first-value',
+      secondValue: 'second-value',
+    })
+  })
+})

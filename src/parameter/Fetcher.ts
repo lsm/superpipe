@@ -29,6 +29,10 @@ export interface NextCallbacks {
   holding: boolean
   held: { error?: Error; value?: PipeResult }[]
   onConsumed?: () => void
+  // The originating pipe's index: a retained callback fired later merges
+  // its value through that pipe's producer, even after the step counter
+  // advanced past it.
+  pipeIndex?: number
 }
 
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
@@ -54,9 +58,10 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   // Cleared on disable: the underlying continuation closes over the whole
   // per-run execution state, and a wrapper retained by a long-lived timer
   // or listener must not keep that state reachable after invalidation.
-  let advance: ((error?: Error, value?: PipeResult) => void) | null = next as (
+  let advance: ((error?: Error, value?: PipeResult, fromStep?: number) => void) | null = next as (
     error?: Error,
     value?: PipeResult,
+    fromStep?: number,
   ) => void
   const wrapped = ((error?: Error, value?: PipeResult): void => {
     // Invalidation is checked before the duplicate-call guard: a late call
@@ -74,7 +79,7 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       callbacks.held.push({ error, value })
       return
     }
-    advance?.(error, value)
+    advance?.(error, value, callbacks?.pipeIndex)
   }) as NextCallback
   wrapped.disable = (): void => {
     if (disabled) {

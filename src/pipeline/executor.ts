@@ -258,6 +258,7 @@ function executePipe(
     onConsumed: (): void => {
       state.pending -= 1
     },
+    pipeIndex: state.step - 1,
   }
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
   // Each wrapper handed to the pipe is a live continuation until invoked
@@ -273,6 +274,9 @@ function executePipe(
   // inside object-string inputs, whose wrapped object hides missing values
   // from a top-level indexOf.
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
+    // The skipped pipe never receives its callbacks — consume them so the
+    // run is not held open by wrappers that will never fire.
+    invalidateNextCallbacks(nextCallbacks)
     advance(state, pipeline)
     return
   } else if (typeof fn === 'function') {
@@ -570,6 +574,12 @@ function next(
   value?: PipeResult,
   fromStep?: number,
 ): void {
+  // A terminal state ended the run: a late callback from a timer or event
+  // stack (a wrapper that escaped invalidation) is discarded — advancing
+  // could mutate a settled run or rethrow from a foreign stack.
+  if (state.settled) {
+    return
+  }
   try {
     continuePipeline(state, pipeline, error, value, fromStep)
   } catch (err) {
@@ -661,8 +671,8 @@ export function runPipeline(
     step: 0,
     // Internale container for keeping pipeline runtime dependencies.
     container: {
-      next: (error?: Error, value?: PipeResult): void => {
-        next(state, pipeline, error, value)
+      next: (error?: Error, value?: PipeResult, fromStep?: number): void => {
+        next(state, pipeline, error, value, fromStep)
       },
     },
     args: Array.isArray(args) ? args : args === undefined ? [] : [args],
