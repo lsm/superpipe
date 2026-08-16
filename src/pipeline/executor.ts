@@ -158,7 +158,31 @@ function mergeIntoContainer(
   produced: PipeOutput,
   isInvocationInput: boolean,
 ): void {
-  for (const key of Object.keys(produced as Record<string, PipeResult>)) {
+  const source = produced as Record<PropertyKey, PipeResult>
+  // Enumerate the mergeable keys once and carry them through: the namespace
+  // checks below see exactly the keys the copy would write (own enumerable
+  // string and symbol keys, in specification order), and a Proxy's metadata
+  // traps are never re-run by the copy. A trap that aborts the run stops the
+  // enumeration before any value is read.
+  const allKeys = Reflect.ownKeys(source)
+  if (state.settled) {
+    return
+  }
+  const enumerable: PropertyKey[] = []
+  for (const key of allKeys) {
+    if (Object.getOwnPropertyDescriptor(source, key)?.enumerable === true) {
+      enumerable.push(key)
+    }
+    if (state.settled) {
+      return
+    }
+  }
+  // Names are validated before any value is read: an invalid output such as
+  // `{ next, get sideEffect() { ... } }` must throw before user code runs.
+  for (const key of enumerable) {
+    if (typeof key !== 'string') {
+      continue
+    }
     if (RESERVED_OUTPUT_NAMES.includes(key)) {
       throw new OutputNameError(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" is reserved.`,
@@ -170,7 +194,15 @@ function mergeIntoContainer(
       )
     }
   }
-  Object.assign(state.container, produced)
+  // Values are copied one key at a time after validation: a getter that
+  // aborts the run stops the merge before later accessors run.
+  const container = state.container as Record<PropertyKey, PipeResult>
+  for (const key of enumerable) {
+    container[key] = source[key]
+    if (state.settled) {
+      return
+    }
+  }
 }
 
 interface PipeState {

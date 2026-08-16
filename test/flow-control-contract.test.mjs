@@ -3336,6 +3336,77 @@ describe('endAsync abort contract (review round 10)', () => {
     expect(secondRead).to.equal(0)
   })
 
+  it('throws on a reserved implicit output before running sibling getters', async () => {
+    let sideEffect = 0
+    const sp = superpipe({})
+    const run = sp('implicit-reserved-order')
+      .pipe(() => ({
+        next: () => {}, // reserved name — must throw before any value is read
+        get sideEffect() {
+          sideEffect += 1
+          return 'x'
+        },
+      }))
+      .endAsync()
+
+    await expect(run()).rejects.toThrow('reserved')
+    expect(sideEffect).to.equal(0)
+  })
+
+  it('stops the implicit merge when a proxy ownKeys trap aborts', async () => {
+    const controller = new AbortController()
+    let postAbortReads = 0
+    const target = { first: 'a', second: 'b' }
+    const proxy = new Proxy(target, {
+      ownKeys() {
+        controller.abort() // abort while returning keys normally
+        return Reflect.ownKeys(target)
+      },
+      get() {
+        // The pipeline's pre-abort `then` probe reads once legitimately;
+        // count only reads after the cancellation.
+        if (controller.signal.aborted) {
+          postAbortReads += 1
+        }
+        return 'v'
+      },
+    })
+    const sp = superpipe({})
+    const run = sp('abort-proxy-ownkeys')
+      .pipe(() => proxy)
+      .endAsync('first', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(postAbortReads).to.equal(0)
+  })
+
+  it('stops the implicit merge when a proxy descriptor trap aborts', async () => {
+    const controller = new AbortController()
+    let postAbortReads = 0
+    const target = { first: 'a', second: 'b' }
+    const proxy = new Proxy(target, {
+      getOwnPropertyDescriptor(target, key) {
+        if (key === 'first') {
+          controller.abort()
+        }
+        return Reflect.getOwnPropertyDescriptor(target, key)
+      },
+      get() {
+        if (controller.signal.aborted) {
+          postAbortReads += 1
+        }
+        return 'v'
+      },
+    })
+    const sp = superpipe({})
+    const run = sp('abort-proxy-descriptor')
+      .pipe(() => proxy)
+      .endAsync('first', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(postAbortReads).to.equal(0)
+  })
+
   it('does not invoke a custom then after an abort from an intervening microtask', async () => {
     const controller = new AbortController()
     let thenCalls = 0

@@ -101,24 +101,7 @@ export default class Producer {
     const isObject = !isArray && result !== null && typeof result === 'object'
 
     if (keys.length === 0) {
-      if (!isObject) {
-        return {}
-      }
-      // Snapshot the returned object key by key rather than handing the
-      // original to Object.assign: a getter that aborts the run must stop
-      // the merge before later accessors run. Mirrors CopyDataProperties —
-      // own enumerable string and symbol keys, in specification order.
-      const merged: Record<PropertyKey, PipeResult> = {}
-      const source = result as Record<PropertyKey, PipeResult>
-      for (const key of Reflect.ownKeys(source)) {
-        if (Object.getOwnPropertyDescriptor(source, key)?.enumerable === true) {
-          merged[key] = source[key]
-          if (isSettled?.()) {
-            break
-          }
-        }
-      }
-      return merged
+      return isObject ? result : {}
     }
 
     if (isArray) {
