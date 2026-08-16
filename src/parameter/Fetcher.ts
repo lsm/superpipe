@@ -37,6 +37,9 @@ export interface NextCallbacks {
   // its value through that pipe's producer, even after the step counter
   // advanced past it.
   pipeIndex?: number
+  // Reports whether the run has reached a terminal state, so a multi-key
+  // fetch can stop reading inputs once an earlier accessor aborts it.
+  isSettled?: () => boolean
 }
 
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
@@ -242,9 +245,16 @@ export default class Fetcher {
     functions?: FunctionContainer,
     nextCallbacks?: NextCallbacks,
   ): PipeOutput {
-    return this.keys.map(
-      (key: string): PipeResult => this.value(container, functions, key, nextCallbacks),
-    )
+    const result: PipeResult[] = []
+    for (const key of this.keys) {
+      result.push(this.value(container, functions, key, nextCallbacks))
+      // A dependency accessor may have aborted the run; stop reading the
+      // remaining keys rather than triggering further getters.
+      if (nextCallbacks?.isSettled?.()) {
+        break
+      }
+    }
+    return result
   }
 
   fetchAsObject(
@@ -262,6 +272,11 @@ export default class Fetcher {
         continue
       }
       result[key] = this.value(container, functions, key, nextCallbacks)
+      // A dependency accessor may have aborted the run; stop reading the
+      // remaining keys rather than triggering further getters.
+      if (nextCallbacks?.isSettled?.()) {
+        break
+      }
     }
 
     // The array wrapper suits function invocation; the `.end()` fetcher

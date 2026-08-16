@@ -2828,3 +2828,118 @@ describe('endAsync abort contract (review round 3)', () => {
     expect(secondRead).to.equal(0)
   })
 })
+
+// --- endAsync abort contract: review round 4 (#50) ---
+describe('endAsync abort contract (review round 4)', () => {
+  it('stops multi-key input lookup at the aborting key', async () => {
+    const controller = new AbortController()
+    let secondRead = 0
+    const sp = superpipe({
+      makeFn: (a) => a,
+      get first() {
+        controller.abort()
+        return 'a'
+      },
+      get second() {
+        secondRead += 1
+        return 'b'
+      },
+    })
+    const run = sp('abort-fetch-multikey')
+      .pipe('makeFn', ['first', 'second'], 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRead).to.equal(0)
+  })
+
+  it('stops multi-key invocation mapping at the aborting key', async () => {
+    const controller = new AbortController()
+    let secondRead = 0
+    const sp = superpipe({})
+    const run = sp('abort-input-multikey')
+      .input('{first, second}')
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    const arg = {
+      get first() {
+        controller.abort()
+        return 'a'
+      },
+      get second() {
+        secondRead += 1
+        return 'b'
+      },
+    }
+
+    await expect(run(arg)).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRead).to.equal(0)
+  })
+
+  it('does not invoke a custom thenable then after a post-return abort', async () => {
+    const controller = new AbortController()
+    let thenCalls = 0
+    const sp = superpipe({})
+    const run = sp('abort-deferred-thenable')
+      .pipe(
+        () => ({
+          // biome-ignore lint/suspicious/noThenProperty: deliberately returning a thenable
+          then(resolve) {
+            thenCalls += 1
+            resolve('adopted')
+          },
+        }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await promise.catch(() => {})
+    // The deferred adoption job must see the nulled gate and skip `then`.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(thenCalls).to.equal(0)
+  })
+
+  it('stops output mapping at the aborting accessor', async () => {
+    const controller = new AbortController()
+    let secondRead = 0
+    const sp = superpipe({})
+    const run = sp('abort-output-mapping')
+      .pipe(
+        () => ({
+          get first() {
+            controller.abort()
+            return 'a'
+          },
+          get second() {
+            secondRead += 1
+            return 'b'
+          },
+        }),
+        null,
+        ['first', 'second'],
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRead).to.equal(0)
+  })
+
+  it('keeps cancellation active while adopting a thenable output', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-output-thenable')
+      .pipe(() => ({ out: new Promise(() => {}) }), null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    // Let the run settle and the observer adopt the pending thenable output
+    // (detaching the run's listener and installing the adoption race).
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+})

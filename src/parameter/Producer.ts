@@ -24,7 +24,7 @@ export default class Producer {
   // Array of property names to produce.
   private keys: string[] = []
 
-  private _produce: (result: PipeResult) => PipeOutput
+  private _produce: (result: PipeResult, isSettled?: () => boolean) => PipeOutput
 
   // Input producers receive the wrapped invocation-arguments array, so
   // single-name and object-string specs read from its first element.
@@ -86,15 +86,15 @@ export default class Producer {
     this._produce = this.produceOutput
   }
 
-  produce(result: PipeResult): PipeOutput {
-    return this._produce(result)
+  produce(result: PipeResult, isSettled?: () => boolean): PipeOutput {
+    return this._produce(result, isSettled)
   }
 
   // Mirrors master's setValueToStore: array results map positionally,
   // plain-object results map by property name (either counts), a scalar
   // maps whole under a single name, and with no outputs plain objects
   // merge while everything else is dropped.
-  produceOutput(result: PipeResult): PipeOutput {
+  produceOutput(result: PipeResult, isSettled?: () => boolean): PipeOutput {
     const output: Record<string, PipeResult> = {}
     const keys = this.keys
     const isArray = Array.isArray(result)
@@ -108,6 +108,9 @@ export default class Producer {
       let i = 0
       for (const key of keys) {
         applyKey(output, key, result[i])
+        if (isSettled?.()) {
+          break
+        }
         i += 1
       }
       return output
@@ -119,6 +122,11 @@ export default class Producer {
         output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[
           rename ? rename[1] : key
         ]
+        // A return-value accessor may have aborted the run; stop mapping the
+        // remaining names rather than reading further accessors.
+        if (isSettled?.()) {
+          break
+        }
       }
       return output
     }
@@ -134,27 +142,35 @@ export default class Producer {
     return {}
   }
 
-  produceSingle(result: PipeResult): PipeOutput {
+  produceSingle(result: PipeResult, _isSettled?: () => boolean): PipeOutput {
     return { [this.keys[0]]: this.inputSource(result) }
   }
 
-  produceFromArray(result: PipeResult): PipeOutput {
+  produceFromArray(result: PipeResult, isSettled?: () => boolean): PipeOutput {
     const output: Record<string, PipeResult> = {}
     // Input names are literal — colon renaming applies to outputs only.
     let i = 0
     for (const key of this.keys) {
       output[key] = (result as PipeResult[])[i]
+      if (isSettled?.()) {
+        break
+      }
       i += 1
     }
     return output
   }
 
-  produceFromObject(result: PipeResult): PipeOutput {
+  produceFromObject(result: PipeResult, isSettled?: () => boolean): PipeOutput {
     const output: Record<string, PipeResult> = {}
     const source = this.inputSource(result) as Record<string, PipeResult> | null | undefined
     for (const key of this.keys) {
       // Only take the keys we need; a missing argument maps to undefined.
       output[key] = source == null ? undefined : source[key]
+      // An argument accessor may have aborted the run; stop mapping the
+      // remaining keys rather than reading further accessors.
+      if (isSettled?.()) {
+        break
+      }
     }
     return output
   }

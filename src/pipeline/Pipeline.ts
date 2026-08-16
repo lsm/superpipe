@@ -1,4 +1,5 @@
 import {
+  type AbortSignalLike,
   type AnyFunction,
   type EndAsyncOptions,
   type FunctionContainer,
@@ -14,6 +15,28 @@ import { createErrorPipe, createInputPipe, createPipe } from './builder'
 import { runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
+
+// Read a value's `then` defensively — the output may be a throwing accessor,
+// and probing it must not turn a resolved run into a rejection.
+function thenOf(value: unknown): unknown {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
+    return undefined
+  }
+  try {
+    return (value as { then?: unknown }).then
+  } catch {
+    return undefined
+  }
+}
+
+// Read the signal's abort reason defensively (a polyfill may not expose one).
+function abortReason(signal: AbortSignalLike): unknown {
+  try {
+    return signal.reason
+  } catch {
+    return undefined
+  }
+}
 
 export default class Pipeline implements PipelineBase {
   name: string
@@ -116,6 +139,7 @@ export default class Pipeline implements PipelineBase {
     options?: EndAsyncOptions,
   ): (...args: unknown[]) => Promise<PipeOutput> {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
+    const signal = options?.signal
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
       name: this.name,
@@ -153,11 +177,35 @@ export default class Pipeline implements PipelineBase {
               resolve(undefined as PipeOutput)
               return
             }
+            let value: PipeOutput
             try {
-              resolve(fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput)
+              value = fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput
             } catch (err) {
               reject(err as Error)
+              return
             }
+            // If the selected output is itself a thenable, the run has
+            // already detached its abort listener; keep cancellation active
+            // while the value assimilates by racing it against the signal.
+            if (signal !== undefined && typeof thenOf(value) === 'function') {
+              let onAbort: (() => void) | undefined
+              const aborted = new Promise<never>((_, rejectAbort) => {
+                onAbort = (): void => rejectAbort(new PipelineAbortedError(abortReason(signal)))
+                signal.addEventListener('abort', onAbort)
+              })
+              Promise.race([Promise.resolve(value), aborted]).then(
+                (resolved) => {
+                  signal.removeEventListener('abort', onAbort as () => void)
+                  resolve(resolved as PipeOutput)
+                },
+                (err) => {
+                  signal.removeEventListener('abort', onAbort as () => void)
+                  reject(err as Error)
+                },
+              )
+              return
+            }
+            resolve(value)
           },
           options,
         )

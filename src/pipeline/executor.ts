@@ -353,6 +353,7 @@ function executePipe(
       return true
     },
     pipeIndex: state.step - 1,
+    isSettled: (): boolean => state.settled,
   }
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
   // Each wrapper handed to the pipe is a live continuation until invoked
@@ -643,6 +644,12 @@ function executePipe(
       // promise job, after the caller's synchronous initialization
       // completes.
       Promise.resolve().then(() => {
+        // A caller may have aborted between the pipe returning and this
+        // deferred job running; do not invoke the custom `then` (or start
+        // its lazy work) once the run is terminal.
+        if (gate.state === null) {
+          return
+        }
         try {
           // Reflect.apply invokes the callable directly; an own `call`
           // property on the then function cannot affect adoption. The real
@@ -758,7 +765,7 @@ function continuePipeline(
       pipeline,
       producerIndex,
       pipes[producerIndex].fnName,
-      pipes[producerIndex].producer.produce(value),
+      pipes[producerIndex].producer.produce(value, (): boolean => state.settled),
       false,
     )
   }
@@ -869,7 +876,7 @@ export function runPipeline(
         pipeline,
         0,
         inputPipe.fnName,
-        inputPipe.producer.produce(state.args),
+        inputPipe.producer.produce(state.args, (): boolean => state.settled),
         true,
       )
       // An argument accessor may have aborted the run during mapping; stop
