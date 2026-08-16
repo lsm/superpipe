@@ -187,19 +187,40 @@ export default class Pipeline implements PipelineBase {
             // If the selected output is itself a thenable, the run has
             // already detached its abort listener; keep cancellation active
             // while the value assimilates by racing it against the signal.
-            if (signal !== undefined && typeof thenOf(value) === 'function') {
+            const then = thenOf(value)
+            if (signal !== undefined && typeof then === 'function') {
               let onAbort: (() => void) | undefined
               const aborted = new Promise<never>((_, rejectAbort) => {
-                onAbort = (): void => rejectAbort(new PipelineAbortedError(abortReason(signal)))
+                const fire = (): void => rejectAbort(new PipelineAbortedError(abortReason(signal)))
+                // A signal already aborted before this adoption will not
+                // replay its event to a listener added now — reject now.
+                if (signal.aborted) {
+                  fire()
+                  return
+                }
+                onAbort = fire
                 signal.addEventListener('abort', onAbort)
               })
-              Promise.race([Promise.resolve(value), aborted]).then(
+              // Adopt through the captured `then` (read exactly once, so a
+              // stateful getter is not probed twice by Promise.resolve).
+              const adopted = new Promise<PipeOutput>((res, rej) => {
+                try {
+                  Reflect.apply(then as AnyFunction, value, [res, rej])
+                } catch (err) {
+                  rej(err)
+                }
+              })
+              Promise.race([adopted, aborted]).then(
                 (resolved) => {
-                  signal.removeEventListener('abort', onAbort as () => void)
-                  resolve(resolved as PipeOutput)
+                  if (onAbort !== undefined) {
+                    signal.removeEventListener('abort', onAbort)
+                  }
+                  resolve(resolved)
                 },
                 (err) => {
-                  signal.removeEventListener('abort', onAbort as () => void)
+                  if (onAbort !== undefined) {
+                    signal.removeEventListener('abort', onAbort)
+                  }
                   reject(err as Error)
                 },
               )

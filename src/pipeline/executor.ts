@@ -646,8 +646,11 @@ function executePipe(
       Promise.resolve().then(() => {
         // A caller may have aborted between the pipe returning and this
         // deferred job running; do not invoke the custom `then` (or start
-        // its lazy work) once the run is terminal.
+        // its lazy work) once the run is terminal. A branded native promise
+        // still needs its original rejection observed so it is not reported
+        // unhandled when it settles later.
         if (gate.state === null) {
+          observeOriginalRejection(result)
           return
         }
         try {

@@ -2943,3 +2943,68 @@ describe('endAsync abort contract (review round 4)', () => {
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
   })
 })
+
+// --- endAsync abort contract: review round 5 (#50) ---
+describe('endAsync abort contract (review round 5)', () => {
+  it('rejects when an output accessor aborts and returns a thenable', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({
+      get out() {
+        controller.abort()
+        return new Promise(() => {})
+      },
+    })
+    const run = sp('abort-output-accessor')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out', { signal: controller.signal })
+
+    // The output fetch aborts the signal, so the adoption race must observe
+    // the already-aborted state and reject instead of hanging.
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('reads a thenable output then getter only once', async () => {
+    const controller = new AbortController()
+    let reads = 0
+    const thenable = {
+      // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+      get then() {
+        reads += 1
+        if (reads === 1) return (resolve) => resolve('adopted-value')
+        return undefined
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('abort-thenable-once')
+      .pipe(() => ({ out: thenable }), null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    const result = await run()
+    expect(result).to.equal('adopted-value')
+    expect(reads).to.equal(1)
+  })
+
+  it('observes an overridden native promise rejection after an abort', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-overridden-native')
+      .pipe(
+        () => {
+          const p = Promise.reject(new Error('late'))
+          // biome-ignore lint/suspicious/noThenProperty: deliberately overriding then
+          p.then = () => {}
+          return p
+        },
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await promise.catch(() => {})
+    // The aborted adoption must still observe the branded promise's original
+    // rejection so it is not reported unhandled when it lands.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+})
