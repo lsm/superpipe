@@ -68,10 +68,7 @@ export interface EndAsyncOptions {
 // Read a signal's aborted flag defensively: a polyfill's getter may throw,
 // and a failure there must not break the returned promise. A throwing getter
 // reads as not-aborted, letting the normal path proceed.
-export function signalAborted(signal: AbortSignalLike | undefined): boolean {
-  if (signal === undefined) {
-    return false
-  }
+export function signalAborted(signal: AbortSignalLike): boolean {
   try {
     return signal.aborted === true
   } catch {
@@ -82,10 +79,7 @@ export function signalAborted(signal: AbortSignalLike | undefined): boolean {
 // Read a signal's abort reason defensively: a non-standard signal (or
 // polyfill) may not expose one, and a throwing getter must not break the
 // rejection path.
-export function signalReason(signal: AbortSignalLike | undefined): unknown {
-  if (signal === undefined) {
-    return undefined
-  }
+export function signalReason(signal: AbortSignalLike): unknown {
   try {
     return signal.reason
   } catch {

@@ -276,8 +276,11 @@ const run = sp('fetch-workflow')
   .pipe(() => repository.getWorkflow(), null, 'workflow')
   .endAsync('workflow', { signal: controller.signal })
 
+const promise = run()
+controller.abort()   // elsewhere / on cancel: rejects the pending run
+
 try {
-  const workflow = await run()
+  const workflow = await promise
   // ... use workflow
 } catch (error) {
   if (!(error instanceof PipelineAbortedError)) {
@@ -285,13 +288,15 @@ try {
   }
   // cancelled — nothing to do
 }
-
-controller.abort()   // rejects the pending run
 ```
 
 Cancellation races the run at the promise boundary: when the signal aborts,
 the returned promise rejects immediately (the abort listener is detached),
-and any later settle of the underlying run is discarded.
+and any later settle of the underlying run is discarded. "Without invoking
+the error handler" refers to the cancellation itself — the abandoned run is
+not interrupted, so if a pipe later fails, that error still routes to the
+pipeline's error handler as it normally would; it just never changes the
+already-rejected returned promise.
 
 ### Object-String Syntax
 

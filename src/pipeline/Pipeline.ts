@@ -120,6 +120,11 @@ export default class Pipeline implements PipelineBase {
   // Cancellation is racing at the promise boundary — the underlying run is
   // not interrupted, only abandoned; its late settle is discarded. A signal
   // already aborted at call time rejects before the first pipe runs.
+  //
+  // "Completed" means the returned promise has settled: because a successful
+  // run defers its settlement by one job (so an in-flight error wins), an
+  // abort fired synchronously right after `run()` returns — before any
+  // `await` — still cancels a run whose pipes all finished in that tick.
   endAsync(
     output?: PipeParameter,
     options?: EndAsyncOptions,
@@ -175,17 +180,20 @@ export default class Pipeline implements PipelineBase {
       // Register the abort listener BEFORE the run starts. `runPipeline` runs
       // synchronous pipe code (and dependency getters) inside the promise
       // executor, so an abort fired synchronously during that initial cascade
-      // — a self-cancelling pipe, a throwing accessor — must not be missed.
-      // The `abort` event is one-shot: a listener attached after dispatch
-      // never fires. The listener is detached on either terminal transition,
-      // so a long-lived shared controller never retains a completed run.
+      // — a self-cancelling pipe, a throwing accessor — is dispatched to the
+      // listener synchronously and not missed (the `abort` event is one-shot:
+      // a listener attached after dispatch never fires). The listener is
+      // detached on either terminal transition, so a long-lived shared
+      // controller never retains a completed run.
       let onAbort: (() => void) | undefined
+      let listenerAttached = false
       const aborted = new Promise<PipeOutput>((_, reject) => {
         onAbort = (): void => {
           reject(new PipelineAbortedError(signalReason(signal)))
         }
         try {
           signal.addEventListener('abort', onAbort)
+          listenerAttached = true
         } catch (err) {
           // A non-conforming signal whose addEventListener throws rejects the
           // run rather than escaping the caller synchronously.
@@ -193,15 +201,8 @@ export default class Pipeline implements PipelineBase {
         }
       })
 
-      // Register-then-check: an abort may already have fired (a signal aborted
-      // at call time, or during the synchronous cascade below) and would be
-      // missed by `addEventListener` alone. Fire it here so the run rejects.
-      if (signalAborted(signal)) {
-        onAbort?.()
-      }
-
       const cleanup = (): void => {
-        if (onAbort === undefined) {
+        if (!listenerAttached || onAbort === undefined) {
           return
         }
         try {
@@ -211,8 +212,13 @@ export default class Pipeline implements PipelineBase {
         }
       }
 
-      // A signal aborted at call time rejects before the first pipe runs.
-      if (signalAborted(signal)) {
+      // A non-conforming signal that could not register its listener, or one
+      // already aborted at call time, rejects before the first pipe runs.
+      // Register-then-check: an abort fired between `runPipelinePromise` and
+      // this check is already observed by the listener above; this covers an
+      // abort that predates the listener (missed by `addEventListener` alone).
+      if (!listenerAttached || signalAborted(signal)) {
+        onAbort?.()
         return aborted.finally(cleanup)
       }
 
