@@ -1,6 +1,8 @@
 import {
+  type AbortSignalLike,
   AmbiguousContinuationError,
   type AnyFunction,
+  type EndAsyncOptions,
   type FunctionContainer,
   NextCalledTwiceError,
   OutputNameError,
@@ -9,7 +11,7 @@ import {
   type PipeResult,
   throwNoErrorHandlerError,
 } from '../common'
-import type { NextCallbacks } from '../parameter/Fetcher'
+import type { NextCallback, NextCallbacks } from '../parameter/Fetcher'
 import type Pipe from './Pipe'
 
 // Hold synchronous `next` invocations until the pipe's return channel is
@@ -48,6 +50,19 @@ function invalidateNextCallbacks(callbacks: NextCallbacks): void {
 interface ResultContainer {
   [key: string]: PipeResult
 }
+
+// Terminal report handed to a run's completion observer exactly once. `error`
+// is the active error (null for completed/halted/aborted); `aborted` marks a
+// signal cancellation distinct from a failure; `reason` carries the signal's
+// abort reason.
+export interface RunOutcome {
+  container: ResultContainer
+  error: Error | null
+  aborted: boolean
+  reason?: unknown
+}
+
+export type SettlementObserver = (outcome: RunOutcome) => void
 
 // Typed continuation view: AnyFunction's `never[]` parameters maximize
 // assignability, but invoking the continuation needs a concrete signature.
@@ -186,9 +201,21 @@ interface PipeState {
   // continuations still merge their own outputs, but no further pipes
   // run — the run settles with the partial snapshot.
   halted: boolean
+  // Every live (not-yet-consumed) `next` wrapper created this run, so an
+  // abort can disable them all. Bounded by the run's wrapper count and
+  // cleared on terminal transition; `disable` is idempotent, so wrappers
+  // already consumed are unaffected by a later abort.
+  liveNextCallbacks: NextCallback[]
+  // Indirection for adopted-promise reactions: they retain this small gate
+  // rather than the whole run state, and the gate is nulled on terminal
+  // transition so a promise that never settles cannot keep the run state
+  // (or its container) reachable.
+  gate: { state: PipeState | null }
+  // Removes the abort listener; set only when a signal was supplied.
+  abortCleanup?: () => void
   // Optional run-completion observer (`.endAsync`): receives the container
   // snapshot and the active error, if any. Absent for sync `.end()` runs.
-  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
+  onSettled?: SettlementObserver
 }
 
 // Report the run's terminal transition exactly once. Errors finalize
@@ -213,7 +240,8 @@ function settle(state: PipeState, error: Error | null): void {
         return
       }
       state.settled = true
-      state.onSettled?.({ container: state.container, error: null })
+      detachAbort(state)
+      state.onSettled?.({ container: state.container, error: null, aborted: false })
     })
     return
   }
@@ -229,7 +257,54 @@ function settle(state: PipeState, error: Error | null): void {
     state.activeError = error
   }
   state.settled = true
-  state.onSettled?.({ container: state.container, error })
+  detachAbort(state)
+  state.onSettled?.({ container: state.container, error, aborted: false })
+}
+
+// Remove the abort listener and clear its cleanup — a terminal transition
+// (normal or aborted) must not leave the run's state reachable through a
+// long-lived shared controller.
+function detachAbort(state: PipeState): void {
+  const cleanup = state.abortCleanup
+  state.abortCleanup = undefined
+  cleanup?.()
+}
+
+// Cancellation terminal transition: synchronous, like an error, but it does
+// not set `activeError` (abort is not a pipeline failure and must not reach
+// `.error(...)`). Marks the run settled, detaches in-flight continuations,
+// and reports once. Idempotent — a signal firing after any other terminal
+// transition (or a second abort) is a no-op.
+function abortRun(state: PipeState, reason?: unknown): void {
+  if (state.settled) {
+    return
+  }
+  state.settled = true
+  // Detach adopted-promise reactions: a never-settling promise must not keep
+  // the run state (or its container) reachable after cancellation.
+  state.gate.state = null
+  // Void every live `next` wrapper so a retained callback neither advances
+  // nor holds run state past the abort. `disable` is idempotent.
+  for (const wrapper of state.liveNextCallbacks) {
+    wrapper.disable()
+  }
+  state.liveNextCallbacks.length = 0
+  // Remove the abort listener, then capture + clear the observer so it
+  // fires exactly once.
+  detachAbort(state)
+  const observer = state.onSettled
+  state.onSettled = undefined
+  observer?.({ container: state.container, error: null, aborted: true, reason })
+}
+
+// Read the signal's reason defensively — a non-standard signal (or polyfill)
+// may not expose one, and a throwing getter must not abort the abort path.
+function getAbortReason(signal: AbortSignalLike): unknown {
+  try {
+    return signal.reason
+  } catch {
+    return undefined
+  }
 }
 
 function executePipe(
@@ -279,6 +354,10 @@ function executePipe(
   // or invalidated: a retained `next` keeps the run open exactly like an
   // adopted promise does.
   state.pending += nextCallbacks.wrappers.length
+  // Register the wrappers so an abort can disable them all. Wrappers are
+  // not removed on consume — `disable` is idempotent — and the registry is
+  // cleared on terminal transition.
+  state.liveNextCallbacks.push(...nextCallbacks.wrappers)
   const advance = next as unknown as Continuation
 
   let result: PipeResult
@@ -424,12 +503,20 @@ function executePipe(
     // An adopted promise is a continuation in flight: reaching the end of
     // the pipes is not completion until it settles.
     state.pending += 1
+    // The reaction retains only the gate, not the whole run state, so an
+    // aborted (or otherwise terminal) run can release its state even while
+    // the source promise is still pending.
+    const gate = state.gate
     const onFulfilled = (value: PipeResult): void => {
-      state.pending -= 1
+      const current = gate.state
+      if (current === null) {
+        return
+      }
+      current.pending -= 1
       // A terminal error already won this execution: a continuation that
       // was pending when the error path was entered resolves too late and
       // is discarded.
-      if (state.activeError != null) {
+      if (current.activeError != null) {
         return
       }
       // Mirrors the synchronous path: `!` inverts a boolean result, and a
@@ -444,45 +531,49 @@ function executePipe(
           // synchronous halt branch is never reached on this path. Other
           // continuations may still be in flight; the last one to land
           // merges its output and settles the run.
-          state.halted = true
-          if (state.pending === 0) {
-            settle(state, null)
+          current.halted = true
+          if (current.pending === 0) {
+            settle(current, null)
           }
           return
         }
-        advance(state, pipeline, null, resolved, pipeIndex)
+        advance(current, pipeline, null, resolved, pipeIndex)
       } catch (err) {
         // The continuation threw in a job with no caller stack (for
         // example a namespace violation raised while merging its output):
         // an observer receives it as a rejection; without one, the
         // exception surfaces as an unhandled rejection, as before
         // observers existed.
-        if (!state.onSettled) {
+        if (!current.onSettled) {
           throw err
         }
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+        settle(current, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
     }
     const onRejected = (reason: unknown): void => {
-      state.pending -= 1
-      if (state.activeError != null) {
+      const current = gate.state
+      if (current === null) {
+        return
+      }
+      current.pending -= 1
+      if (current.activeError != null) {
         return
       }
       // A falsey rejection reason must not be mistaken for success by
       // the error truthiness check downstream.
       try {
         advance(
-          state,
+          current,
           pipeline,
           (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
           undefined,
           pipeIndex,
         )
       } catch (err) {
-        if (!state.onSettled) {
+        if (!current.onSettled) {
           throw err
         }
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+        settle(current, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
     }
 
@@ -697,7 +788,8 @@ function continuePipeline(
 export function runPipeline(
   args: PipeResult,
   pipeline: PipelineBase,
-  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void,
+  onSettled?: SettlementObserver,
+  options?: EndAsyncOptions,
 ): ResultContainer {
   // Internal pipeline execution state.
   const state: PipeState = {
@@ -715,7 +807,27 @@ export function runPipeline(
     settling: false,
     pending: 0,
     halted: false,
+    liveNextCallbacks: [],
+    gate: { state: null },
     onSettled,
+  }
+  state.gate.state = state
+
+  // Register the abort listener before any pipe runs, and short-circuit a
+  // signal that aborted before the run started — no input mapping or pipe
+  // may execute once the caller has withdrawn the operation. abortRun is
+  // idempotent, so a listener already queued by addEventListener on an
+  // already-aborted signal is a harmless no-op after the synchronous abort
+  // below.
+  const signal = options?.signal
+  if (signal !== undefined) {
+    const onAbort = (): void => abortRun(state, getAbortReason(signal))
+    signal.addEventListener('abort', onAbort)
+    state.abortCleanup = (): void => signal.removeEventListener('abort', onAbort)
+    if (signal.aborted) {
+      abortRun(state, getAbortReason(signal))
+      return state.container
+    }
   }
 
   // Start from the input pipes, if any: each maps the invocation arguments

@@ -262,6 +262,27 @@ synchronous pipelines resolve immediately, so `await` works uniformly.
 Alternatively, deliver async results through a final pipe, `next`, or an
 error handler.
 
+`.endAsync(output, { signal })` accepts an `AbortSignal` for cancellation.
+An aborted run rejects with `PipelineAbortedError` — its `name` is
+`AbortError`, and its `reason` carries the signal's abort reason — without
+invoking the error handler. A signal already aborted at call time rejects
+before the first pipe runs:
+
+```javascript
+const controller = new AbortController()
+const run = sp('fetch-workflow')
+  .pipe(() => repository.getWorkflow(), null, 'workflow')
+  .endAsync('workflow', { signal: controller.signal })
+
+const workflow = run().catch((error) => {
+  if (error instanceof PipelineAbortedError) {
+    // cancelled — nothing to do
+  }
+})
+
+controller.abort()   // rejects the pending run
+```
+
 ### Object-String Syntax
 
 Use an `{a, b}` object string to destructure a single object argument into

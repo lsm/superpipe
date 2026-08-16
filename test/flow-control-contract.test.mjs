@@ -14,7 +14,7 @@
  *      when the dependency (or its input) is undefined, instead of throwing.
  */
 import { describe, expect, it } from 'vitest'
-import superpipe from '../src'
+import superpipe, { PipelineAbortedError } from '../src'
 
 describe('Flow-control contract (README-pinned behaviors)', () => {
   // --- control: MUST pass on every branch, else the harness is broken ---
@@ -2488,5 +2488,181 @@ describe('endAsync contract (object-form next keys)', () => {
 
     // One wrapper exposed and counted — invoking it settles the run.
     await expect(run()).resolves.toEqual('done')
+  })
+})
+
+// --- endAsync abort contract: AbortSignal cancellation (#50) ---
+describe('endAsync abort contract', () => {
+  it('rejects with PipelineAbortedError when the signal aborts mid-run', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-mid-run')
+      .pipe(() => new Promise(() => {}), null, 'never')
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('carries the AbortError name and preserves the signal reason', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-reason')
+      .pipe(() => new Promise(() => {}), null, 'never')
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort('custom-reason')
+    const err = await promise.catch((e) => e)
+    expect(err).toBeInstanceOf(PipelineAbortedError)
+    expect(err.name).to.equal('AbortError')
+    expect(err.reason).to.equal('custom-reason')
+  })
+
+  it('does not route an abort through the error handler', async () => {
+    let handlerRuns = 0
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-no-handler')
+      .pipe(() => new Promise(() => {}), null, 'never')
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await promise.catch(() => {})
+    expect(handlerRuns).to.equal(0)
+  })
+
+  it('short-circuits a pre-aborted signal before any pipe runs', async () => {
+    let ran = false
+    const controller = new AbortController()
+    controller.abort()
+    const sp = superpipe({})
+    const run = sp('abort-pre')
+      .pipe(
+        () => {
+          ran = true
+          return 'x'
+        },
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(ran).to.equal(false)
+  })
+
+  it('rejects immediately without waiting for a pending adopted promise', async () => {
+    const controller = new AbortController()
+    let resolved = false
+    const sp = superpipe({})
+    const run = sp('abort-pending-promise')
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolved = true
+              resolve('slow')
+            }, 100)
+          }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(resolved).to.equal(false)
+  })
+
+  it('abort wins over a later promise rejection', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-vs-reject')
+      .pipe(
+        () =>
+          new Promise((_resolve, reject) => {
+            setTimeout(() => reject(new Error('late rejection')), 5)
+          }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    // Let the pending rejection land — the discarded continuation must not
+    // re-reject or surface as an unhandled rejection.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('disables a retained next so a late callback is a no-op', async () => {
+    let lateRan = false
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-retained-next')
+      .pipe(
+        (next) => {
+          setTimeout(() => next(null, 'late'), 5)
+        },
+        'next',
+        'out',
+      )
+      .pipe(() => {
+        lateRan = true
+      }, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await promise.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(lateRan).to.equal(false)
+  })
+
+  it('ignores an abort after the run already completed', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-after-complete')
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    const result = await run()
+    controller.abort()
+    expect(result).to.equal('done')
+  })
+
+  it('leaves endAsync unchanged when no signal is supplied', async () => {
+    const sp = superpipe({})
+    const run = sp('abort-no-signal')
+      .pipe(() => 'v', null, 'out')
+      .endAsync('out')
+
+    await expect(run()).resolves.toEqual('v')
+  })
+
+  it('does not touch the synchronous .end path', () => {
+    let ran = false
+    const sp = superpipe({})
+    const run = sp('abort-sync-end')
+      .pipe(
+        () => {
+          ran = true
+          return 'v'
+        },
+        null,
+        'out',
+      )
+      .end('out')
+
+    expect(run()).to.equal('v')
+    expect(ran).to.equal(true)
   })
 })

@@ -1,11 +1,13 @@
-import type {
-  AnyFunction,
-  FunctionContainer,
-  PipeFunction,
-  PipelineBase,
-  PipeOutput,
-  PipeParameter,
-  PipeResult,
+import {
+  type AnyFunction,
+  type EndAsyncOptions,
+  type FunctionContainer,
+  type PipeFunction,
+  PipelineAbortedError,
+  type PipelineBase,
+  type PipeOutput,
+  type PipeParameter,
+  type PipeResult,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
@@ -109,7 +111,10 @@ export default class Pipeline implements PipelineBase {
   // not when the synchronous cascade ends. Halted runs resolve with the
   // partial snapshot; errored runs reject with the active error even when
   // an error handler ran (the promise is an additional observer).
-  endAsync(output?: PipeParameter): (...args: unknown[]) => Promise<PipeOutput> {
+  endAsync(
+    output?: PipeParameter,
+    options?: EndAsyncOptions,
+  ): (...args: unknown[]) => Promise<PipeOutput> {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
@@ -124,26 +129,38 @@ export default class Pipeline implements PipelineBase {
       const args: PipeResult = Array.prototype.slice.apply(arguments)
 
       return new Promise<PipeOutput>((resolve, reject) => {
-        runPipeline(args, pipeline, (outcome) => {
-          if (outcome.error != null) {
-            reject(outcome.error)
-            return
-          }
-          // With no output spec the run's completion is the result; fetch
-          // the requested names from the settled container otherwise. The
-          // fetch runs in the settlement job — a throwing dependency
-          // accessor here must reject the returned promise, not die as an
-          // unhandled rejection while it hangs.
-          if (fetcher === null) {
-            resolve(undefined as PipeOutput)
-            return
-          }
-          try {
-            resolve(fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput)
-          } catch (err) {
-            reject(err as Error)
-          }
-        })
+        runPipeline(
+          args,
+          pipeline,
+          (outcome) => {
+            // A signal cancellation is distinct from a failure: it rejects
+            // with PipelineAbortedError, never the error handler's active
+            // error, and it carries the signal's abort reason.
+            if (outcome.aborted) {
+              reject(new PipelineAbortedError(outcome.reason))
+              return
+            }
+            if (outcome.error != null) {
+              reject(outcome.error)
+              return
+            }
+            // With no output spec the run's completion is the result; fetch
+            // the requested names from the settled container otherwise. The
+            // fetch runs in the settlement job — a throwing dependency
+            // accessor here must reject the returned promise, not die as an
+            // unhandled rejection while it hangs.
+            if (fetcher === null) {
+              resolve(undefined as PipeOutput)
+              return
+            }
+            try {
+              resolve(fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput)
+            } catch (err) {
+              reject(err as Error)
+            }
+          },
+          options,
+        )
       })
     }
   }
