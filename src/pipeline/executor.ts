@@ -258,6 +258,20 @@ function executePipe(
     onConsumed: (): void => {
       state.pending -= 1
     },
+    onError: (err: Error): boolean => {
+      if (!state.onSettled) {
+        // No completion observer: surface the programming error on the
+        // invoking stack, as before observers existed.
+        return false
+      }
+      // An observed run receives the failure as a rejection; after
+      // settlement there is nothing left to report and the duplicate is
+      // discarded.
+      if (!state.settled) {
+        settle(state, err)
+      }
+      return true
+    },
     pipeIndex: state.step - 1,
   }
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)

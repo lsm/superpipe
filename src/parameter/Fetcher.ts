@@ -29,6 +29,10 @@ export interface NextCallbacks {
   holding: boolean
   held: { error?: Error; value?: PipeResult }[]
   onConsumed?: () => void
+  // Offers a wrapper-raised programming error (a duplicate invocation) to
+  // the run: true when the error was routed to a completion observer,
+  // false when it must be thrown onto the invoking stack.
+  onError?: (err: Error) => boolean
   // The originating pipe's index: a retained callback fired later merges
   // its value through that pipe's producer, even after the step counter
   // advanced past it.
@@ -71,7 +75,14 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       return
     }
     if (called) {
-      throw new NextCalledTwiceError()
+      // A duplicate invocation from a foreign callback stack: route it to
+      // the run's completion observer when one exists — throwing there
+      // would be uncatchable and could terminate the process.
+      const duplicate = new NextCalledTwiceError()
+      if (callbacks?.onError?.(duplicate)) {
+        return
+      }
+      throw duplicate
     }
     called = true
     consume()

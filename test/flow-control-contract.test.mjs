@@ -2429,3 +2429,23 @@ describe('endAsync contract (downstream deferral)', () => {
     await expect(outcome).resolves.toEqual({ first: 'a-value', second: undefined })
   })
 })
+
+// --- review round 10 on endAsync: duplicate late callbacks ---
+describe('endAsync contract (duplicate callbacks)', () => {
+  it('routes duplicate late callbacks into the settlement', async () => {
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-duplicate-late')
+      .pipe((next) => {
+        retained = next
+      }, 'next')
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('more than once')
+    retained() // advances the run to completion
+    retained() // duplicate: rejected, not thrown onto the caller stack
+    await assertion
+  })
+})
