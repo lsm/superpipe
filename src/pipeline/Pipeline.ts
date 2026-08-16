@@ -191,16 +191,45 @@ export default class Pipeline implements PipelineBase {
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
-            // If the selected output is itself a thenable, adopt it through
-            // the captured `then` (read exactly once) while keeping the abort
-            // active until it settles.
+            // Read the selected output's `then` exactly once.
             const then = thenOf(value)
+            // `thenOf` may have aborted the run via a throwing/aborting getter;
+            // recheck before adopting whatever it returned.
+            if (signal?.aborted) {
+              reject(new PipelineAbortedError(abortReason(signal)))
+              return
+            }
             if (typeof then === 'function') {
-              let onAbort: (() => void) | undefined
-              const aborted = new Promise<never>((_, rejectAbort) => {
+              // Adopt the thenable through the captured `then` (never
+              // re-read), gating settlement so the first of (abort, resolve,
+              // reject) wins in the order the events actually occur.
+              const adopted = new Promise<PipeOutput>((res, rej) => {
+                let settled = false
+                let onAbort: (() => void) | undefined
+                const detach = (): void => {
+                  if (onAbort !== undefined && signal !== undefined) {
+                    signal.removeEventListener('abort', onAbort)
+                  }
+                }
+                const finishResolve = (v: PipeOutput): void => {
+                  if (settled) {
+                    return
+                  }
+                  settled = true
+                  detach()
+                  res(v)
+                }
+                const finishReject = (err: unknown): void => {
+                  if (settled) {
+                    return
+                  }
+                  settled = true
+                  detach()
+                  rej(err)
+                }
                 if (signal !== undefined) {
                   const fire = (): void =>
-                    rejectAbort(new PipelineAbortedError(abortReason(signal)))
+                    finishReject(new PipelineAbortedError(abortReason(signal)))
                   if (signal.aborted) {
                     fire()
                     return
@@ -208,31 +237,13 @@ export default class Pipeline implements PipelineBase {
                   onAbort = fire
                   signal.addEventListener('abort', onAbort)
                 }
-              })
-              const adopted = new Promise<PipeOutput>((res, rej) => {
                 try {
-                  Reflect.apply(then as AnyFunction, value, [res, rej])
+                  Reflect.apply(then as AnyFunction, value, [finishResolve, finishReject])
                 } catch (err) {
-                  rej(err)
+                  finishReject(err)
                 }
               })
-              const cleanup = (): void => {
-                if (onAbort !== undefined && signal !== undefined) {
-                  signal.removeEventListener('abort', onAbort)
-                }
-              }
-              // The abort promise is raced first so a synchronous abort during
-              // adoption (both sides already settled) wins over the resolve.
-              Promise.race([aborted, adopted]).then(
-                (resolved) => {
-                  cleanup()
-                  resolve(resolved as PipeOutput)
-                },
-                (err) => {
-                  cleanup()
-                  reject(err as Error)
-                },
-              )
+              resolve(adopted)
               return
             }
             resolve(value)

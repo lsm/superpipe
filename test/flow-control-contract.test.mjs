@@ -3115,3 +3115,51 @@ describe('endAsync abort contract (review round 6)', () => {
     expect(thenCalled).to.equal(0)
   })
 })
+
+// --- endAsync abort contract: review round 7 (#50) ---
+describe('endAsync abort contract (review round 7)', () => {
+  it('resolves when a thenable output resolves before it aborts synchronously', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('resolve-then-abort')
+      .pipe(
+        () => ({
+          out: {
+            // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+            then(resolve) {
+              resolve('value')
+              controller.abort()
+            },
+          },
+        }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    // Resolution occurred before the abort, so it wins.
+    await expect(run()).resolves.toEqual('value')
+  })
+
+  it('does not invoke a then when its getter aborts during output selection', async () => {
+    const controller = new AbortController()
+    let thenCalled = 0
+    const thenable = {
+      // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+      get then() {
+        controller.abort()
+        return () => {
+          thenCalled += 1
+        }
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('abort-output-then-getter')
+      .pipe(() => ({ out: thenable }), null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(thenCalled).to.equal(0)
+  })
+})
