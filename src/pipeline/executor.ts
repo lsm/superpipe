@@ -328,7 +328,10 @@ function executePipe(
       return
     }
   } else if (typeof fn === 'boolean') {
-    // Raw boolean dependency used for flow control.
+    // Raw boolean dependency used for flow control. Any `next` wrapper
+    // fetched for this pipe can never fire — the boolean is evaluated
+    // directly — so consume it rather than holding the run open.
+    invalidateNextCallbacks(nextCallbacks)
     result = fn
   } else {
     // Throw an exception when the dependency is not something we can execute.
@@ -549,13 +552,15 @@ function executePipe(
   // channel is known to be unambiguous.
   flushNextCallbacks(state, pipeline, advance, nextCallbacks)
 
-  // Auto-advance when the pipe does not request `next`, unless a
-  // flow-control pipe's boolean is `false` (halt). Duplicate-`next`
-  // detection lives on the per-pipe callback handed out by the Fetcher,
-  // not here.
-  if (pipe.fetcher.hasNext === false && !(isFlowControl && result === false)) {
+  // Auto-advance when the pipe does not own its continuation — it did not
+  // request `next`, or the dependency is a raw boolean that could never
+  // call one — unless a flow-control pipe's boolean is `false` (halt).
+  // Duplicate-`next` detection lives on the per-pipe callback handed out
+  // by the Fetcher, not here.
+  const ownsContinuation = pipe.fetcher.hasNext && typeof fn !== 'boolean'
+  if (!ownsContinuation && !(isFlowControl && result === false)) {
     advance(state, pipeline, null, result)
-  } else if (pipe.fetcher.hasNext === false) {
+  } else if (!ownsContinuation) {
     // Flow-control halt: progression ended. A guard declining is a normal
     // result, not a failure — resolve with the partial snapshot once no
     // sibling continuation is in flight.

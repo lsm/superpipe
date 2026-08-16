@@ -2449,3 +2449,28 @@ describe('endAsync contract (duplicate callbacks)', () => {
     await assertion
   })
 })
+
+// --- review round 11 on endAsync: boolean deps with a next input ---
+describe('endAsync contract (boolean dependencies)', () => {
+  it('evaluates a raw boolean dependency normally despite a next input', async () => {
+    const sp = superpipe({ enabled: true })
+    const run = sp('endasync-bool-with-next')
+      .input(['user'])
+      .pipe('enabled', 'next') // degenerate declaration — boolean cannot call next
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    await expect(run()).resolves.toEqual('done')
+  })
+
+  it('halts on a false raw boolean dependency despite a next input', async () => {
+    const sp = superpipe({ enabled: false })
+    const run = sp('endasync-bool-with-next-halt')
+      .input(['user'])
+      .pipe('enabled', 'next')
+      .pipe(() => 'never', null, 'never')
+      .endAsync('never')
+
+    await expect(run()).resolves.toEqual(undefined)
+  })
+})
