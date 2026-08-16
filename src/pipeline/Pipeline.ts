@@ -195,8 +195,11 @@ export default class Pipeline implements PipelineBase {
             }
             // An output accessor may have aborted the signal while being
             // fetched (the run's listener is already detached); a non-thenable
-            // result must still reject rather than resolve.
+            // result must still reject rather than resolve. The fetched value
+            // may be a rejected branded promise the run will never adopt —
+            // observe its original rejection so it is not reported unhandled.
             if (signal?.aborted) {
+              observeOriginalRejection(value as PipeResult)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
@@ -218,8 +221,11 @@ export default class Pipeline implements PipelineBase {
               return
             }
             // `thenOf` may have aborted the run via a throwing/aborting getter;
-            // recheck before adopting whatever it returned.
+            // recheck before adopting whatever it returned. An already-rejected
+            // branded promise is never adopted on this path — observe its
+            // original rejection so it is not reported unhandled.
             if (signal?.aborted) {
+              observeOriginalRejection(value as PipeResult)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
@@ -277,6 +283,11 @@ export default class Pipeline implements PipelineBase {
                   } catch (err) {
                     finishReject(err)
                   }
+                  // An override may swallow the callbacks — return normally
+                  // without registering them — and a later abort then wins the
+                  // adoption; observe a branded promise's original rejection
+                  // regardless of how the override behaved.
+                  observeOriginalRejection(value as PipeResult)
                 })
               })
               resolve(adopted)

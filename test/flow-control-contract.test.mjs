@@ -3435,4 +3435,66 @@ describe('endAsync abort contract (review round 10)', () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(thenCalls).to.equal(0)
   })
+
+  it('observes a rejected native output whose then getter aborts', async () => {
+    const controller = new AbortController()
+    const promise = Promise.reject(new Error('original'))
+    Object.defineProperty(promise, 'then', {
+      get() {
+        controller.abort() // abort while returning a callable normally
+        return () => {}
+      },
+    })
+    const sp = superpipe({})
+    const run = sp('output-getter-abort-native')
+      .pipe(() => ({ out: promise }), null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    // The branded promise is never adopted on this path — its original
+    // rejection must still be observed, not reported unhandled.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('observes a rejected native output when the accessor aborts', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({
+      get out() {
+        controller.abort()
+        return Promise.reject(new Error('original'))
+      },
+    })
+    const run = sp('output-accessor-abort-native')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('observes a rejected native output whose override swallows the callbacks', async () => {
+    const controller = new AbortController()
+    class Swallowing extends Promise {
+      // biome-ignore lint/suspicious/noThenProperty: deliberately overriding then
+      then() {
+        return new Promise(() => {}) // never registers the supplied callbacks
+      }
+    }
+    const sp = superpipe({})
+    const run = sp('output-swallow-abort')
+      .pipe(
+        () => ({ out: new Swallowing((_res, reject) => reject(new Error('original'))) }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    await new Promise((resolve) => setTimeout(resolve, 10)) // adoption job ran
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    // The abort won the abandoned adoption; the swallowed original rejection
+    // must not surface as unhandled once microtasks drain.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
 })
