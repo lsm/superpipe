@@ -213,11 +213,25 @@ export default class Fetcher {
   }
 
   // True when any requested input (except `next`) resolves to undefined.
-  hasUnresolved(container: PipeResult, functions?: FunctionContainer): boolean {
-    return this.keys.some(
-      (key: string): boolean =>
-        key !== 'next' && this.lookup(container, functions, key) === undefined,
-    )
+  // `isSettled` stops the probe after an accessor aborts the run, so later
+  // configured getters do not run once the run has already rejected.
+  hasUnresolved(
+    container: PipeResult,
+    functions?: FunctionContainer,
+    isSettled?: () => boolean,
+  ): boolean {
+    for (const key of this.keys) {
+      if (key === 'next') {
+        continue
+      }
+      if (this.lookup(container, functions, key) === undefined) {
+        return true
+      }
+      if (isSettled?.()) {
+        break
+      }
+    }
+    return false
   }
 
   fetchNothing(

@@ -378,7 +378,10 @@ function executePipe(
   // unresolved — before the callable is invoked. hasUnresolved also looks
   // inside object-string inputs, whose wrapped object hides missing values
   // from a top-level indexOf.
-  if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
+  if (
+    pipe.optional &&
+    (fn === undefined || pipe.fetcher.hasUnresolved(container, functions, nextCallbacks.isSettled))
+  ) {
     // The skipped pipe never receives its callbacks — consume them so the
     // run is not held open by wrappers that will never fire.
     invalidateNextCallbacks(nextCallbacks)
@@ -483,6 +486,13 @@ function executePipe(
     }
   }
   const thenable = typeof thenFn === 'function'
+
+  // The `then` getter may have aborted the run while returning a callable;
+  // do not throw an ambiguity error or adopt the thenable after settlement.
+  if (state.settled) {
+    invalidateNextCallbacks(nextCallbacks)
+    return
+  }
 
   // A pipe that requests `next` owns its own continuation; a thenable
   // return alongside it is ambiguous — which channel advances the

@@ -184,25 +184,31 @@ export default class Pipeline implements PipelineBase {
               reject(err as Error)
               return
             }
-            // If the selected output is itself a thenable, the run has
-            // already detached its abort listener; keep cancellation active
-            // while the value assimilates by racing it against the signal.
+            // An output accessor may have aborted the signal while being
+            // fetched (the run's listener is already detached); a non-thenable
+            // result must still reject rather than resolve.
+            if (signal?.aborted) {
+              reject(new PipelineAbortedError(abortReason(signal)))
+              return
+            }
+            // If the selected output is itself a thenable, adopt it through
+            // the captured `then` (read exactly once) while keeping the abort
+            // active until it settles.
             const then = thenOf(value)
-            if (signal !== undefined && typeof then === 'function') {
+            if (typeof then === 'function') {
               let onAbort: (() => void) | undefined
               const aborted = new Promise<never>((_, rejectAbort) => {
-                const fire = (): void => rejectAbort(new PipelineAbortedError(abortReason(signal)))
-                // A signal already aborted before this adoption will not
-                // replay its event to a listener added now — reject now.
-                if (signal.aborted) {
-                  fire()
-                  return
+                if (signal !== undefined) {
+                  const fire = (): void =>
+                    rejectAbort(new PipelineAbortedError(abortReason(signal)))
+                  if (signal.aborted) {
+                    fire()
+                    return
+                  }
+                  onAbort = fire
+                  signal.addEventListener('abort', onAbort)
                 }
-                onAbort = fire
-                signal.addEventListener('abort', onAbort)
               })
-              // Adopt through the captured `then` (read exactly once, so a
-              // stateful getter is not probed twice by Promise.resolve).
               const adopted = new Promise<PipeOutput>((res, rej) => {
                 try {
                   Reflect.apply(then as AnyFunction, value, [res, rej])
@@ -210,17 +216,20 @@ export default class Pipeline implements PipelineBase {
                   rej(err)
                 }
               })
-              Promise.race([adopted, aborted]).then(
+              const cleanup = (): void => {
+                if (onAbort !== undefined && signal !== undefined) {
+                  signal.removeEventListener('abort', onAbort)
+                }
+              }
+              // The abort promise is raced first so a synchronous abort during
+              // adoption (both sides already settled) wins over the resolve.
+              Promise.race([aborted, adopted]).then(
                 (resolved) => {
-                  if (onAbort !== undefined) {
-                    signal.removeEventListener('abort', onAbort)
-                  }
-                  resolve(resolved)
+                  cleanup()
+                  resolve(resolved as PipeOutput)
                 },
                 (err) => {
-                  if (onAbort !== undefined) {
-                    signal.removeEventListener('abort', onAbort)
-                  }
+                  cleanup()
                   reject(err as Error)
                 },
               )

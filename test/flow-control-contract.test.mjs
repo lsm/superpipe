@@ -3008,3 +3008,110 @@ describe('endAsync abort contract (review round 5)', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
 })
+
+// --- endAsync abort contract: review round 6 (#50) ---
+describe('endAsync abort contract (review round 6)', () => {
+  it('adopts a thenable output through a single then read without a signal', async () => {
+    let reads = 0
+    const thenable = {
+      // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+      get then() {
+        reads += 1
+        if (reads === 1) return (resolve) => resolve('adopted')
+        return undefined
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('thenable-once-no-signal')
+      .pipe(() => ({ out: thenable }), null, 'out')
+      .endAsync('out')
+
+    const result = await run()
+    expect(result).to.equal('adopted')
+    expect(reads).to.equal(1)
+  })
+
+  it('rejects when a thenable output aborts before it resolves synchronously', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-thenable-sync')
+      .pipe(
+        () => ({
+          out: {
+            // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+            then(resolve) {
+              controller.abort()
+              resolve('value')
+            },
+          },
+        }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('rejects when an output accessor aborts and returns a non-thenable', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({
+      get out() {
+        controller.abort()
+        return 'scalar'
+      },
+    })
+    const run = sp('abort-output-scalar')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('stops optional probing at the aborting input', async () => {
+    const controller = new AbortController()
+    let thirdRead = 0
+    const sp = superpipe({
+      dep: () => 'value',
+      get a() {
+        controller.abort()
+        return 'x'
+      },
+      get b() {
+        thirdRead += 1
+        return 'y'
+      },
+    })
+    const run = sp('abort-optional-probe-multi')
+      .pipe('?dep', '{a, b}', 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(thirdRead).to.equal(0)
+  })
+
+  it('does not invoke a then after its getter aborts the run', async () => {
+    const controller = new AbortController()
+    let thenCalled = 0
+    const sp = superpipe({})
+    const run = sp('abort-then-getter')
+      .pipe(
+        (next) => ({
+          // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+          get then() {
+            controller.abort()
+            return () => {
+              thenCalled += 1
+            }
+          },
+        }),
+        'next',
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(thenCalled).to.equal(0)
+  })
+})
