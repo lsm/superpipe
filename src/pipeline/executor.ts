@@ -397,6 +397,12 @@ function executePipe(
     holdNextCallbacks(nextCallbacks)
     try {
       result = fn.apply(0, inputArgs as PipeResult[])
+      // The pipe may have aborted the run synchronously and still returned a
+      // value (e.g. a thenable); do not inspect or adopt it after settlement.
+      if (state.settled) {
+        invalidateNextCallbacks(nextCallbacks)
+        return
+      }
     } catch (err) {
       // Release any held invocation first, preserving the order a
       // synchronous `next` would have advanced in.
@@ -866,6 +872,11 @@ export function runPipeline(
         inputPipe.producer.produce(state.args),
         true,
       )
+      // An argument accessor may have aborted the run during mapping; stop
+      // before the next declaration triggers more getters.
+      if (state.settled) {
+        break
+      }
     }
 
     // Start executing pipeline

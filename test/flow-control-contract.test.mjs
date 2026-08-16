@@ -2775,3 +2775,56 @@ describe('endAsync abort contract (review round 2)', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
 })
+
+// --- endAsync abort contract: review round 3 (#50) ---
+describe('endAsync abort contract (review round 3)', () => {
+  it('does not inspect a thenable returned after a synchronous abort', async () => {
+    const controller = new AbortController()
+    let thenRead = 0
+    const sp = superpipe({})
+    const run = sp('abort-thenable-result')
+      .pipe(
+        () => {
+          controller.abort()
+          return {
+            // biome-ignore lint/suspicious/noThenProperty: deliberately returning a thenable
+            get then() {
+              thenRead += 1
+              return () => {}
+            },
+          }
+        },
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(thenRead).to.equal(0)
+  })
+
+  it('stops mapping invocation inputs after an accessor aborts', async () => {
+    const controller = new AbortController()
+    let secondRead = 0
+    const sp = superpipe({})
+    const run = sp('abort-input-mapping')
+      .input('{first}')
+      .input('{second}')
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    const arg = {
+      get first() {
+        controller.abort()
+        return 'a'
+      },
+      get second() {
+        secondRead += 1
+        return 'b'
+      },
+    }
+
+    await expect(run(arg)).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRead).to.equal(0)
+  })
+})
