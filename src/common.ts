@@ -79,6 +79,20 @@ export function signalAborted(signal: AbortSignalLike | undefined): boolean {
   }
 }
 
+// Read a signal's abort reason defensively: a non-standard signal (or
+// polyfill) may not expose one, and a throwing getter must not break the
+// rejection path.
+export function signalReason(signal: AbortSignalLike | undefined): unknown {
+  if (signal === undefined) {
+    return undefined
+  }
+  try {
+    return signal.reason
+  } catch {
+    return undefined
+  }
+}
+
 // Generic callable — the runtime accepts any function shape
 // (next callbacks, pipe fns, error handlers) and validates at the call
 // site. The `never[]` parameters make every concrete signature assignable

@@ -46,6 +46,9 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
   }
 }
 
+// Exports for library consumers. `Dependencies`, `PipelineAPI` and
+// `PipelineDefinition` are aliases for the names master exported, kept for
+// backwards compatibility.
 export type {
   AbortSignalLike,
   AnyFunction,
@@ -59,13 +62,8 @@ export type {
   PipeRename,
   PipeResult,
 } from './common'
-// Exports for library consumers. `Dependencies`, `PipelineAPI` and
-// `PipelineDefinition` are aliases for the names master exported, kept for
-// backwards compatibility.
-export {
-  PipelineAbortedError,
-  signalAborted,
-} from './common'
+// The cancellation error consumers catch on an aborted `endAsync` run.
+export { PipelineAbortedError } from './common'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
 // Compatibility type matching the shape master exported as `Pipeline`.

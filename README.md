@@ -276,17 +276,21 @@ const run = sp('fetch-workflow')
   .pipe(() => repository.getWorkflow(), null, 'workflow')
   .endAsync('workflow', { signal: controller.signal })
 
-const workflow = run().catch((error) => {
-  if (error instanceof PipelineAbortedError) {
-    // cancelled — nothing to do
+try {
+  const workflow = await run()
+  // ... use workflow
+} catch (error) {
+  if (!(error instanceof PipelineAbortedError)) {
+    throw error   // a real pipeline failure, not a cancellation
   }
-})
+  // cancelled — nothing to do
+}
 
 controller.abort()   // rejects the pending run
 ```
 
 Cancellation races the run at the promise boundary: when the signal aborts,
-the returned promise rejects immediately (the abandon listener is detached),
+the returned promise rejects immediately (the abort listener is detached),
 and any later settle of the underlying run is discarded.
 
 ### Object-String Syntax

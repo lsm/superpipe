@@ -1,5 +1,4 @@
 import {
-  type AbortSignalLike,
   type AnyFunction,
   type EndAsyncOptions,
   type FunctionContainer,
@@ -10,26 +9,13 @@ import {
   type PipeParameter,
   type PipeResult,
   signalAborted,
+  signalReason,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
 import { runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
-
-// Read a signal's abort reason defensively: a non-standard signal (or
-// polyfill) may not expose one, and a throwing getter must not break the
-// rejection path.
-function abortReason(signal: AbortSignalLike | undefined): unknown {
-  if (signal === undefined) {
-    return undefined
-  }
-  try {
-    return signal.reason
-  } catch {
-    return undefined
-  }
-}
 
 export default class Pipeline implements PipelineBase {
   name: string
@@ -149,15 +135,12 @@ export default class Pipeline implements PipelineBase {
       errorHandler: this.errorHandler,
     }
 
-    return function (): Promise<PipeOutput> {
-      const args: PipeResult = Array.prototype.slice.apply(arguments)
-
-      // Already aborted: reject before starting the run — no pipe executes.
-      if (signalAborted(signal)) {
-        return Promise.reject(new PipelineAbortedError(abortReason(signal)))
-      }
-
-      const run = new Promise<PipeOutput>((resolve, reject) => {
+    // Run the pipeline and settle with its outcome. Synchronous pipe code and
+    // dependency getters run inside the promise executor, so a synchronous
+    // throw (a reserved-name input, an ambiguous continuation) rejects the
+    // returned promise rather than escaping the caller.
+    const runPipelinePromise = (args: PipeResult): Promise<PipeOutput> =>
+      new Promise<PipeOutput>((resolve, reject) => {
         runPipeline(args, pipeline, (outcome) => {
           if (outcome.error != null) {
             reject(outcome.error)
@@ -180,37 +163,64 @@ export default class Pipeline implements PipelineBase {
         })
       })
 
-      // No signal: the run's own settlement is the result.
-      if (signal === undefined) {
-        return run
+    return function (): Promise<PipeOutput> {
+      const args: PipeResult = Array.prototype.slice.apply(arguments)
+
+      // No signal (or a `null`/missing one): the run's own settlement is the
+      // result.
+      if (signal == null) {
+        return runPipelinePromise(args)
       }
 
-      // Race the run against the abort. The abort listener is detached on
-      // either terminal transition, so a long-lived shared controller never
-      // retains a completed run.
+      // Register the abort listener BEFORE the run starts. `runPipeline` runs
+      // synchronous pipe code (and dependency getters) inside the promise
+      // executor, so an abort fired synchronously during that initial cascade
+      // — a self-cancelling pipe, a throwing accessor — must not be missed.
+      // The `abort` event is one-shot: a listener attached after dispatch
+      // never fires. The listener is detached on either terminal transition,
+      // so a long-lived shared controller never retains a completed run.
       let onAbort: (() => void) | undefined
       const aborted = new Promise<PipeOutput>((_, reject) => {
         onAbort = (): void => {
-          reject(new PipelineAbortedError(abortReason(signal)))
+          reject(new PipelineAbortedError(signalReason(signal)))
         }
-        signal.addEventListener('abort', onAbort)
+        try {
+          signal.addEventListener('abort', onAbort)
+        } catch (err) {
+          // A non-conforming signal whose addEventListener throws rejects the
+          // run rather than escaping the caller synchronously.
+          reject(err)
+        }
       })
+
+      // Register-then-check: an abort may already have fired (a signal aborted
+      // at call time, or during the synchronous cascade below) and would be
+      // missed by `addEventListener` alone. Fire it here so the run rejects.
+      if (signalAborted(signal)) {
+        onAbort?.()
+      }
+
       const cleanup = (): void => {
-        if (onAbort !== undefined) {
-          try {
-            signal.removeEventListener('abort', onAbort)
-          } catch {
-            // A throwing removeEventListener must not break settlement.
-          }
-          onAbort = undefined
+        if (onAbort === undefined) {
+          return
         }
+        try {
+          signal.removeEventListener('abort', onAbort)
+        } catch {
+          // A throwing removeEventListener must not break settlement.
+        }
+      }
+
+      // A signal aborted at call time rejects before the first pipe runs.
+      if (signalAborted(signal)) {
+        return aborted.finally(cleanup)
       }
 
       // `Promise.race` settles with whichever comes first; `finally` detaches
       // the listener either way. The losing promise's settlement is simply
       // discarded — `race` never rethrows an unhandled rejection from the
       // side that lost.
-      return Promise.race([run, aborted]).finally(cleanup)
+      return Promise.race([runPipelinePromise(args), aborted]).finally(cleanup)
     }
   }
 }
