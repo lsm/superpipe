@@ -2474,3 +2474,19 @@ describe('endAsync contract (boolean dependencies)', () => {
     await expect(run()).resolves.toEqual(undefined)
   })
 })
+
+// --- review round 12 on endAsync: object-form duplicate next keys ---
+describe('endAsync contract (object-form next keys)', () => {
+  it('deduplicates a repeated next key in object-string inputs', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-objstring-dup')
+      .pipe(({ next }) => {
+        next()
+      }, '{next, next}')
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    // One wrapper exposed and counted — invoking it settles the run.
+    await expect(run()).resolves.toEqual('done')
+  })
+})

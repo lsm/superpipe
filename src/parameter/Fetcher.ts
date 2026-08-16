@@ -252,6 +252,11 @@ export default class Fetcher {
     const result: Record<string, PipeResult> = {}
 
     for (const key of this.keys) {
+      // A repeated key maps to the same value — create the `next` wrapper
+      // only once, so the pipe exposes and the run counts one callback.
+      if (key === 'next' && result.next !== undefined) {
+        continue
+      }
       result[key] = this.value(container, functions, key, nextCallbacks)
     }
 
