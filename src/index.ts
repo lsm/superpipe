@@ -1,4 +1,10 @@
-import type { FunctionContainer, PipeFunction, PipeOutput, PipeParameter } from './common'
+import type {
+  EndAsyncOptions,
+  FunctionContainer,
+  PipeFunction,
+  PipeOutput,
+  PipeParameter,
+} from './common'
 import { FN_TYPE } from './pipeline/builder'
 import type { PipeDefinition } from './pipeline/Pipe'
 import PipelineBuilder from './pipeline/Pipeline'
@@ -40,11 +46,10 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
   }
 }
 
-// Exports for library consumers. `Dependencies`, `PipelineAPI` and
-// `PipelineDefinition` are aliases for the names master exported, kept for
-// backwards compatibility.
 export type {
+  AbortSignalLike,
   AnyFunction,
+  EndAsyncOptions,
   FunctionContainer,
   PipeFunction,
   PipelineBase,
@@ -53,6 +58,13 @@ export type {
   PipeParameter,
   PipeRename,
   PipeResult,
+} from './common'
+// Exports for library consumers. `Dependencies`, `PipelineAPI` and
+// `PipelineDefinition` are aliases for the names master exported, kept for
+// backwards compatibility.
+export {
+  PipelineAbortedError,
+  signalAborted,
 } from './common'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
@@ -88,8 +100,12 @@ export interface PipelineAPI {
   end: (output?: PipeParameter) => Function
   // Promise-returning counterpart of end: the executor resolves with the
   // requested output (or undefined) when the run settles, and rejects
-  // with the active error on a failed run.
-  endAsync: (output?: PipeParameter) => (...args: unknown[]) => Promise<PipeOutput>
+  // with the active error on a failed run. `options.signal` rejects with
+  // PipelineAbortedError when that signal aborts.
+  endAsync: (
+    output?: PipeParameter,
+    options?: EndAsyncOptions,
+  ) => (...args: unknown[]) => Promise<PipeOutput>
 }
 
 // Compatibility aliases for the remaining type names master exported.

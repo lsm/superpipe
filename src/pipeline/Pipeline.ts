@@ -1,17 +1,35 @@
-import type {
-  AnyFunction,
-  FunctionContainer,
-  PipeFunction,
-  PipelineBase,
-  PipeOutput,
-  PipeParameter,
-  PipeResult,
+import {
+  type AbortSignalLike,
+  type AnyFunction,
+  type EndAsyncOptions,
+  type FunctionContainer,
+  type PipeFunction,
+  PipelineAbortedError,
+  type PipelineBase,
+  type PipeOutput,
+  type PipeParameter,
+  type PipeResult,
+  signalAborted,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
 import { runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
+
+// Read a signal's abort reason defensively: a non-standard signal (or
+// polyfill) may not expose one, and a throwing getter must not break the
+// rejection path.
+function abortReason(signal: AbortSignalLike | undefined): unknown {
+  if (signal === undefined) {
+    return undefined
+  }
+  try {
+    return signal.reason
+  } catch {
+    return undefined
+  }
+}
 
 export default class Pipeline implements PipelineBase {
   name: string
@@ -109,8 +127,19 @@ export default class Pipeline implements PipelineBase {
   // not when the synchronous cascade ends. Halted runs resolve with the
   // partial snapshot; errored runs reject with the active error even when
   // an error handler ran (the promise is an additional observer).
-  endAsync(output?: PipeParameter): (...args: unknown[]) => Promise<PipeOutput> {
+  //
+  // `options.signal` opts into AbortSignal cancellation: when the signal
+  // aborts, the returned promise rejects with `PipelineAbortedError` (never
+  // routed through the error handler) and the abort listener is detached.
+  // Cancellation is racing at the promise boundary — the underlying run is
+  // not interrupted, only abandoned; its late settle is discarded. A signal
+  // already aborted at call time rejects before the first pipe runs.
+  endAsync(
+    output?: PipeParameter,
+    options?: EndAsyncOptions,
+  ): (...args: unknown[]) => Promise<PipeOutput> {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
+    const signal = options?.signal
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
       name: this.name,
@@ -123,7 +152,12 @@ export default class Pipeline implements PipelineBase {
     return function (): Promise<PipeOutput> {
       const args: PipeResult = Array.prototype.slice.apply(arguments)
 
-      return new Promise<PipeOutput>((resolve, reject) => {
+      // Already aborted: reject before starting the run — no pipe executes.
+      if (signalAborted(signal)) {
+        return Promise.reject(new PipelineAbortedError(abortReason(signal)))
+      }
+
+      const run = new Promise<PipeOutput>((resolve, reject) => {
         runPipeline(args, pipeline, (outcome) => {
           if (outcome.error != null) {
             reject(outcome.error)
@@ -145,6 +179,38 @@ export default class Pipeline implements PipelineBase {
           }
         })
       })
+
+      // No signal: the run's own settlement is the result.
+      if (signal === undefined) {
+        return run
+      }
+
+      // Race the run against the abort. The abort listener is detached on
+      // either terminal transition, so a long-lived shared controller never
+      // retains a completed run.
+      let onAbort: (() => void) | undefined
+      const aborted = new Promise<PipeOutput>((_, reject) => {
+        onAbort = (): void => {
+          reject(new PipelineAbortedError(abortReason(signal)))
+        }
+        signal.addEventListener('abort', onAbort)
+      })
+      const cleanup = (): void => {
+        if (onAbort !== undefined) {
+          try {
+            signal.removeEventListener('abort', onAbort)
+          } catch {
+            // A throwing removeEventListener must not break settlement.
+          }
+          onAbort = undefined
+        }
+      }
+
+      // `Promise.race` settles with whichever comes first; `finally` detaches
+      // the listener either way. The losing promise's settlement is simply
+      // discarded — `race` never rethrows an unhandled rejection from the
+      // side that lost.
+      return Promise.race([run, aborted]).finally(cleanup)
     }
   }
 }
