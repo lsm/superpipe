@@ -97,11 +97,15 @@ function hasConfiguredDependency(
   key: string,
   isSettled?: () => boolean,
 ): boolean {
-  for (let obj: unknown = functions; obj != null; obj = Object.getPrototypeOf(obj)) {
+  let obj: unknown = functions
+  while (obj != null) {
     if (obj === Object.prototype) return false
     if (Object.prototype.hasOwnProperty.call(obj, key)) return true
-    // Metadata traps on a Proxy container may have aborted the run mid-walk;
-    // stop rather than running further traps after settlement.
+    // Metadata traps on a Proxy container may abort the run mid-walk: check
+    // both after the presence probe and after the prototype read, so no
+    // later trap runs once the run has settled.
+    if (isSettled?.()) return false
+    obj = Object.getPrototypeOf(obj)
     if (isSettled?.()) return false
   }
   return false

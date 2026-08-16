@@ -3612,4 +3612,96 @@ describe('endAsync abort contract (review round 10)', () => {
     signal.abort()
     await expect(outcome).rejects.toBeInstanceOf(PipelineAbortedError)
   })
+
+  it('settles an adopted output even when the adoption cleanup throws', async () => {
+    const signal = {
+      aborted: false,
+      listener: undefined,
+      addEventListener(_type, listener) {
+        this.listener = listener
+      },
+      removeEventListener() {
+        throw new Error('cleanup boom')
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('adopt-cleanup-throw')
+      .pipe(
+        () => ({
+          out: {
+            // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+            then(resolve) {
+              resolve('v')
+            },
+          },
+        }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal })
+
+    // Without containment the throwing removeEventListener lands after
+    // `settled` was set but before `res`, leaving the run pending forever.
+    await expect(run()).resolves.toEqual('v')
+  })
+
+  it('observes rejected entries abandoned by multi-key selection', async () => {
+    const controller = new AbortController()
+    const rejected = Promise.reject(new Error('original'))
+    const sp = superpipe({
+      get first() {
+        controller.abort()
+        return rejected
+      },
+      get second() {
+        return 'b'
+      },
+    })
+    const run = sp('abort-multikey-abandoned')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync(['first', 'second'], { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    // The rejected promise inside the abandoned array wrapper must be
+    // observed, not reported unhandled once microtasks drain.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('stops dependency validation when a prototype trap aborts', async () => {
+    const controller = new AbortController()
+    let postAbortTraps = 0
+    // The tail of the chain: its descriptor trap must never run after the
+    // getPrototypeOf trap on the head aborts mid-walk.
+    const tail = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor(t, key) {
+          if (controller.signal.aborted) {
+            postAbortTraps += 1
+          }
+          return Reflect.getOwnPropertyDescriptor(t, key)
+        },
+      },
+    )
+    let traversals = 0
+    const functions = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          traversals += 1
+          if (traversals === 1) {
+            controller.abort() // abort while returning the next link
+          }
+          return tail
+        },
+      },
+    )
+    const sp = superpipe(functions)
+    const run = sp('abort-proto-trap')
+      .pipe(() => ({ first: 1 }))
+      .endAsync('first', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(postAbortTraps).to.equal(0)
+  })
 })

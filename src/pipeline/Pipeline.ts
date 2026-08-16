@@ -9,6 +9,7 @@ import {
   type PipeOutput,
   type PipeParameter,
   type PipeResult,
+  RE_IS_OBJ_STRING,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
@@ -34,6 +35,32 @@ function abortReason(signal: AbortSignalLike): unknown {
   } catch {
     return undefined
   }
+}
+
+// Observe the values abandoned by a cancelled output selection. A multi-key
+// spec fetches an internally built array (or plain object, for object-string
+// syntax); only its entries can be rejected native promises, so each is
+// observed individually — reading the wrapper itself runs no user code. A
+// single-key spec fetches the raw value, whose own properties may be hostile
+// accessors, so it is observed as a whole and never probed key by key.
+function observeAbandonedSelection(value: PipeOutput, wrapped: boolean): void {
+  if (!wrapped) {
+    observeOriginalRejection(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      observeOriginalRejection(entry)
+    }
+    return
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const key of Object.keys(value)) {
+      observeOriginalRejection((value as Record<string, PipeResult>)[key])
+    }
+    return
+  }
+  observeOriginalRejection(value)
 }
 
 export default class Pipeline implements PipelineBase {
@@ -137,6 +164,12 @@ export default class Pipeline implements PipelineBase {
     options?: EndAsyncOptions,
   ): (...args: unknown[]) => Promise<PipeOutput> {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
+    // A multi-key output spec fetches an internally built wrapper (array, or
+    // plain object for object-string syntax); a single name fetches the raw
+    // value. The distinction governs how an abandoned selection is observed.
+    const wrapped =
+      output !== undefined &&
+      (Array.isArray(output) || (typeof output === 'string' && RE_IS_OBJ_STRING.test(output)))
     const signal = options?.signal
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
@@ -195,11 +228,11 @@ export default class Pipeline implements PipelineBase {
             }
             // An output accessor may have aborted the signal while being
             // fetched (the run's listener is already detached); a non-thenable
-            // result must still reject rather than resolve. The fetched value
-            // may be a rejected branded promise the run will never adopt —
-            // observe its original rejection so it is not reported unhandled.
+            // result must still reject rather than resolve. The abandoned
+            // selection may contain rejected branded promises the run will
+            // never adopt — observe each so it is not reported unhandled.
             if (signal?.aborted) {
-              observeOriginalRejection(value as PipeResult)
+              observeAbandonedSelection(value, wrapped)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
@@ -225,7 +258,7 @@ export default class Pipeline implements PipelineBase {
             // branded promise is never adopted on this path — observe its
             // original rejection so it is not reported unhandled.
             if (signal?.aborted) {
-              observeOriginalRejection(value as PipeResult)
+              observeAbandonedSelection(value, wrapped)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
@@ -238,7 +271,15 @@ export default class Pipeline implements PipelineBase {
                 let onAbort: (() => void) | undefined
                 const detach = (): void => {
                   if (onAbort !== undefined && signal !== undefined) {
-                    signal.removeEventListener('abort', onAbort)
+                    // A signal whose removeEventListener throws must not
+                    // prevent the already-determined result from settling
+                    // the adoption — `settled` is already true, so a later
+                    // finish callback could not recover it.
+                    try {
+                      signal.removeEventListener('abort', onAbort)
+                    } catch {
+                      // Contained: settle regardless.
+                    }
                   }
                 }
                 const finishResolve = (v: PipeOutput): void => {
