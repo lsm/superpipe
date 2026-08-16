@@ -22,11 +22,21 @@ export interface NextCallback {
 // the wrappers created by the fetch, and the buffer holding their
 // synchronous invocations (in call order) until the pipe's return channel
 // is known. Owned by the executor, so reentrant runs of the same pipeline
-// never share buffer state.
+// never share buffer state. `onConsumed` fires once per wrapper when it is
+// invoked or invalidated, so an outstanding-continuation count can drop.
 export interface NextCallbacks {
   wrappers: NextCallback[]
   holding: boolean
   held: { error?: Error; value?: PipeResult }[]
+  onConsumed?: () => void
+  // Offers a wrapper-raised programming error (a duplicate invocation) to
+  // the run: true when the error was routed to a completion observer,
+  // false when it must be thrown onto the invoking stack.
+  onError?: (err: Error) => boolean
+  // The originating pipe's index: a retained callback fired later merges
+  // its value through that pipe's producer, even after the step counter
+  // advanced past it.
+  pipeIndex?: number
 }
 
 // Wrap a `next` callback so it can only be invoked once. The guard is bound
@@ -40,12 +50,22 @@ export interface NextCallbacks {
 function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
+  // The wrapper counts as a live continuation from creation until it is
+  // invoked or invalidated — exactly once.
+  let counted = true
+  const consume = (): void => {
+    if (counted) {
+      counted = false
+      callbacks?.onConsumed?.()
+    }
+  }
   // Cleared on disable: the underlying continuation closes over the whole
   // per-run execution state, and a wrapper retained by a long-lived timer
   // or listener must not keep that state reachable after invalidation.
-  let advance: ((error?: Error, value?: PipeResult) => void) | null = next as (
+  let advance: ((error?: Error, value?: PipeResult, fromStep?: number) => void) | null = next as (
     error?: Error,
     value?: PipeResult,
+    fromStep?: number,
   ) => void
   const wrapped = ((error?: Error, value?: PipeResult): void => {
     // Invalidation is checked before the duplicate-call guard: a late call
@@ -55,17 +75,29 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       return
     }
     if (called) {
-      throw new NextCalledTwiceError()
+      // A duplicate invocation from a foreign callback stack: route it to
+      // the run's completion observer when one exists — throwing there
+      // would be uncatchable and could terminate the process.
+      const duplicate = new NextCalledTwiceError()
+      if (callbacks?.onError?.(duplicate)) {
+        return
+      }
+      throw duplicate
     }
     called = true
+    consume()
     if (callbacks?.holding) {
       callbacks.held.push({ error, value })
       return
     }
-    advance?.(error, value)
+    advance?.(error, value, callbacks?.pipeIndex)
   }) as NextCallback
   wrapped.disable = (): void => {
+    if (disabled) {
+      return
+    }
     disabled = true
+    consume()
     advance = null
   }
   return wrapped
@@ -220,6 +252,11 @@ export default class Fetcher {
     const result: Record<string, PipeResult> = {}
 
     for (const key of this.keys) {
+      // A repeated key maps to the same value — create the `next` wrapper
+      // only once, so the pipe exposes and the run counts one callback.
+      if (key === 'next' && result.next !== undefined) {
+        continue
+      }
       result[key] = this.value(container, functions, key, nextCallbacks)
     }
 

@@ -1843,3 +1843,650 @@ describe('promise continuation contract (verified observation)', () => {
     expect(handlerRuns).to.equal(1)
   })
 })
+
+// --- endAsync contract: promise-returning .end (#48) ---
+describe('endAsync contract', () => {
+  it('resolves a fully synchronous pipeline immediately', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-sync')
+      .pipe(() => 'v', null, 'out')
+      .endAsync('out')
+
+    await expect(run()).resolves.toEqual('v')
+  })
+
+  it('resolves a promise-returning pipeline after it settles', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-promise')
+      .pipe(() => Promise.resolve('async-value'), null, 'out')
+      .endAsync('out')
+
+    await expect(run()).resolves.toEqual('async-value')
+  })
+
+  it('resolves a next-based pipeline after the callback fires', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-next')
+      .pipe(
+        (next) => {
+          setTimeout(() => next(null, 'late-value'), 5)
+        },
+        'next',
+        'out',
+      )
+      .endAsync('out')
+
+    await expect(run()).resolves.toEqual('late-value')
+  })
+
+  it('resolves undefined when no output spec is given', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-no-output')
+      .pipe(() => 'v', null, 'out')
+      .endAsync()
+
+    await expect(run()).resolves.toEqual(undefined)
+  })
+
+  it('rejects a failed run instead of throwing synchronously', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-no-handler')
+      .pipe(() => {
+        throw new Error('boom')
+      })
+      .endAsync('out')
+
+    // The failure becomes a rejection, never a sync throw out of run().
+    await expect(run()).rejects.toThrow('boom')
+  })
+
+  it('runs the error handler and still rejects', async () => {
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('endasync-with-handler')
+      .pipe(() => Promise.reject(new Error('async boom')))
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('async boom')
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('resolves a halted run with the partial snapshot', async () => {
+    const sp = superpipe({ isBlocked: false })
+    const run = sp('endasync-halted')
+      .input(['user'])
+      .pipe(() => 'kept-value', null, 'kept')
+      .pipe('isBlocked', 'user') // raw boolean dep false → halt
+      .pipe(() => 'never', null, 'never')
+      .endAsync('kept')
+
+    await expect(run()).resolves.toEqual('kept-value')
+  })
+
+  it('rejects once when a pending continuation races an error', async () => {
+    let rejections = 0
+    const sp = superpipe({})
+    const run = sp('endasync-error-wins')
+      .pipe((next) => {
+        next() // advance; the downstream pipe starts a pending promise
+        throw new Error('first error')
+      }, 'next')
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(resolve, 5)
+          }),
+        null,
+        'late',
+      )
+      .error(() => {}, 'error')
+      .endAsync('out')
+
+    await run().catch(() => {
+      rejections += 1
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(rejections).to.equal(1)
+  })
+
+  it('rejects even when a throwing handler runs', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-throwing-handler')
+      .pipe(() => {
+        throw new Error('original')
+      })
+      .error(() => {
+        throw new Error('handler exploded')
+      }, 'error')
+      .endAsync('out')
+
+    // Settled before the handler ran, so the promise still rejects with
+    // the original error rather than hanging.
+    await expect(run()).rejects.toThrow('original')
+  })
+})
+
+// --- review round 1 on endAsync: async halts, async exceptions, error priority ---
+describe('endAsync contract (settlement edge cases)', () => {
+  it('settles a promise-based flow-control halt', async () => {
+    const sp = superpipe({ isBlocked: async () => true })
+    const run = sp('endasync-promise-halt')
+      .input(['user'])
+      .pipe('!isBlocked', 'user') // resolves true → inverted → halt
+      .pipe(() => 'never', null, 'never')
+      .endAsync('out')
+
+    // Halted: resolves with the partial snapshot — 'out' was never produced.
+    await expect(run()).resolves.toEqual(undefined)
+  })
+
+  it('rejects when an async continuation raises a namespace error', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-async-namespace')
+      // Undeclared object return merges a reserved name from a microtask.
+      .pipe(() => Promise.resolve({ next: () => {} }), null)
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('reserved')
+  })
+
+  it('rejects when an error wins after a synchronous flush completes the run', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-flush-error')
+      .pipe((next) => {
+        next() // held; downstream completes synchronously on flush
+        throw new Error('pipe error')
+      }, 'next')
+      .pipe(() => 'done', null, 'out')
+      .error(() => {}, 'error')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('pipe error')
+  })
+})
+
+// --- review round 2 on endAsync: foreign-stack exceptions and fetch failures ---
+describe('endAsync contract (foreign-stack exceptions)', () => {
+  it('rejects when a retained next raises from a foreign callback stack', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-late-next-throw')
+      .pipe((next) => {
+        // The reserved-name merge throws after runPipeline returned, on
+        // the timer's stack.
+        setTimeout(() => next(null, { next: () => {} }), 5)
+      }, 'next')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('reserved')
+  })
+
+  it('rejects when the settled output lookup throws', async () => {
+    const functions = {
+      get out() {
+        throw new Error('getter threw')
+      },
+    }
+    const sp = superpipe(functions)
+    const run = sp('endasync-fetch-throw')
+      .pipe(() => 'v', null, 'value')
+      .endAsync('out') // 'out' falls back to the configured getter
+
+    await expect(run()).rejects.toThrow('getter threw')
+  })
+
+  it('surfaces async failures as unhandled rejections for sync .end() runs', async () => {
+    const seen = []
+    const onUnhandled = (err) => seen.push(err)
+    process.on('unhandledRejection', onUnhandled)
+    const sp = superpipe({})
+    const run = sp('end-async-unhandled')
+      .pipe(() => Promise.reject(new Error('boom'))) // no handler, no observer
+      .end()
+
+    run()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    process.off('unhandledRejection', onUnhandled)
+    // Preserved pre-endAsync behavior: the failure surfaces on the
+    // reaction stack instead of being swallowed.
+    expect(seen.length).to.equal(1)
+    expect(seen[0].message).to.equal('boom')
+  })
+})
+
+// --- review round 3 on endAsync: in-flight continuations ---
+describe('endAsync contract (in-flight continuations)', () => {
+  it('waits for an in-flight continuation before settling and merges through its own pipe', async () => {
+    let resolveAsync
+    let settledEarly = false
+    const sp = superpipe({})
+    const run = sp('endasync-inflight')
+      .pipe(
+        (first, second) => {
+          first() // starts the pending promise pipe below
+          second() // advances past it while it is in flight
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveAsync = resolve
+          }),
+        null,
+        'late',
+      )
+      .pipe(() => 'done', null, 'out')
+      .endAsync('{late, out}')
+
+    const outcome = run()
+    outcome.then(() => {
+      settledEarly = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // Still waiting: the second next advanced past the pending pipe, but
+    // the run cannot complete while its promise is in flight.
+    expect(settledEarly).to.equal(false)
+
+    resolveAsync('late-value')
+    // The late value merges through its own pipe's producer, not the
+    // final pipe's.
+    await expect(outcome).resolves.toEqual({ late: 'late-value', out: 'done' })
+  })
+})
+
+// --- review round 4 on endAsync: slot, sibling halts, terminal exceptions ---
+describe('endAsync contract (sibling continuations)', () => {
+  it('does not fabricate output from a rejected continuation', async () => {
+    let observedOut = 'unset'
+    const sp = superpipe({})
+    const run = sp('endasync-reject-index')
+      .pipe(() => Promise.reject(new Error('reject')), null, 'out')
+      .error(
+        (_error, out) => {
+          observedOut = out
+        },
+        ['error', 'out'],
+      )
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('reject')
+    expect(observedOut).to.equal(undefined) // no fabricated out: 0
+  })
+
+  it('waits for other in-flight continuations when an async guard halts', async () => {
+    let resolveAsync
+    let settledEarly = false
+    const sp = superpipe({ allow: async () => true })
+    const run = sp('endasync-async-halt-pending')
+      .input(['user'])
+      .pipe(
+        (first, second) => {
+          first()
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveAsync = resolve
+          }),
+        null,
+        'late',
+      )
+      .pipe('!allow', 'user') // resolves true → inverted → async halt
+      .endAsync('{late}')
+
+    const outcome = run({ role: 'admin' })
+    outcome.then(() => {
+      settledEarly = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The guard halted, but the value pipe is still in flight.
+    expect(settledEarly).to.equal(false)
+
+    resolveAsync('late-value')
+    await expect(outcome).resolves.toEqual({ late: 'late-value' })
+  })
+
+  it('marks continuation exceptions terminal for other in-flight continuations', async () => {
+    let sideEffect = false
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-exception-terminal')
+      .pipe(
+        (first, second) => {
+          first()
+          retained = second // the sibling stays live past the exception
+        },
+        ['next', 'next'],
+      )
+      // Resolves with a reserved name — its merge raises OutputNameError.
+      .pipe(() => Promise.resolve({ next: () => {} }), null)
+      .pipe(() => {
+        sideEffect = true
+      })
+      .endAsync('out')
+
+    const outcome = run()
+    // Attach the handler immediately so the eventual rejection is never
+    // unhandled while the test waits out the timers.
+    const assertion = expect(outcome).rejects.toThrow('reserved')
+    await new Promise((resolve) => setTimeout(resolve, 10)) // exception lands
+    // The late sibling would also violate the namespace — it must be
+    // discarded, not merged or executed.
+    retained(null, { next: () => {} })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await assertion
+    // The sibling continuation is discarded: no post-rejection execution.
+    expect(sideEffect).to.equal(false)
+  })
+})
+
+// --- review round 5 on endAsync: halt preserved across siblings ---
+describe('endAsync contract (halt preservation)', () => {
+  it('preserves a halt while sibling continuations finish', async () => {
+    let sideEffect = false
+    let resolveSlow
+    const sp = superpipe({ allow: async () => true })
+    const run = sp('endasync-halt-preserved')
+      .input(['user'])
+      .pipe(
+        (first, second) => {
+          first()
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveSlow = resolve
+          }),
+        null,
+        'late',
+      )
+      .pipe('!allow', 'user') // async halt: resolves true, inverted to false
+      .pipe(() => {
+        sideEffect = true
+      }, 'late') // after the guard — must never run
+      .endAsync('{late}')
+
+    const outcome = run({ role: 'admin' })
+    await new Promise((resolve) => setTimeout(resolve, 10)) // guard halted
+    resolveSlow('late-value')
+    const result = await outcome
+    // The sibling merged its own output, but nothing after the halt ran.
+    expect(result.late).to.equal('late-value')
+    expect(sideEffect).to.equal(false)
+  })
+})
+
+// --- review round 6 on endAsync: retained next callbacks ---
+describe('endAsync contract (retained continuations)', () => {
+  it('waits for a retained next callback before resolving', async () => {
+    let settledEarly = false
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-retained-next')
+      .pipe(
+        (first, second) => {
+          first() // drives the pipeline onward
+          retained = second // still live, fired later from a timer
+        },
+        ['next', 'next'],
+      )
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out')
+
+    const outcome = run()
+    outcome.then(() => {
+      settledEarly = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The retained callback is a live continuation — the run stays open.
+    expect(settledEarly).to.equal(false)
+
+    retained()
+    await expect(outcome).resolves.toEqual('done')
+  })
+
+  it('rejects when a retained next callback delivers an error late', async () => {
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-retained-error')
+      .pipe(
+        (_first, second) => {
+          retained = second
+        },
+        ['next', 'next'],
+      )
+      .pipe(() => 'done', null, 'out')
+      .error(() => {}, 'error')
+      .endAsync('out')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('late failure')
+    retained(new Error('late failure'))
+    await assertion
+  })
+})
+
+// --- review round 7 on endAsync: skipped optionals, post-error discards, fromStep ---
+describe('endAsync contract (wrapper lifecycle)', () => {
+  it('settles when an optional pipe declaring next is skipped', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-optional-next')
+      .input(['user'])
+      .pipe('?missing', ['next', 'missingValue'], 'out') // skipped: dep missing
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    // Without wrapper invalidation the skipped pipe's counted callback
+    // holds the run open forever.
+    await expect(run()).resolves.toEqual('done')
+  })
+
+  it('discards a retained next after the run failed', async () => {
+    let retained
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('endasync-retained-after-error')
+      .pipe(
+        (_first, second) => {
+          retained = second
+          throw new Error('pipe error')
+        },
+        ['next', 'next'],
+      )
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('out')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('pipe error')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // Would raise OutputNameError on the test's stack if late callbacks
+    // still entered the pipeline after the terminal error.
+    retained(null, { next: () => {} })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await assertion
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('binds a retained next value to its originating pipe', async () => {
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-retained-fromstep')
+      .pipe(
+        (first, second) => {
+          retained = second // fires later; its value belongs to this pipe
+          first() // advance now
+        },
+        ['next', 'next'],
+        'firstValue',
+      )
+      .pipe(() => 'second-value', null, 'secondValue')
+      .endAsync('{firstValue, secondValue}')
+
+    const outcome = run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    retained(null, 'the-first-value')
+    // The late value merges through the first pipe's producer, not the
+    // last pipe's.
+    await expect(outcome).resolves.toEqual({
+      firstValue: 'the-first-value',
+      secondValue: 'second-value',
+    })
+  })
+})
+
+// --- review round 8 on endAsync: handler throws from late callbacks, held fromStep ---
+describe('endAsync contract (late-callback handlers)', () => {
+  it('swallows a throwing handler invoked from a late callback', async () => {
+    let retained
+    const seen = []
+    const onUnhandled = (err) => seen.push(err)
+    const sp = superpipe({})
+    const run = sp('endasync-throwing-handler-late')
+      .pipe(
+        (_first, second) => {
+          retained = second
+        },
+        ['next', 'next'],
+      )
+      .error(() => {
+        throw new Error('handler exploded')
+      }, 'error')
+      .endAsync('out')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('late error')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    process.on('unhandledRejection', onUnhandled)
+    setTimeout(() => retained(new Error('late error')), 5)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    process.off('unhandledRejection', onUnhandled)
+    await assertion
+    // The run already rejected with the original error; the handler's own
+    // throw must not escape onto the timer stack.
+    expect(seen).to.deep.equal([])
+  })
+
+  it('binds held next values to their originating pipe', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-held-fromstep')
+      .pipe(
+        (first, second) => {
+          first(null, 'first-value')
+          second(null, 'second-value') // both held; both belong to this pipe
+        },
+        ['next', 'next'],
+        'value',
+      )
+      .pipe((v) => 'next:' + v, 'value', 'downstream')
+      .endAsync('{value, downstream}')
+
+    const result = await run()
+    // The second held value merges through the first pipe's producer.
+    expect(result).toEqual({ value: 'second-value', downstream: 'next:first-value' })
+  })
+})
+
+// --- review round 9 on endAsync: downstream deferral ---
+describe('endAsync contract (downstream deferral)', () => {
+  it('defers downstream pipes until sibling continuations merge', async () => {
+    let resolveA
+    const sp = superpipe({})
+    const run = sp('endasync-sibling-order')
+      .pipe(
+        (first, second) => {
+          first()
+          second()
+        },
+        ['next', 'next'],
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveA = resolve
+          }),
+        null,
+        'a',
+      )
+      .pipe((a, b) => [a, b], ['a', 'b'], ['first', 'second'])
+      .endAsync('{first, second}')
+
+    const outcome = run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // The consumer pipe waits for the promise pipe's output — it must not
+    // run early with undefined inputs.
+    resolveA('a-value')
+    await expect(outcome).resolves.toEqual({ first: 'a-value', second: undefined })
+  })
+})
+
+// --- review round 10 on endAsync: duplicate late callbacks ---
+describe('endAsync contract (duplicate callbacks)', () => {
+  it('routes duplicate late callbacks into the settlement', async () => {
+    let retained
+    const sp = superpipe({})
+    const run = sp('endasync-duplicate-late')
+      .pipe((next) => {
+        retained = next
+      }, 'next')
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    const outcome = run()
+    const assertion = expect(outcome).rejects.toThrow('more than once')
+    retained() // advances the run to completion
+    retained() // duplicate: rejected, not thrown onto the caller stack
+    await assertion
+  })
+})
+
+// --- review round 11 on endAsync: boolean deps with a next input ---
+describe('endAsync contract (boolean dependencies)', () => {
+  it('evaluates a raw boolean dependency normally despite a next input', async () => {
+    const sp = superpipe({ enabled: true })
+    const run = sp('endasync-bool-with-next')
+      .input(['user'])
+      .pipe('enabled', 'next') // degenerate declaration — boolean cannot call next
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    await expect(run()).resolves.toEqual('done')
+  })
+
+  it('halts on a false raw boolean dependency despite a next input', async () => {
+    const sp = superpipe({ enabled: false })
+    const run = sp('endasync-bool-with-next-halt')
+      .input(['user'])
+      .pipe('enabled', 'next')
+      .pipe(() => 'never', null, 'never')
+      .endAsync('never')
+
+    await expect(run()).resolves.toEqual(undefined)
+  })
+})
+
+// --- review round 12 on endAsync: object-form duplicate next keys ---
+describe('endAsync contract (object-form next keys)', () => {
+  it('deduplicates a repeated next key in object-string inputs', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-objstring-dup')
+      .pipe(({ next }) => {
+        next()
+      }, '{next, next}')
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done')
+
+    // One wrapper exposed and counted — invoking it settles the run.
+    await expect(run()).resolves.toEqual('done')
+  })
+})

@@ -31,7 +31,7 @@ function flushNextCallbacks(
   while (callbacks.held.length > 0) {
     const held = callbacks.held.shift()
     if (held) {
-      next(state, pipeline, held.error, held.value)
+      next(state, pipeline, held.error, held.value, callbacks.pipeIndex)
     }
   }
 }
@@ -51,11 +51,14 @@ interface ResultContainer {
 
 // Typed continuation view: AnyFunction's `never[]` parameters maximize
 // assignability, but invoking the continuation needs a concrete signature.
+// `fromStep` names the pipe a continuation's value belongs to — an adopted
+// promise may settle after the step counter advanced past its pipe.
 type Continuation = (
   state: PipeState,
   pipeline: PipelineBase,
   error?: Error | null,
   value?: PipeResult,
+  fromStep?: number,
 ) => void
 
 // Typed error-handler view, same reasoning as Continuation.
@@ -163,9 +166,70 @@ interface PipeState {
   // The active error travels on the execution state, never the container —
   // a data value named `error` must not be mistaken for a failure.
   activeError: Error | null
-  // True while an error handler (or the no-handler throw) is unwinding —
+  // True while an error handler (or the no-handler rethrow) is unwinding —
   // such exceptions must not be treated as fresh pipe errors.
   handlingError: boolean
+  // True once the run reached a terminal state — every pipe executed, a
+  // flow-control halt fired, or an error was dispatched. Exactly one
+  // terminal transition reports to `onSettled`.
+  settled: boolean
+  // True while a success settlement is queued: success is deferred by one
+  // job so an error dispatched during the same synchronous unwind (a held
+  // next flushed from a throwing pipe's catch) wins over it.
+  settling: boolean
+  // Adopted promise continuations still in flight. Reaching the end of the
+  // pipes is not completion while one is pending — with duplicate `next`
+  // inputs, a later callback can advance past a pipe whose promise has
+  // not settled yet.
+  pending: number
+  // True once a flow-control halt ended progression. Late sibling
+  // continuations still merge their own outputs, but no further pipes
+  // run — the run settles with the partial snapshot.
+  halted: boolean
+  // Optional run-completion observer (`.endAsync`): receives the container
+  // snapshot and the active error, if any. Absent for sync `.end()` runs.
+  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
+}
+
+// Report the run's terminal transition exactly once. Errors finalize
+// synchronously — an error dispatched after a completed cascade must win.
+// Success is deferred by one job: the cascade may have completed inside a
+// flush while a pipe error is still unwinding, and that error takes
+// priority over the not-yet-final success.
+function settle(state: PipeState, error: Error | null): void {
+  // Without a completion observer there is nothing to report — and no
+  // settlement job should be scheduled: high-throughput synchronous runs
+  // must not accumulate microtask backlog.
+  if (!state.onSettled) {
+    return
+  }
+  if (error == null) {
+    if (state.settled || state.settling) {
+      return
+    }
+    state.settling = true
+    Promise.resolve().then(() => {
+      if (state.settled) {
+        return
+      }
+      state.settled = true
+      state.onSettled?.({ container: state.container, error: null })
+    })
+    return
+  }
+  // An error overrides a queued success: mark terminal synchronously; the
+  // deferred success job observes `settled` and no-ops.
+  if (state.settled) {
+    return
+  }
+  // Errors that bypass the dispatch path (continuation exceptions caught
+  // in jobs) still mark the run terminal, so sibling in-flight
+  // continuations are discarded instead of merging into a failed run.
+  if (state.activeError == null) {
+    state.activeError = error
+  }
+  state.settled = true
+  state.onSettled?.({ container: state.container, error })
 }
 
 function executePipe(
@@ -187,8 +251,34 @@ function executePipe(
     : pipe.fn
   // `next` callback state for this pipe invocation, owned locally so a
   // reentrant nested run of the same pipeline cannot clobber it.
-  const nextCallbacks: NextCallbacks = { wrappers: [], holding: false, held: [] }
+  const nextCallbacks: NextCallbacks = {
+    wrappers: [],
+    holding: false,
+    held: [],
+    onConsumed: (): void => {
+      state.pending -= 1
+    },
+    onError: (err: Error): boolean => {
+      if (!state.onSettled) {
+        // No completion observer: surface the programming error on the
+        // invoking stack, as before observers existed.
+        return false
+      }
+      // An observed run receives the failure as a rejection; after
+      // settlement there is nothing left to report and the duplicate is
+      // discarded.
+      if (!state.settled) {
+        settle(state, err)
+      }
+      return true
+    },
+    pipeIndex: state.step - 1,
+  }
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
+  // Each wrapper handed to the pipe is a live continuation until invoked
+  // or invalidated: a retained `next` keeps the run open exactly like an
+  // adopted promise does.
+  state.pending += nextCallbacks.wrappers.length
   const advance = next as unknown as Continuation
 
   let result: PipeResult
@@ -198,6 +288,9 @@ function executePipe(
   // inside object-string inputs, whose wrapped object hides missing values
   // from a top-level indexOf.
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
+    // The skipped pipe never receives its callbacks — consume them so the
+    // run is not held open by wrappers that will never fire.
+    invalidateNextCallbacks(nextCallbacks)
     advance(state, pipeline)
     return
   } else if (typeof fn === 'function') {
@@ -235,7 +328,10 @@ function executePipe(
       return
     }
   } else if (typeof fn === 'boolean') {
-    // Raw boolean dependency used for flow control.
+    // Raw boolean dependency used for flow control. Any `next` wrapper
+    // fetched for this pipe can never fire — the boolean is evaluated
+    // directly — so consume it rather than holding the run open.
+    invalidateNextCallbacks(nextCallbacks)
     result = fn
   } else {
     // Throw an exception when the dependency is not something we can execute.
@@ -321,7 +417,15 @@ function executePipe(
   // captured `then` is assimilated through a real promise so a throwing
   // `then` call becomes a rejection.
   if (pipe.fetcher.hasNext === false && thenable) {
+    // The step this pipe occupies: its settled value merges through this
+    // pipe's producer even if the step counter advanced past it (duplicate
+    // next callbacks can run later pipes while this promise is in flight).
+    const pipeIndex = state.step - 1
+    // An adopted promise is a continuation in flight: reaching the end of
+    // the pipes is not completion until it settles.
+    state.pending += 1
     const onFulfilled = (value: PipeResult): void => {
+      state.pending -= 1
       // A terminal error already won this execution: a continuation that
       // was pending when the error path was entered resolves too late and
       // is discarded.
@@ -334,21 +438,52 @@ function executePipe(
       if (pipe.not && typeof resolved === 'boolean') {
         resolved = !resolved
       }
-      if (!(isFlowControl && resolved === false)) {
-        advance(state, pipeline, null, resolved)
+      try {
+        if (isFlowControl && resolved === false) {
+          // A flow-control halt through a resolved boolean — the
+          // synchronous halt branch is never reached on this path. Other
+          // continuations may still be in flight; the last one to land
+          // merges its output and settles the run.
+          state.halted = true
+          if (state.pending === 0) {
+            settle(state, null)
+          }
+          return
+        }
+        advance(state, pipeline, null, resolved, pipeIndex)
+      } catch (err) {
+        // The continuation threw in a job with no caller stack (for
+        // example a namespace violation raised while merging its output):
+        // an observer receives it as a rejection; without one, the
+        // exception surfaces as an unhandled rejection, as before
+        // observers existed.
+        if (!state.onSettled) {
+          throw err
+        }
+        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
     }
     const onRejected = (reason: unknown): void => {
+      state.pending -= 1
       if (state.activeError != null) {
         return
       }
       // A falsey rejection reason must not be mistaken for success by
       // the error truthiness check downstream.
-      advance(
-        state,
-        pipeline,
-        (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
-      )
+      try {
+        advance(
+          state,
+          pipeline,
+          (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+          undefined,
+          pipeIndex,
+        )
+      } catch (err) {
+        if (!state.onSettled) {
+          throw err
+        }
+        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+      }
     }
 
     if (thenFn === Promise.prototype.then) {
@@ -417,12 +552,22 @@ function executePipe(
   // channel is known to be unambiguous.
   flushNextCallbacks(state, pipeline, advance, nextCallbacks)
 
-  // Auto-advance when the pipe does not request `next`, unless a
-  // flow-control pipe's boolean is `false` (halt). Duplicate-`next`
-  // detection lives on the per-pipe callback handed out by the Fetcher,
-  // not here.
-  if (pipe.fetcher.hasNext === false && !(isFlowControl && result === false)) {
+  // Auto-advance when the pipe does not own its continuation — it did not
+  // request `next`, or the dependency is a raw boolean that could never
+  // call one — unless a flow-control pipe's boolean is `false` (halt).
+  // Duplicate-`next` detection lives on the per-pipe callback handed out
+  // by the Fetcher, not here.
+  const ownsContinuation = pipe.fetcher.hasNext && typeof fn !== 'boolean'
+  if (!ownsContinuation && !(isFlowControl && result === false)) {
     advance(state, pipeline, null, result)
+  } else if (!ownsContinuation) {
+    // Flow-control halt: progression ended. A guard declining is a normal
+    // result, not a failure — resolve with the partial snapshot once no
+    // sibling continuation is in flight.
+    state.halted = true
+    if (state.pending === 0) {
+      settle(state, null)
+    }
   }
 }
 
@@ -434,18 +579,65 @@ function executePipe(
  * @param  {Error|null}     error     Error object if any.
  * @param  {Any}            value     The return value of the previousPipe.
  */
-function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: PipeResult): void {
+// Continuation entry point. The pipeline continuation itself may be
+// invoked from a foreign callback stack (a pipe's retained `next` fired
+// from a timer or event emitter) after `runPipeline` has returned; an
+// exception raised there (a namespace violation during the merge, a
+// throwing error handler) must reach the completion observer as a
+// rejection rather than escape uncatchable — and without an observer it
+// surfaces on the invoking stack, as it did before observers existed.
+function next(
+  state: PipeState,
+  pipeline: PipelineBase,
+  error?: Error,
+  value?: PipeResult,
+  fromStep?: number,
+): void {
+  // A terminal state ended the run: a late callback from a timer or event
+  // stack (a wrapper that escaped invalidation) is discarded — advancing
+  // could mutate a settled run or rethrow from a foreign stack.
+  if (state.settled) {
+    return
+  }
+  try {
+    continuePipeline(state, pipeline, error, value, fromStep)
+  } catch (err) {
+    if (state.onSettled) {
+      // An observer is watching: an unsettled failure becomes its
+      // rejection. After settlement (for example an error handler that
+      // throws during dispatch) there is nothing left to report, and
+      // rethrowing would escape onto the foreign callback stack that
+      // invoked the continuation.
+      if (!state.settled) {
+        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+      }
+      return
+    }
+    throw err
+  }
+}
+
+function continuePipeline(
+  state: PipeState,
+  pipeline: PipelineBase,
+  error?: Error,
+  value?: PipeResult,
+  fromStep?: number,
+): void {
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
   if (value != null) {
-    // Merge the output of previous pipe with container.
+    // Merge the output of the pipe the value belongs to — normally the
+    // previous step, but an adopted promise settling late names its own
+    // pipe: the step counter may have advanced past it.
+    const producerIndex = fromStep === undefined ? step - 1 : fromStep
     mergeIntoContainer(
       state,
       pipeline,
-      step - 1,
-      pipes[step - 1].fnName,
-      pipes[step - 1].producer.produce(value),
+      producerIndex,
+      pipes[producerIndex].fnName,
+      pipes[producerIndex].producer.produce(value),
       false,
     )
   }
@@ -460,9 +652,27 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
   if (state.activeError == null) {
     // Clear any stale flag from a previous, fully-handled error path.
     state.handlingError = false
+    if (state.halted) {
+      // A flow-control halt ended progression: a late sibling continuation
+      // merges its own output above, but no further pipes run.
+      if (state.pending === 0) {
+        settle(state, null)
+      }
+      return
+    }
+    if (state.pending > 0) {
+      // Continuations from earlier pipes are still in flight: executing
+      // the next pipe now would race their outputs. Defer — the last
+      // continuation to land advances (or settles) the run with every
+      // sibling output merged.
+      return
+    }
     if (pipes.length > state.step) {
       // When we have more pipe, execute current one and increase the step by 1.
       executePipe(pipes[state.step++], state, pipeline, next)
+    } else {
+      // Every pipe executed and nothing is in flight — the run completed.
+      settle(state, null)
     }
     return
   }
@@ -470,27 +680,42 @@ function next(state: PipeState, pipeline: PipelineBase, error?: Error, value?: P
   // Stays set while the handler (or the no-handler rethrow) unwinds, so
   // executePipe's catch does not re-dispatch it as a fresh pipe error.
   state.handlingError = true
+  // Report before running the handler: a throwing handler must not strand
+  // a completion observer, and a run without a handler reports to the
+  // observer instead of throwing — from an async continuation that throw
+  // would escape into a microtask and die unhandled.
+  settle(state, state.activeError)
   if (errorHandler) {
     ;(errorHandler as ErrorHandler)(state.container, pipeline.functions, state.activeError)
-  } else {
-    // Throw the error if we don't have error handling function.
+  } else if (!state.onSettled) {
+    // Throw the error if we don't have error handling function and no
+    // completion observer is watching this run.
     throwNoErrorHandlerError(state.activeError)
   }
 }
 
-export function runPipeline(args: PipeResult, pipeline: PipelineBase): ResultContainer {
+export function runPipeline(
+  args: PipeResult,
+  pipeline: PipelineBase,
+  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void,
+): ResultContainer {
   // Internal pipeline execution state.
   const state: PipeState = {
     step: 0,
     // Internale container for keeping pipeline runtime dependencies.
     container: {
-      next: (error?: Error, value?: PipeResult): void => {
-        next(state, pipeline, error, value)
+      next: (error?: Error, value?: PipeResult, fromStep?: number): void => {
+        next(state, pipeline, error, value, fromStep)
       },
     },
     args: Array.isArray(args) ? args : args === undefined ? [] : [args],
     activeError: null,
     handlingError: false,
+    settled: false,
+    settling: false,
+    pending: 0,
+    halted: false,
+    onSettled,
   }
 
   // Start from the input pipes, if any: each maps the invocation arguments

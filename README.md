@@ -243,8 +243,24 @@ sp('async-pipeline')
 
 The executor returned by `.end()` completes synchronously. When a pipe uses
 `next` or returns a Promise, values produced later are not reflected in
-`.end(output)`'s return value — deliver async results through a final pipe,
-`next`, or an error handler instead.
+`.end(output)`'s return value — use `.endAsync(output)` for that:
+
+```javascript
+const run = sp('fetch-workflow')
+  .pipe(() => repository.getWorkflow(), null, 'workflow')
+  .error((error) => console.error('Failed:', error.message), 'error')
+  .endAsync('workflow')
+
+const workflow = await run()   // Promise — settles when the run settles
+```
+
+`.endAsync` settles when the *run* settles — every pipe executed, a
+flow-control halt fired, or an error was dispatched. A halted run resolves
+with the partial snapshot; a failed run rejects with the active error even
+when an error handler ran (the promise is an additional observer). Fully
+synchronous pipelines resolve immediately, so `await` works uniformly.
+Alternatively, deliver async results through a final pipe, `next`, or an
+error handler.
 
 ### Object-String Syntax
 

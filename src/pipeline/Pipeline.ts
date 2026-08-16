@@ -102,4 +102,49 @@ export default class Pipeline implements PipelineBase {
       return fetcher.fetch(container, [], pipeline.functions)
     }
   }
+
+  // Promise-returning counterpart of `.end(output)` for async pipelines:
+  // the returned executor settles when the RUN settles — every pipe
+  // executed, a flow-control halt fired, or an error was dispatched —
+  // not when the synchronous cascade ends. Halted runs resolve with the
+  // partial snapshot; errored runs reject with the active error even when
+  // an error handler ran (the promise is an additional observer).
+  endAsync(output?: PipeParameter): (...args: unknown[]) => Promise<PipeOutput> {
+    const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
+    // Make shallow copies of pipeline properties.
+    const pipeline: PipelineBase = {
+      name: this.name,
+      pipes: [...this.pipes],
+      inputPipes: [...this.inputPipes],
+      functions: this.functions,
+      errorHandler: this.errorHandler,
+    }
+
+    return function (): Promise<PipeOutput> {
+      const args: PipeResult = Array.prototype.slice.apply(arguments)
+
+      return new Promise<PipeOutput>((resolve, reject) => {
+        runPipeline(args, pipeline, (outcome) => {
+          if (outcome.error != null) {
+            reject(outcome.error)
+            return
+          }
+          // With no output spec the run's completion is the result; fetch
+          // the requested names from the settled container otherwise. The
+          // fetch runs in the settlement job — a throwing dependency
+          // accessor here must reject the returned promise, not die as an
+          // unhandled rejection while it hangs.
+          if (fetcher === null) {
+            resolve(undefined as PipeOutput)
+            return
+          }
+          try {
+            resolve(fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput)
+          } catch (err) {
+            reject(err as Error)
+          }
+        })
+      })
+    }
+  }
 }
