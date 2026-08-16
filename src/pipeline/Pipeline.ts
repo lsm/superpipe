@@ -12,21 +12,19 @@ import {
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
-import { runPipeline } from './executor'
+import { observeOriginalRejection, runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
 
-// Read a value's `then` defensively — the output may be a throwing accessor,
-// and probing it must not turn a resolved run into a rejection.
+// Read a value's `then` exactly once. A throwing accessor propagates to the
+// caller — swallowing it here would make the returned promise resolve with
+// the object instead of rejecting with the accessor's error, and probing a
+// second time (through native assimilation) would re-run its side effects.
 function thenOf(value: unknown): unknown {
   if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
     return undefined
   }
-  try {
-    return (value as { then?: unknown }).then
-  } catch {
-    return undefined
-  }
+  return (value as { then?: unknown }).then
 }
 
 // Read the signal's abort reason defensively (a polyfill may not expose one).
@@ -202,8 +200,23 @@ export default class Pipeline implements PipelineBase {
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
-            // Read the selected output's `then` exactly once.
-            const then = thenOf(value)
+            // Read the selected output's `then` exactly once. A throwing
+            // getter rejects the returned promise with its error — like the
+            // native assimilation this path replaced — while a branded native
+            // promise's original rejection still gets an observer, and an
+            // abort raised during the read wins over the getter error.
+            let then: unknown
+            try {
+              then = thenOf(value)
+            } catch (err) {
+              observeOriginalRejection(value as PipeResult)
+              if (signal?.aborted) {
+                reject(new PipelineAbortedError(abortReason(signal)))
+              } else {
+                reject((err || new Error('Output accessor threw a falsey value')) as Error)
+              }
+              return
+            }
             // `thenOf` may have aborted the run via a throwing/aborting getter;
             // recheck before adopting whatever it returned.
             if (signal?.aborted) {
@@ -251,6 +264,14 @@ export default class Pipeline implements PipelineBase {
                 // Defer the custom `then` invocation to a promise job (matching
                 // native assimilation ordering) after the abort gate is installed.
                 Promise.resolve().then(() => {
+                  // An intervening microtask may have aborted the run after the
+                  // gate was installed; the adoption already rejected, so the
+                  // thenable's lazy work must not start. A branded native
+                  // promise still needs its original rejection observed.
+                  if (settled) {
+                    observeOriginalRejection(value as PipeResult)
+                    return
+                  }
                   try {
                     Reflect.apply(then as AnyFunction, value, [finishResolve, finishReject])
                   } catch (err) {

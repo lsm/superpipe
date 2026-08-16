@@ -133,7 +133,7 @@ function isNativePromiseBrand(value: PipeResult): boolean {
 // when constructed, makes the attach throw before registering anything —
 // and no userland mechanism can observe such an object (only the engine's
 // internal species-free path, used by `await`, can).
-function observeOriginalRejection(value: PipeResult): boolean {
+export function observeOriginalRejection(value: PipeResult): boolean {
   if (!isNativePromiseBrand(value)) {
     return false
   }

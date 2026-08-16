@@ -3260,3 +3260,108 @@ describe('endAsync abort contract (review round 9)', () => {
     expect(order).to.deep.equal(['user-microtask', 'then'])
   })
 })
+
+// --- endAsync abort contract: review round 10 (#50) ---
+describe('endAsync abort contract (review round 10)', () => {
+  it('rejects when the selected output then getter throws', async () => {
+    let reads = 0
+    const sp = superpipe({
+      get out() {
+        reads += 1
+        if (reads === 1) {
+          throw new Error('getter boom')
+        }
+        return undefined // a second read (native assimilation) would resolve
+      },
+    })
+    const run = sp('output-then-getter-throw')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('getter boom')
+    expect(reads).to.equal(1)
+  })
+
+  it('rejects with the abort when the selected output then getter aborts and throws', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({
+      get out() {
+        controller.abort()
+        throw new Error('getter boom')
+      },
+    })
+    const run = sp('output-then-getter-abort-throw')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('observes a branded rejected output whose then getter throws', async () => {
+    const promise = Promise.reject(new Error('original'))
+    Object.defineProperty(promise, 'then', {
+      get() {
+        throw new Error('getter threw')
+      },
+    })
+    const sp = superpipe({})
+    const run = sp('output-getter-throw-rejection')
+      .pipe(() => ({ out: promise }), null, 'out')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('getter threw')
+    // The branded promise's original rejection was observed through the
+    // intrinsic then — it must not surface unhandled once microtasks drain.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('stops the implicit object merge at the aborting getter', async () => {
+    const controller = new AbortController()
+    let secondRead = 0
+    const sp = superpipe({})
+    const run = sp('abort-implicit-merge')
+      .pipe(() => ({
+        get first() {
+          controller.abort()
+          return 'a'
+        },
+        get second() {
+          secondRead += 1
+          return 'b'
+        },
+      }))
+      .endAsync('first', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRead).to.equal(0)
+  })
+
+  it('does not invoke a custom then after an abort from an intervening microtask', async () => {
+    const controller = new AbortController()
+    let thenCalls = 0
+    const sp = superpipe({})
+    const run = sp('abort-deferred-adoption')
+      .pipe(
+        () => ({
+          out: {
+            // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+            then(resolve) {
+              thenCalls += 1
+              resolve('v')
+            },
+          },
+        }),
+        null,
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    // Queued after run() settled the cascade and installed the adoption
+    // gate, but before the deferred then invocation runs.
+    Promise.resolve().then(() => controller.abort())
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(thenCalls).to.equal(0)
+  })
+})
