@@ -3,7 +3,6 @@ import {
   type AnyFunction,
   type EndAsyncOptions,
   type FunctionContainer,
-  objectStringToArray,
   type PipeFunction,
   PipelineAbortedError,
   type PipelineBase,
@@ -11,12 +10,18 @@ import {
   type PipeParameter,
   type PipeResult,
   RE_IS_OBJ_STRING,
+  signalAborted,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
 import { observeOriginalRejection, runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
+
+// Captured at module load, before any user code can replace it: the
+// abandoned-selection walk runs after cancellation, where a replaced global
+// would be user code executing post-abort.
+const intrinsicOwnKeys = Reflect.ownKeys
 
 // Read a value's `then` exactly once. A throwing accessor propagates to the
 // caller — swallowing it here would make the returned promise resolve with
@@ -30,7 +35,10 @@ function thenOf(value: unknown): unknown {
 }
 
 // Read the signal's abort reason defensively (a polyfill may not expose one).
-function abortReason(signal: AbortSignalLike): unknown {
+function abortReason(signal: AbortSignalLike | undefined): unknown {
+  if (signal === undefined) {
+    return undefined
+  }
   try {
     return signal.reason
   } catch {
@@ -44,13 +52,15 @@ function abortReason(signal: AbortSignalLike): unknown {
 // globals (Array.isArray, Object.keys, the iterator protocol), which an
 // aborting accessor may have replaced. An array spec fetches an internally
 // built array walked by index; an object-string spec fetches a plain record
-// holding exactly the spec's keys. A single-key spec fetches the raw value,
-// whose own properties may be hostile accessors, so it is observed as a
-// whole and never probed key by key.
+// whose own keys are exactly the ones the fetch populated — spec keys never
+// reached are skipped, so an inherited accessor the aborting getter
+// installed for a later key cannot run. A single-key spec fetches the raw
+// value, whose own properties may be hostile accessors, so it is observed
+// as a whole and never probed key by key.
 function observeAbandonedSelection(
   value: PipeOutput,
   arraySpec: boolean,
-  objectStringKeys: string[] | undefined,
+  objectStringSpec: boolean,
 ): void {
   if (arraySpec) {
     const entries = value as PipeResult[]
@@ -59,10 +69,11 @@ function observeAbandonedSelection(
     }
     return
   }
-  if (objectStringKeys !== undefined) {
-    const record = value as Record<string, PipeResult>
-    for (let i = 0; i < objectStringKeys.length; i += 1) {
-      observeOriginalRejection(record[objectStringKeys[i]])
+  if (objectStringSpec) {
+    const record = value as Record<PropertyKey, PipeResult>
+    const keys = intrinsicOwnKeys(record)
+    for (let i = 0; i < keys.length; i += 1) {
+      observeOriginalRejection(record[keys[i]])
     }
     return
   }
@@ -172,15 +183,11 @@ export default class Pipeline implements PipelineBase {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
     // The wrapper kind for an abandoned selection, determined from the spec
     // here at construction: an array spec fetches an internally built array,
-    // an object-string spec a plain record with exactly these keys, and a
-    // single name the raw value. Deciding this from the fetched value after
-    // cancellation would consult mutable globals an aborting accessor may
-    // have replaced.
+    // an object-string spec a plain record, and a single name the raw
+    // value. Deciding this from the fetched value after cancellation would
+    // consult mutable globals an aborting accessor may have replaced.
     const arraySpec = output !== undefined && Array.isArray(output)
-    const objectStringKeys =
-      typeof output === 'string' && RE_IS_OBJ_STRING.test(output)
-        ? objectStringToArray(output)
-        : undefined
+    const objectStringSpec = typeof output === 'string' && RE_IS_OBJ_STRING.test(output)
     const signal = options?.signal
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
@@ -223,14 +230,15 @@ export default class Pipeline implements PipelineBase {
             try {
               value = fetcher.fetch(outcome.container, [], pipeline.functions, {
                 wrappers: [],
+                disables: [],
                 holding: false,
                 held: [],
-                isSettled: (): boolean => signal?.aborted ?? false,
+                isSettled: (): boolean => signalAborted(signal),
               }) as PipeOutput
             } catch (err) {
               // An output accessor may have aborted before throwing — the
               // cancellation precedes the accessor error and must win.
-              if (signal?.aborted) {
+              if (signalAborted(signal)) {
                 reject(new PipelineAbortedError(abortReason(signal)))
               } else {
                 reject(err as Error)
@@ -242,8 +250,8 @@ export default class Pipeline implements PipelineBase {
             // result must still reject rather than resolve. The abandoned
             // selection may contain rejected branded promises the run will
             // never adopt — observe each so it is not reported unhandled.
-            if (signal?.aborted) {
-              observeAbandonedSelection(value, arraySpec, objectStringKeys)
+            if (signalAborted(signal)) {
+              observeAbandonedSelection(value, arraySpec, objectStringSpec)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
@@ -257,10 +265,13 @@ export default class Pipeline implements PipelineBase {
               then = thenOf(value)
             } catch (err) {
               observeOriginalRejection(value as PipeResult)
-              if (signal?.aborted) {
+              if (signalAborted(signal)) {
                 reject(new PipelineAbortedError(abortReason(signal)))
               } else {
-                reject((err || new Error('Output accessor threw a falsey value')) as Error)
+                // Reject with the exact thrown value, falsey included — the
+                // native assimilation this path replaced did the same, and
+                // callers may inspect rejection identity.
+                reject(err)
               }
               return
             }
@@ -268,8 +279,8 @@ export default class Pipeline implements PipelineBase {
             // recheck before adopting whatever it returned. An already-rejected
             // branded promise is never adopted on this path — observe its
             // original rejection so it is not reported unhandled.
-            if (signal?.aborted) {
-              observeAbandonedSelection(value, arraySpec, objectStringKeys)
+            if (signalAborted(signal)) {
+              observeAbandonedSelection(value, arraySpec, objectStringSpec)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
@@ -312,7 +323,7 @@ export default class Pipeline implements PipelineBase {
                 if (signal !== undefined) {
                   const fire = (): void =>
                     finishReject(new PipelineAbortedError(abortReason(signal)))
-                  if (signal.aborted) {
+                  if (signalAborted(signal)) {
                     fire()
                     return
                   }

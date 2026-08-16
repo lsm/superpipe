@@ -3804,4 +3804,149 @@ describe('endAsync abort contract (review round 10)', () => {
     await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
     expect(removeCount).to.equal(1)
   })
+
+  it('observes rejected values inside an abandoned object-string input', async () => {
+    const controller = new AbortController()
+    const rejected = Promise.reject(new Error('input rejected'))
+    const sp = superpipe({
+      get inputDep() {
+        controller.abort()
+        return rejected
+      },
+    })
+    const run = sp('abort-objstring-input')
+      .pipe((inputs) => inputs, '{inputDep}')
+      .endAsync(undefined, { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    // The skipped pipe never consumed the record's promise; its rejection
+    // must not surface unhandled once microtasks drain.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('still settles when a retained next has its disable deleted', async () => {
+    const controller = new AbortController()
+    let retained
+    const sp = superpipe({})
+    const run = sp('abort-disable-deleted')
+      .pipe((next) => {
+        retained = next // a live continuation holding the run open
+      }, 'next')
+      .endAsync('out', { signal: controller.signal })
+
+    const outcome = run()
+    delete retained.disable // user code breaks the invalidation surface
+    controller.abort()
+    await expect(outcome).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('does not read an inherited accessor for an unfetched selection key', async () => {
+    const controller = new AbortController()
+    let inheritedReads = 0
+    const sp = superpipe({
+      get first() {
+        controller.abort()
+        // Install an inherited accessor the later spec key would resolve
+        // through if the abandoned record were probed by spec key.
+        Object.defineProperty(Object.prototype, 'later', {
+          configurable: true,
+          get() {
+            inheritedReads += 1
+            return 'x'
+          },
+        })
+        return 'a'
+      },
+    })
+    const run = sp('abort-inherited-later-key')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('{first, later}', { signal: controller.signal })
+
+    let rejection
+    try {
+      rejection = await run().catch((error) => error)
+    } finally {
+      delete Object.prototype.later
+    }
+    expect(rejection).toBeInstanceOf(PipelineAbortedError)
+    expect(inheritedReads).to.equal(0)
+  })
+
+  it('settles when the aborted getter throws after an accessor abort', async () => {
+    let throwAborted = false
+    const signal = {
+      listener: undefined,
+      addEventListener(_type, listener) {
+        this.listener = listener
+      },
+      removeEventListener() {
+        this.listener = undefined
+      },
+    }
+    Object.defineProperty(signal, 'aborted', {
+      get() {
+        if (throwAborted) {
+          throw new Error('aborted boom')
+        }
+        return false
+      },
+    })
+    const sp = superpipe({
+      get out() {
+        throwAborted = true // subsequent aborted reads throw
+        throw new Error('accessor boom')
+      },
+    })
+    const run = sp('abort-throwing-flag')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out', { signal })
+
+    // The throwing aborted read must not escape the settlement job — the
+    // accessor error is the observable outcome.
+    await expect(run()).rejects.toThrow('accessor boom')
+  })
+
+  it('rejects with the exact falsey value a then getter throws', async () => {
+    const sp = superpipe({
+      get out() {
+        // Intentional falsey throw — native assimilation rejects with the
+        // value itself, and this path preserves that identity.
+        throw null
+      },
+    })
+    const run = sp('output-then-getter-falsey')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out')
+
+    const err = await run().catch((error) => error)
+    expect(err).to.equal(null)
+  })
+
+  it('skips a property made non-enumerable by an earlier getter', () => {
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('implicit-nonenumerable')
+      .pipe(() => {
+        const value = {}
+        Object.defineProperty(value, 'a', {
+          enumerable: true,
+          get() {
+            // Reading `a` hides `b` before the merge reaches it.
+            Object.defineProperty(value, 'b', { value: 'hidden', enumerable: false })
+            return 1
+          },
+        })
+        value.b = 'hidden' // insertion order: a first, then b
+        return value
+      })
+      .pipe(({ b }) => {
+        observed = b
+      }, '{a, b}')
+      .end()
+
+    run()
+    // Object.assign semantics: a property made non-enumerable before its
+    // read is skipped, so `b` stays unset.
+    expect(observed).to.equal(undefined)
+  })
 })

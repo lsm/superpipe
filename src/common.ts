@@ -94,6 +94,21 @@ export interface EndAsyncOptions {
   readonly signal?: AbortSignalLike
 }
 
+// Read a signal's aborted flag defensively: a polyfill's getter may throw,
+// and a failure there must not prevent an already-determined run outcome
+// from settling the returned promise. A throwing getter reads as
+// not-aborted, letting the normal path proceed.
+export function signalAborted(signal: AbortSignalLike | undefined): boolean {
+  if (signal === undefined) {
+    return false
+  }
+  try {
+    return signal.aborted === true
+  } catch {
+    return false
+  }
+}
+
 export interface PipelineBase {
   readonly name: string
   readonly pipes: Pipe[]

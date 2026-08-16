@@ -9,10 +9,26 @@ import {
   type PipelineBase,
   type PipeOutput,
   type PipeResult,
+  signalAborted,
   throwNoErrorHandlerError,
 } from '../common'
-import type { NextCallback, NextCallbacks } from '../parameter/Fetcher'
+import type { NextCallbacks } from '../parameter/Fetcher'
 import type Pipe from './Pipe'
+
+// Captured at module load, before any user code can replace them: these
+// intrinsics are consulted on paths that keep running after a run settles,
+// where a replaced global or prototype method would be user code executing
+// post-cancellation — able to run side effects or to throw past the
+// settlement reporting. `intrinsicReflectApply` invokes its target through
+// the internal [[Call]], so a patched Function.prototype.call cannot
+// intercept these calls either.
+const intrinsicReflectApply = Reflect.apply
+const intrinsicGetPrototypeOf = Object.getPrototypeOf
+const intrinsicHasOwnProperty = Object.prototype.hasOwnProperty
+const intrinsicOwnKeys = Reflect.ownKeys
+const intrinsicGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor
+const intrinsicIsArray = Array.isArray
+const intrinsicPromiseThen = Promise.prototype.then
 
 // Hold synchronous `next` invocations until the pipe's return channel is
 // known: a pipe that both calls `next` and returns a thenable must not
@@ -40,12 +56,13 @@ function flushNextCallbacks(
 
 // Void the callbacks and discard any held invocation and its payload — used
 // when the executor rejects an ambiguous or unobservable continuation. The
-// wrappers array is walked by index: the iterable protocol stays uninvoked,
-// since this runs after settlement and an aborting accessor may have
-// replaced Array.prototype[Symbol.iterator].
+// captured `disable` functions are invoked, not the wrappers' current
+// property: user code may have overwritten or deleted `next.disable` on a
+// retained callback, and that must not break invalidation. Walked by index —
+// the iterable protocol stays uninvoked after settlement.
 function invalidateNextCallbacks(callbacks: NextCallbacks): void {
-  for (let i = 0; i < callbacks.wrappers.length; i += 1) {
-    callbacks.wrappers[i].disable()
+  for (let i = 0; i < callbacks.disables.length; i += 1) {
+    callbacks.disables[i]()
   }
   callbacks.held.length = 0
 }
@@ -103,12 +120,12 @@ function hasConfiguredDependency(
   let obj: unknown = functions
   while (obj != null) {
     if (obj === Object.prototype) return false
-    if (Object.prototype.hasOwnProperty.call(obj, key)) return true
+    if (intrinsicReflectApply(intrinsicHasOwnProperty, obj, [key])) return true
     // Metadata traps on a Proxy container may abort the run mid-walk: check
     // both after the presence probe and after the prototype read, so no
     // later trap runs once the run has settled.
     if (isSettled?.()) return false
-    obj = Object.getPrototypeOf(obj)
+    obj = intrinsicGetPrototypeOf(obj)
     if (isSettled?.()) return false
   }
   return false
@@ -131,16 +148,25 @@ function ignoreReason(): void {}
 // Observe rejected branded inputs a cancelled fetch leaves unconsumed: the
 // pipe that would have awaited them never runs, so their failures must not
 // surface as unhandled rejections. The fetched arguments come from the
-// executor's own fetchers — an internal array (or the plain record an
-// object-string fetch wraps) — and are walked by index; the iterable
-// protocol stays uninvoked after cancellation.
-function observeAbandonedInputs(inputArgs: PipeResult): void {
-  if (!Array.isArray(inputArgs)) {
+// executor's own fetchers — an internal array walked by index (the iterable
+// protocol stays uninvoked after cancellation) — and an object-string fetch
+// wraps a single internal record, whose own keys are exactly the values the
+// fetch populated.
+function observeAbandonedInputs(inputArgs: PipeResult, objectForm: boolean): void {
+  if (!intrinsicIsArray(inputArgs)) {
     observeOriginalRejection(inputArgs)
     return
   }
   for (let i = 0; i < inputArgs.length; i += 1) {
-    observeOriginalRejection(inputArgs[i])
+    const entry = inputArgs[i]
+    if (objectForm && i === 0 && entry !== null && typeof entry === 'object') {
+      const keys = intrinsicOwnKeys(entry)
+      for (let k = 0; k < keys.length; k += 1) {
+        observeOriginalRejection(entry[keys[k]])
+      }
+      continue
+    }
+    observeOriginalRejection(entry)
   }
 }
 
@@ -160,7 +186,7 @@ export function observeOriginalRejection(value: PipeResult): boolean {
     return false
   }
   try {
-    Reflect.apply(Promise.prototype.then, value, [swallow, ignoreReason])
+    intrinsicReflectApply(intrinsicPromiseThen, value, [swallow, ignoreReason])
     return true
   } catch {
     return false
@@ -186,7 +212,7 @@ function mergeIntoContainer(
   // string and symbol keys, in specification order), and a Proxy's metadata
   // traps are never re-run by the copy. A trap that aborts the run stops the
   // enumeration before any value is read.
-  const allKeys = Reflect.ownKeys(source)
+  const allKeys = intrinsicOwnKeys(source)
   if (state.settled) {
     return
   }
@@ -196,7 +222,7 @@ function mergeIntoContainer(
   // and these loops continue after settlement checks.
   for (let i = 0; i < allKeys.length; i += 1) {
     const key = allKeys[i]
-    if (Object.getOwnPropertyDescriptor(source, key)?.enumerable === true) {
+    if (intrinsicGetOwnPropertyDescriptor(source, key)?.enumerable === true) {
       enumerable.push(key)
     }
     if (state.settled) {
@@ -230,10 +256,16 @@ function mergeIntoContainer(
     }
   }
   // Values are copied one key at a time after validation: a getter that
-  // aborts the run stops the merge before later accessors run.
+  // aborts the run stops the merge before later accessors run. Each
+  // descriptor is re-consulted immediately before its read — Object.assign
+  // did the same, so a getter that makes a later property non-enumerable
+  // still causes that property to be skipped.
   const container = state.container as Record<PropertyKey, PipeResult>
   for (let c = 0; c < enumerable.length; c += 1) {
     const key = enumerable[c]
+    if (intrinsicGetOwnPropertyDescriptor(source, key)?.enumerable !== true) {
+      continue
+    }
     container[key] = source[key]
     if (state.settled) {
       return
@@ -269,11 +301,13 @@ interface PipeState {
   // continuations still merge their own outputs, but no further pipes
   // run — the run settles with the partial snapshot.
   halted: boolean
-  // Every live (not-yet-consumed) `next` wrapper created this run, so an
-  // abort can disable them all. Bounded by the run's wrapper count and
-  // cleared on terminal transition; `disable` is idempotent, so wrappers
-  // already consumed are unaffected by a later abort.
-  liveNextCallbacks: NextCallback[]
+  // The original `disable` function of every live (not-yet-consumed) `next`
+  // wrapper created this run, captured before user code could touch the
+  // wrappers, so an abort can invalidate them all. Bounded by the run's
+  // wrapper count and cleared on terminal transition; `disable` is
+  // idempotent, so wrappers already consumed are unaffected by a later
+  // abort.
+  liveDisables: Array<() => void>
   // Indirection for adopted-promise reactions: they retain this small gate
   // rather than the whole run state, and the gate is nulled on terminal
   // transition so a promise that never settles cannot keep the run state
@@ -363,10 +397,10 @@ function abortRun(state: PipeState, reason?: unknown): void {
   // Void every live `next` wrapper so a retained callback neither advances
   // nor holds run state past the abort. `disable` is idempotent. Walked by
   // index: the iterable protocol stays uninvoked after cancellation.
-  for (let i = 0; i < state.liveNextCallbacks.length; i += 1) {
-    state.liveNextCallbacks[i].disable()
+  for (let i = 0; i < state.liveDisables.length; i += 1) {
+    state.liveDisables[i]()
   }
-  state.liveNextCallbacks.length = 0
+  state.liveDisables.length = 0
   // Remove the abort listener, then capture + clear the observer so it
   // fires exactly once.
   detachAbort(state)
@@ -398,7 +432,7 @@ function executePipe(
   // Presence-based lookup: a runtime `false` (or other falsey value) must not
   // fall through to the configured dependency.
   const fn = pipe.injected
-    ? Object.prototype.hasOwnProperty.call(container, fnName)
+    ? intrinsicReflectApply(intrinsicHasOwnProperty, container, [fnName])
       ? container[fnName]
       : functions[fnName]
     : pipe.fn
@@ -411,6 +445,7 @@ function executePipe(
   // reentrant nested run of the same pipeline cannot clobber it.
   const nextCallbacks: NextCallbacks = {
     wrappers: [],
+    disables: [],
     holding: false,
     held: [],
     onConsumed: (): void => {
@@ -438,13 +473,15 @@ function executePipe(
   // or invalidated: a retained `next` keeps the run open exactly like an
   // adopted promise does.
   state.pending += nextCallbacks.wrappers.length
-  // Register the wrappers so an abort can disable them all. Wrappers are
-  // not removed on consume — `disable` is idempotent — and the registry is
+  // Register the wrappers' original disable functions so an abort can
+  // invalidate them all — user code holding a wrapper must not be able to
+  // break that by overwriting its `disable` property. Wrappers are not
+  // removed on consume — `disable` is idempotent — and the registry is
   // cleared on terminal transition. Registered one by one: a spread would
   // invoke the iterable protocol, which an aborting input accessor may
   // have replaced while the fetch ran.
-  for (let i = 0; i < nextCallbacks.wrappers.length; i += 1) {
-    state.liveNextCallbacks.push(nextCallbacks.wrappers[i])
+  for (let i = 0; i < nextCallbacks.disables.length; i += 1) {
+    state.liveDisables.push(nextCallbacks.disables[i])
   }
   // An input getter may have aborted the run while fetching — discard the
   // wrappers it created rather than letting the pipe run after settlement,
@@ -452,7 +489,7 @@ function executePipe(
   // unconsumed so they are not reported unhandled.
   if (state.settled) {
     invalidateNextCallbacks(nextCallbacks)
-    observeAbandonedInputs(inputArgs)
+    observeAbandonedInputs(inputArgs, pipe.fetcher.objectForm)
     return
   }
   const advance = next as unknown as Continuation
@@ -948,7 +985,7 @@ export function runPipeline(
     settling: false,
     pending: 0,
     halted: false,
-    liveNextCallbacks: [],
+    liveDisables: [],
     gate: { state: null },
     onSettled,
   }
@@ -968,7 +1005,7 @@ export function runPipeline(
     // signal, and that synchronous abortRun must be able to detach itself.
     state.abortCleanup = (): void => signal.removeEventListener('abort', onAbort)
     signal.addEventListener('abort', onAbort)
-    if (signal.aborted) {
+    if (signalAborted(signal)) {
       abortRun(state, getAbortReason(signal))
       return state.container
     }

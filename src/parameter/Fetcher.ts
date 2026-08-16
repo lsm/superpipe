@@ -10,6 +10,12 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
+// Captured at module load, before any user code can replace them: lookup
+// consults these while a run may already have settled, and a replaced
+// global there would be user code executing post-cancellation.
+const intrinsicReflectApply = Reflect.apply
+const intrinsicHasOwnProperty = Object.prototype.hasOwnProperty
+
 // A once-wrapped `next` callback handed to a pipe.
 export interface NextCallback {
   (error?: Error, value?: PipeResult): void
@@ -24,8 +30,13 @@ export interface NextCallback {
 // is known. Owned by the executor, so reentrant runs of the same pipeline
 // never share buffer state. `onConsumed` fires once per wrapper when it is
 // invoked or invalidated, so an outstanding-continuation count can drop.
+// `disables` holds each wrapper's original `disable` function, captured at
+// creation before any user code can touch the wrapper — the run must be
+// able to invalidate a retained callback even after user code overwrote or
+// deleted its `disable` property.
 export interface NextCallbacks {
   wrappers: NextCallback[]
+  disables: Array<() => void>
   holding: boolean
   held: { error?: Error; value?: PipeResult }[]
   onConsumed?: () => void
@@ -127,6 +138,10 @@ export default class Fetcher {
 
   hasNext: boolean = false
 
+  // True when this fetcher serves an object-string spec: pipe inputs then
+  // receive a one-element array wrapping a record of the named keys.
+  objectForm: boolean = false
+
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'raw') {
       this.raw = true
@@ -136,6 +151,7 @@ export default class Fetcher {
       if (RE_IS_OBJ_STRING.test(parameter)) {
         this.keys = objectStringToArray(parameter)
         this._fetch = this.fetchAsObject
+        this.objectForm = true
       } else if (this.raw) {
         this.keys = [parameter]
         this._fetch = this.fetchSingle
@@ -187,10 +203,10 @@ export default class Fetcher {
     isSettled?: () => boolean,
   ): PipeResult {
     const box = container as { [key: string]: PipeResult }
-    if (Object.prototype.hasOwnProperty.call(box, key)) {
+    if (intrinsicReflectApply(intrinsicHasOwnProperty, box, [key])) {
       return box[key]
     }
-    if (functions && Object.prototype.hasOwnProperty.call(functions, key)) {
+    if (functions && intrinsicReflectApply(intrinsicHasOwnProperty, functions, [key])) {
       // A metadata trap on a Proxy dependency container may have aborted
       // the run while reporting the property present; do not run its get
       // trap after settlement.
@@ -215,6 +231,10 @@ export default class Fetcher {
     const wrapped = once(box.next as AnyFunction, nextCallbacks)
     if (nextCallbacks) {
       nextCallbacks.wrappers.push(wrapped)
+      // Captured before the wrapper is exposed to user code: `disable` is a
+      // plain property on the callback the pipe receives, and later
+      // overwrites must not break invalidation.
+      nextCallbacks.disables.push(wrapped.disable)
     }
     return wrapped
   }
