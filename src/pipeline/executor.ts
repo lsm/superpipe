@@ -39,10 +39,13 @@ function flushNextCallbacks(
 }
 
 // Void the callbacks and discard any held invocation and its payload — used
-// when the executor rejects an ambiguous or unobservable continuation.
+// when the executor rejects an ambiguous or unobservable continuation. The
+// wrappers array is walked by index: the iterable protocol stays uninvoked,
+// since this runs after settlement and an aborting accessor may have
+// replaced Array.prototype[Symbol.iterator].
 function invalidateNextCallbacks(callbacks: NextCallbacks): void {
-  for (const wrapper of callbacks.wrappers) {
-    wrapper.disable()
+  for (let i = 0; i < callbacks.wrappers.length; i += 1) {
+    callbacks.wrappers[i].disable()
   }
   callbacks.held.length = 0
 }
@@ -125,6 +128,22 @@ function swallow(value: unknown): void {
 // cleanup.
 function ignoreReason(): void {}
 
+// Observe rejected branded inputs a cancelled fetch leaves unconsumed: the
+// pipe that would have awaited them never runs, so their failures must not
+// surface as unhandled rejections. The fetched arguments come from the
+// executor's own fetchers — an internal array (or the plain record an
+// object-string fetch wraps) — and are walked by index; the iterable
+// protocol stays uninvoked after cancellation.
+function observeAbandonedInputs(inputArgs: PipeResult): void {
+  if (!Array.isArray(inputArgs)) {
+    observeOriginalRejection(inputArgs)
+    return
+  }
+  for (let i = 0; i < inputArgs.length; i += 1) {
+    observeOriginalRejection(inputArgs[i])
+  }
+}
+
 // Attempt to observe a native promise's rejection through the intrinsic
 // then, reporting whether a reaction actually attached. The attach is
 // attempted directly and an incompatible receiver — a non-promise object,
@@ -172,7 +191,11 @@ function mergeIntoContainer(
     return
   }
   const enumerable: PropertyKey[] = []
-  for (const key of allKeys) {
+  // Both loops walk by index: the iterable protocol stays uninvoked, since
+  // an aborting accessor may have replaced Array.prototype[Symbol.iterator]
+  // and these loops continue after settlement checks.
+  for (let i = 0; i < allKeys.length; i += 1) {
+    const key = allKeys[i]
     if (Object.getOwnPropertyDescriptor(source, key)?.enumerable === true) {
       enumerable.push(key)
     }
@@ -182,7 +205,8 @@ function mergeIntoContainer(
   }
   // Names are validated before any value is read: an invalid output such as
   // `{ next, get sideEffect() { ... } }` must throw before user code runs.
-  for (const key of enumerable) {
+  for (let e = 0; e < enumerable.length; e += 1) {
+    const key = enumerable[e]
     if (typeof key !== 'string') {
       continue
     }
@@ -208,7 +232,8 @@ function mergeIntoContainer(
   // Values are copied one key at a time after validation: a getter that
   // aborts the run stops the merge before later accessors run.
   const container = state.container as Record<PropertyKey, PipeResult>
-  for (const key of enumerable) {
+  for (let c = 0; c < enumerable.length; c += 1) {
+    const key = enumerable[c]
     container[key] = source[key]
     if (state.settled) {
       return
@@ -336,9 +361,10 @@ function abortRun(state: PipeState, reason?: unknown): void {
   // the run state (or its container) reachable after cancellation.
   state.gate.state = null
   // Void every live `next` wrapper so a retained callback neither advances
-  // nor holds run state past the abort. `disable` is idempotent.
-  for (const wrapper of state.liveNextCallbacks) {
-    wrapper.disable()
+  // nor holds run state past the abort. `disable` is idempotent. Walked by
+  // index: the iterable protocol stays uninvoked after cancellation.
+  for (let i = 0; i < state.liveNextCallbacks.length; i += 1) {
+    state.liveNextCallbacks[i].disable()
   }
   state.liveNextCallbacks.length = 0
   // Remove the abort listener, then capture + clear the observer so it
@@ -414,12 +440,19 @@ function executePipe(
   state.pending += nextCallbacks.wrappers.length
   // Register the wrappers so an abort can disable them all. Wrappers are
   // not removed on consume — `disable` is idempotent — and the registry is
-  // cleared on terminal transition.
-  state.liveNextCallbacks.push(...nextCallbacks.wrappers)
+  // cleared on terminal transition. Registered one by one: a spread would
+  // invoke the iterable protocol, which an aborting input accessor may
+  // have replaced while the fetch ran.
+  for (let i = 0; i < nextCallbacks.wrappers.length; i += 1) {
+    state.liveNextCallbacks.push(nextCallbacks.wrappers[i])
+  }
   // An input getter may have aborted the run while fetching — discard the
-  // wrappers it created rather than letting the pipe run after settlement.
+  // wrappers it created rather than letting the pipe run after settlement,
+  // and observe any rejected branded inputs the abandoned fetch leaves
+  // unconsumed so they are not reported unhandled.
   if (state.settled) {
     invalidateNextCallbacks(nextCallbacks)
+    observeAbandonedInputs(inputArgs)
     return
   }
   const advance = next as unknown as Continuation

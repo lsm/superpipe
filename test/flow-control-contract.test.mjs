@@ -3704,4 +3704,56 @@ describe('endAsync abort contract (review round 10)', () => {
     await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
     expect(postAbortTraps).to.equal(0)
   })
+
+  it('does not run a replaced array iterator while observing an abandoned selection', async () => {
+    const controller = new AbortController()
+    const originalIterator = Array.prototype[Symbol.iterator]
+    let iteratorCalls = 0
+    const sp = superpipe({
+      get first() {
+        controller.abort()
+        // Replace the array iterator after the fetch loop captured the
+        // original — observing the wrapper must not invoke the replacement.
+        Array.prototype[Symbol.iterator] = function () {
+          iteratorCalls += 1
+          return originalIterator.call(this)
+        }
+        return 'a'
+      },
+      get second() {
+        return 'b'
+      },
+    })
+    const run = sp('abort-iterator-swap')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync(['first', 'second'], { signal: controller.signal })
+
+    let rejection
+    try {
+      rejection = await run().catch((error) => error)
+    } finally {
+      Array.prototype[Symbol.iterator] = originalIterator
+    }
+    expect(rejection).toBeInstanceOf(PipelineAbortedError)
+    expect(iteratorCalls).to.equal(0)
+  })
+
+  it('observes rejected inputs discarded by cancellation', async () => {
+    const controller = new AbortController()
+    const rejected = Promise.reject(new Error('input rejected'))
+    const sp = superpipe({
+      get dep() {
+        controller.abort()
+        return rejected
+      },
+    })
+    const run = sp('abort-rejected-input')
+      .pipe((dep) => dep, 'dep')
+      .endAsync(undefined, { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    // The pipe that would have consumed the input never ran; its rejection
+    // must not surface unhandled once microtasks drain.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
 })

@@ -43,20 +43,24 @@ function abortReason(signal: AbortSignalLike): unknown {
 // observed individually — reading the wrapper itself runs no user code. A
 // single-key spec fetches the raw value, whose own properties may be hostile
 // accessors, so it is observed as a whole and never probed key by key.
+// Internally built arrays are walked by index: the iterable protocol stays
+// uninvoked after cancellation, since an aborting accessor may have replaced
+// Array.prototype[Symbol.iterator].
 function observeAbandonedSelection(value: PipeOutput, wrapped: boolean): void {
   if (!wrapped) {
     observeOriginalRejection(value)
     return
   }
   if (Array.isArray(value)) {
-    for (const entry of value) {
-      observeOriginalRejection(entry)
+    for (let i = 0; i < value.length; i += 1) {
+      observeOriginalRejection(value[i])
     }
     return
   }
   if (value !== null && typeof value === 'object') {
-    for (const key of Object.keys(value)) {
-      observeOriginalRejection((value as Record<string, PipeResult>)[key])
+    const keys = Object.keys(value)
+    for (let i = 0; i < keys.length; i += 1) {
+      observeOriginalRejection((value as Record<string, PipeResult>)[keys[i]])
     }
     return
   }
