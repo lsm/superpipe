@@ -3497,4 +3497,119 @@ describe('endAsync abort contract (review round 10)', () => {
     // must not surface as unhandled once microtasks drain.
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
+
+  it('does not probe a proxied output prototype after an aborting getter', async () => {
+    const controller = new AbortController()
+    let postAbortProtoReads = 0
+    const target = { v: 'value' }
+    const proxy = new Proxy(target, {
+      getPrototypeOf() {
+        if (controller.signal.aborted) {
+          postAbortProtoReads += 1
+        }
+        return Reflect.getPrototypeOf(target)
+      },
+    })
+    const sp = superpipe({
+      get out() {
+        controller.abort()
+        return proxy
+      },
+    })
+    const run = sp('abort-output-proxy')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    // The abandoned adoption must not run the proxy's getPrototypeOf trap
+    // through an instanceof brand probe after the cancellation.
+    expect(postAbortProtoReads).to.equal(0)
+  })
+
+  it('does not read a proxied dependency after its descriptor trap aborts', async () => {
+    const controller = new AbortController()
+    let postAbortGetReads = 0
+    const target = { dep: 'value' }
+    const functions = new Proxy(target, {
+      getOwnPropertyDescriptor(t, key) {
+        controller.abort() // abort while reporting the property present
+        return Reflect.getOwnPropertyDescriptor(t, key)
+      },
+      get(t, key) {
+        if (controller.signal.aborted) {
+          postAbortGetReads += 1
+        }
+        return t[key]
+      },
+    })
+    const sp = superpipe(functions)
+    const run = sp('abort-proxied-dep')
+      .pipe((dep) => `got:${dep}`, 'dep')
+      .endAsync(undefined, { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(postAbortGetReads).to.equal(0)
+  })
+
+  it('stops namespace validation when dependency metadata aborts', async () => {
+    const controller = new AbortController()
+    let descriptorTraps = 0
+    const target = { shared: () => {} }
+    const functions = new Proxy(target, {
+      getOwnPropertyDescriptor(t, key) {
+        descriptorTraps += 1
+        if (descriptorTraps === 1) {
+          controller.abort() // abort while validating the first implicit name
+        }
+        return Reflect.getOwnPropertyDescriptor(t, key)
+      },
+    })
+    const sp = superpipe(functions)
+    const run = sp('abort-validation-metadata')
+      .pipe(() => ({ first: 1, second: 2 }))
+      .endAsync('first', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    // Only the aborting trap ran — the second name was not validated and no
+    // output values were read after the cancellation.
+    expect(descriptorTraps).to.equal(1)
+  })
+
+  it('settles even when the abort listener cleanup throws', async () => {
+    const makeThrowingSignal = () => {
+      const signal = {
+        aborted: false,
+        listener: undefined,
+        addEventListener(_type, listener) {
+          this.listener = listener
+        },
+        removeEventListener() {
+          throw new Error('cleanup boom')
+        },
+        abort() {
+          this.aborted = true
+          if (this.listener) {
+            this.listener()
+          }
+        },
+      }
+      return signal
+    }
+    const sp = superpipe({})
+
+    // Success settlement detaches the listener before reporting.
+    const done = sp('abort-cleanup-throw-success')
+      .pipe(() => 'v', null, 'out')
+      .endAsync('out', { signal: makeThrowingSignal() })
+    await expect(done()).resolves.toEqual('v')
+
+    // abortRun detaches before reporting the cancellation.
+    const signal = makeThrowingSignal()
+    const cancelled = sp('abort-cleanup-throw-abort')
+      .pipe(() => new Promise(() => {}), null, 'never')
+      .endAsync('out', { signal })
+    const outcome = cancelled()
+    signal.abort()
+    await expect(outcome).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
 })

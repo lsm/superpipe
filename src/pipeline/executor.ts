@@ -92,10 +92,17 @@ const RESERVED_OUTPUT_NAMES = ['next']
 // access), so a class-based or Object.create container exposes inherited
 // names. Detect collisions with the same semantics, but stop at the standard
 // Object.prototype — its built-ins are not user-configured dependencies.
-function hasConfiguredDependency(functions: FunctionContainer, key: string): boolean {
+function hasConfiguredDependency(
+  functions: FunctionContainer,
+  key: string,
+  isSettled?: () => boolean,
+): boolean {
   for (let obj: unknown = functions; obj != null; obj = Object.getPrototypeOf(obj)) {
     if (obj === Object.prototype) return false
     if (Object.prototype.hasOwnProperty.call(obj, key)) return true
+    // Metadata traps on a Proxy container may have aborted the run mid-walk;
+    // stop rather than running further traps after settlement.
+    if (isSettled?.()) return false
   }
   return false
 }
@@ -114,27 +121,19 @@ function swallow(value: unknown): void {
 // cleanup.
 function ignoreReason(): void {}
 
-// Native-promise brand check, guarded: a Proxy whose getPrototypeOf trap
-// throws must answer false rather than escape the caller. A value that
-// merely inherits from Promise.prototype still answers true here; the
-// observation attempt below self-verifies against such false positives.
-function isNativePromiseBrand(value: PipeResult): boolean {
-  try {
-    return value instanceof Promise
-  } catch {
-    return false
-  }
-}
-
 // Attempt to observe a native promise's rejection through the intrinsic
-// then, reporting whether a reaction actually attached. The intrinsic
-// reaches the promise's original state regardless of any `then` override;
-// a branded but slotless receiver, or a species constructor that throws
-// when constructed, makes the attach throw before registering anything —
-// and no userland mechanism can observe such an object (only the engine's
-// internal species-free path, used by `await`, can).
+// then, reporting whether a reaction actually attached. The attach is
+// attempted directly and an incompatible receiver — a non-promise object,
+// a branded-looking but slotless value, a Proxy of any kind — throws
+// before running an observable trap, unlike an `instanceof` brand check
+// whose getPrototypeOf read would run a Proxy's user code. The intrinsic
+// reaches a promise's original state regardless of any `then` override; a
+// species constructor that throws when constructed makes the attach throw
+// before registering anything — and no userland mechanism can observe such
+// an object (only the engine's internal species-free path, used by `await`,
+// can).
 export function observeOriginalRejection(value: PipeResult): boolean {
-  if (!isNativePromiseBrand(value)) {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
     return false
   }
   try {
@@ -188,10 +187,18 @@ function mergeIntoContainer(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" is reserved.`,
       )
     }
-    if (!isInvocationInput && hasConfiguredDependency(pipeline.functions, key)) {
+    if (
+      !isInvocationInput &&
+      hasConfiguredDependency(pipeline.functions, key, (): boolean => state.settled)
+    ) {
       throw new OutputNameError(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" shadows a configured dependency of the same name.`,
       )
+    }
+    // Dependency metadata traps may have aborted the run mid-validation;
+    // stop before later names or any value read.
+    if (state.settled) {
+      return
     }
   }
   // Values are copied one key at a time after validation: a getter that
@@ -295,11 +302,20 @@ function settle(state: PipeState, error: Error | null): void {
 
 // Remove the abort listener and clear its cleanup — a terminal transition
 // (normal or aborted) must not leave the run's state reachable through a
-// long-lived shared controller.
+// long-lived shared controller. A signal whose removeEventListener throws
+// must not prevent the already-determined outcome from reaching the
+// observer, so the cleanup failure is contained here.
 function detachAbort(state: PipeState): void {
   const cleanup = state.abortCleanup
   state.abortCleanup = undefined
-  cleanup?.()
+  if (!cleanup) {
+    return
+  }
+  try {
+    cleanup()
+  } catch {
+    // Contained: the run settles the same way regardless.
+  }
 }
 
 // Cancellation terminal transition: synchronous, like an error, but it does

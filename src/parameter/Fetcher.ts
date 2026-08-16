@@ -184,12 +184,19 @@ export default class Fetcher {
     container: PipeResult,
     functions: FunctionContainer | undefined,
     key: string,
+    isSettled?: () => boolean,
   ): PipeResult {
     const box = container as { [key: string]: PipeResult }
     if (Object.prototype.hasOwnProperty.call(box, key)) {
       return box[key]
     }
     if (functions && Object.prototype.hasOwnProperty.call(functions, key)) {
+      // A metadata trap on a Proxy dependency container may have aborted
+      // the run while reporting the property present; do not run its get
+      // trap after settlement.
+      if (isSettled?.()) {
+        return undefined
+      }
       return functions[key]
     }
     return undefined
@@ -202,7 +209,7 @@ export default class Fetcher {
     nextCallbacks?: NextCallbacks,
   ): PipeResult {
     if (key !== 'next') {
-      return this.lookup(container, functions, key)
+      return this.lookup(container, functions, key, nextCallbacks?.isSettled)
     }
     const box = container as { [key: string]: PipeResult }
     const wrapped = once(box.next as AnyFunction, nextCallbacks)
@@ -224,7 +231,7 @@ export default class Fetcher {
       if (key === 'next') {
         continue
       }
-      if (this.lookup(container, functions, key) === undefined) {
+      if (this.lookup(container, functions, key, isSettled) === undefined) {
         return true
       }
       if (isSettled?.()) {
@@ -248,9 +255,9 @@ export default class Fetcher {
     container: PipeResult,
     _args: PipeResult[],
     functions?: FunctionContainer,
-    _nextCallbacks?: NextCallbacks,
+    nextCallbacks?: NextCallbacks,
   ): PipeOutput {
-    return this.lookup(container, functions, this.keys[0])
+    return this.lookup(container, functions, this.keys[0], nextCallbacks?.isSettled)
   }
 
   fetchAsArray(
