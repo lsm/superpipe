@@ -3,6 +3,7 @@ import {
   type AnyFunction,
   type EndAsyncOptions,
   type FunctionContainer,
+  objectStringToArray,
   type PipeFunction,
   PipelineAbortedError,
   type PipelineBase,
@@ -37,30 +38,31 @@ function abortReason(signal: AbortSignalLike): unknown {
   }
 }
 
-// Observe the values abandoned by a cancelled output selection. A multi-key
-// spec fetches an internally built array (or plain object, for object-string
-// syntax); only its entries can be rejected native promises, so each is
-// observed individually — reading the wrapper itself runs no user code. A
-// single-key spec fetches the raw value, whose own properties may be hostile
-// accessors, so it is observed as a whole and never probed key by key.
-// Internally built arrays are walked by index: the iterable protocol stays
-// uninvoked after cancellation, since an aborting accessor may have replaced
-// Array.prototype[Symbol.iterator].
-function observeAbandonedSelection(value: PipeOutput, wrapped: boolean): void {
-  if (!wrapped) {
-    observeOriginalRejection(value)
-    return
-  }
-  if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i += 1) {
-      observeOriginalRejection(value[i])
+// Observe the values abandoned by a cancelled output selection. The wrapper
+// kind comes from the output specification, determined at construction —
+// branding the fetched value after cancellation would consult mutable
+// globals (Array.isArray, Object.keys, the iterator protocol), which an
+// aborting accessor may have replaced. An array spec fetches an internally
+// built array walked by index; an object-string spec fetches a plain record
+// holding exactly the spec's keys. A single-key spec fetches the raw value,
+// whose own properties may be hostile accessors, so it is observed as a
+// whole and never probed key by key.
+function observeAbandonedSelection(
+  value: PipeOutput,
+  arraySpec: boolean,
+  objectStringKeys: string[] | undefined,
+): void {
+  if (arraySpec) {
+    const entries = value as PipeResult[]
+    for (let i = 0; i < entries.length; i += 1) {
+      observeOriginalRejection(entries[i])
     }
     return
   }
-  if (value !== null && typeof value === 'object') {
-    const keys = Object.keys(value)
-    for (let i = 0; i < keys.length; i += 1) {
-      observeOriginalRejection((value as Record<string, PipeResult>)[keys[i]])
+  if (objectStringKeys !== undefined) {
+    const record = value as Record<string, PipeResult>
+    for (let i = 0; i < objectStringKeys.length; i += 1) {
+      observeOriginalRejection(record[objectStringKeys[i]])
     }
     return
   }
@@ -168,12 +170,17 @@ export default class Pipeline implements PipelineBase {
     options?: EndAsyncOptions,
   ): (...args: unknown[]) => Promise<PipeOutput> {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
-    // A multi-key output spec fetches an internally built wrapper (array, or
-    // plain object for object-string syntax); a single name fetches the raw
-    // value. The distinction governs how an abandoned selection is observed.
-    const wrapped =
-      output !== undefined &&
-      (Array.isArray(output) || (typeof output === 'string' && RE_IS_OBJ_STRING.test(output)))
+    // The wrapper kind for an abandoned selection, determined from the spec
+    // here at construction: an array spec fetches an internally built array,
+    // an object-string spec a plain record with exactly these keys, and a
+    // single name the raw value. Deciding this from the fetched value after
+    // cancellation would consult mutable globals an aborting accessor may
+    // have replaced.
+    const arraySpec = output !== undefined && Array.isArray(output)
+    const objectStringKeys =
+      typeof output === 'string' && RE_IS_OBJ_STRING.test(output)
+        ? objectStringToArray(output)
+        : undefined
     const signal = options?.signal
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
@@ -236,7 +243,7 @@ export default class Pipeline implements PipelineBase {
             // selection may contain rejected branded promises the run will
             // never adopt — observe each so it is not reported unhandled.
             if (signal?.aborted) {
-              observeAbandonedSelection(value, wrapped)
+              observeAbandonedSelection(value, arraySpec, objectStringKeys)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }
@@ -262,7 +269,7 @@ export default class Pipeline implements PipelineBase {
             // branded promise is never adopted on this path — observe its
             // original rejection so it is not reported unhandled.
             if (signal?.aborted) {
-              observeAbandonedSelection(value, wrapped)
+              observeAbandonedSelection(value, arraySpec, objectStringKeys)
               reject(new PipelineAbortedError(abortReason(signal)))
               return
             }

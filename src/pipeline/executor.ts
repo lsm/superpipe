@@ -963,8 +963,11 @@ export function runPipeline(
   const signal = options?.signal
   if (signal !== undefined) {
     const onAbort = (): void => abortRun(state, getAbortReason(signal))
-    signal.addEventListener('abort', onAbort)
+    // Install the cleanup before registering: a polyfill may invoke the
+    // listener synchronously from addEventListener for an already-aborted
+    // signal, and that synchronous abortRun must be able to detach itself.
     state.abortCleanup = (): void => signal.removeEventListener('abort', onAbort)
+    signal.addEventListener('abort', onAbort)
     if (signal.aborted) {
       abortRun(state, getAbortReason(signal))
       return state.container

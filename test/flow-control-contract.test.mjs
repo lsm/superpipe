@@ -3756,4 +3756,52 @@ describe('endAsync abort contract (review round 10)', () => {
     // must not surface unhandled once microtasks drain.
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
+
+  it('does not consult a replaced Array.isArray while observing an abandoned selection', async () => {
+    const controller = new AbortController()
+    const originalIsArray = Array.isArray
+    const sp = superpipe({
+      get first() {
+        controller.abort()
+        Array.isArray = () => {
+          throw new Error('isArray boom')
+        }
+        return 'a'
+      },
+      get second() {
+        return 'b'
+      },
+    })
+    const run = sp('abort-isarray-swap')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync(['first', 'second'], { signal: controller.signal })
+
+    let rejection
+    try {
+      rejection = await run().catch((error) => error)
+    } finally {
+      Array.isArray = originalIsArray
+    }
+    expect(rejection).toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('removes a listener a polyfill notifies synchronously at registration', async () => {
+    let removeCount = 0
+    const signal = {
+      aborted: true,
+      addEventListener(_type, listener) {
+        listener() // already-aborted polyfill: notifies synchronously
+      },
+      removeEventListener() {
+        removeCount += 1
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('abort-sync-notify')
+      .pipe(() => 'x', null, 'out')
+      .endAsync('out', { signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(removeCount).to.equal(1)
+  })
 })
