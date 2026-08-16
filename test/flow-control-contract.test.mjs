@@ -2723,3 +2723,55 @@ describe('endAsync abort contract (review round 1)', () => {
     await expect(run()).rejects.toThrow('reserved')
   })
 })
+
+// --- endAsync abort contract: review round 2 (#50) ---
+describe('endAsync abort contract (review round 2)', () => {
+  it('does not execute an optional pipe after an abort during optional probing', async () => {
+    const controller = new AbortController()
+    let reads = 0
+    let pipeRan = false
+    const sp = superpipe({
+      dep: () => 'value',
+      get inputDep() {
+        reads += 1
+        if (reads === 2) controller.abort() // second read is hasUnresolved's probe
+        return 'x'
+      },
+    })
+    const run = sp('abort-optional-probe')
+      .pipe('?dep', 'inputDep', 'out') // optional: input `inputDep` is read twice
+      .pipe(() => {
+        pipeRan = true
+      }, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(pipeRan).to.equal(false)
+  })
+
+  it('does not rethrow an aborted continuation that also throws on a foreign stack', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-foreign-throw')
+      .pipe(
+        (next) => {
+          setTimeout(() => {
+            next(null, {
+              get out() {
+                controller.abort()
+                throw new Error('getter boom')
+              },
+            })
+          }, 5)
+        },
+        'next',
+        'out',
+      )
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    // Let the timer fire the throwing accessor — the discarded continuation
+    // must not rethrow onto the timer stack (vitest would surface it).
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+})

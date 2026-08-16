@@ -384,6 +384,13 @@ function executePipe(
     advance(state, pipeline)
     return
   } else if (typeof fn === 'function') {
+    // `hasUnresolved` above re-reads input accessors; one may have aborted
+    // the run while returning a defined value. Do not invoke the pipe after
+    // settlement.
+    if (state.settled) {
+      invalidateNextCallbacks(nextCallbacks)
+      return
+    }
     // Hold a synchronous `next` call until the pipe's return channel is
     // known, so a pipe that both calls `next` and returns a thenable
     // cannot advance the pipeline before the ambiguity is detected.
@@ -713,6 +720,12 @@ function next(
       if (!state.settled) {
         settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
+      return
+    }
+    // An abort (or other terminal transition) may have cleared the observer
+    // while this continuation unwound — the run is already settled, so the
+    // exception must not escape onto a foreign callback stack.
+    if (state.settled) {
       return
     }
     throw err
