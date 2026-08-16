@@ -179,9 +179,20 @@ export default class Pipeline implements PipelineBase {
             }
             let value: PipeOutput
             try {
-              value = fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput
+              value = fetcher.fetch(outcome.container, [], pipeline.functions, {
+                wrappers: [],
+                holding: false,
+                held: [],
+                isSettled: (): boolean => signal?.aborted ?? false,
+              }) as PipeOutput
             } catch (err) {
-              reject(err as Error)
+              // An output accessor may have aborted before throwing — the
+              // cancellation precedes the accessor error and must win.
+              if (signal?.aborted) {
+                reject(new PipelineAbortedError(abortReason(signal)))
+              } else {
+                reject(err as Error)
+              }
               return
             }
             // An output accessor may have aborted the signal while being

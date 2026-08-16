@@ -3163,3 +3163,42 @@ describe('endAsync abort contract (review round 7)', () => {
     expect(thenCalled).to.equal(0)
   })
 })
+
+// --- endAsync abort contract: review round 8 (#50) ---
+describe('endAsync abort contract (review round 8)', () => {
+  it('rejects with the abort when an output accessor aborts and then throws', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({
+      get out() {
+        controller.abort()
+        throw new Error('accessor boom')
+      },
+    })
+    const run = sp('abort-output-throw')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('stops multi-key output selection at the aborting key', async () => {
+    const controller = new AbortController()
+    let secondRead = 0
+    const sp = superpipe({
+      get first() {
+        controller.abort()
+        return 'a'
+      },
+      get second() {
+        secondRead += 1
+        return 'b'
+      },
+    })
+    const run = sp('abort-output-multikey')
+      .pipe(() => 'x', null, 'unused')
+      .endAsync(['first', 'second'], { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRead).to.equal(0)
+  })
+})
