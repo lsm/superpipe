@@ -324,6 +324,11 @@ function executePipe(
       ? container[fnName]
       : functions[fnName]
     : pipe.fn
+  // A configured-dependency getter may have aborted the run while resolving
+  // `fn` — the pipe must not execute after settlement.
+  if (state.settled) {
+    return
+  }
   // `next` callback state for this pipe invocation, owned locally so a
   // reentrant nested run of the same pipeline cannot clobber it.
   const nextCallbacks: NextCallbacks = {
@@ -358,6 +363,12 @@ function executePipe(
   // not removed on consume — `disable` is idempotent — and the registry is
   // cleared on terminal transition.
   state.liveNextCallbacks.push(...nextCallbacks.wrappers)
+  // An input getter may have aborted the run while fetching — discard the
+  // wrappers it created rather than letting the pipe run after settlement.
+  if (state.settled) {
+    invalidateNextCallbacks(nextCallbacks)
+    return
+  }
   const advance = next as unknown as Continuation
 
   let result: PipeResult
@@ -830,21 +841,29 @@ export function runPipeline(
     }
   }
 
-  // Start from the input pipes, if any: each maps the invocation arguments
-  // into the shared container.
-  for (const inputPipe of pipeline.inputPipes || []) {
-    mergeIntoContainer(
-      state,
-      pipeline,
-      0,
-      inputPipe.fnName,
-      inputPipe.producer.produce(state.args),
-      true,
-    )
-  }
+  try {
+    // Start from the input pipes, if any: each maps the invocation arguments
+    // into the shared container.
+    for (const inputPipe of pipeline.inputPipes || []) {
+      mergeIntoContainer(
+        state,
+        pipeline,
+        0,
+        inputPipe.fnName,
+        inputPipe.producer.produce(state.args),
+        true,
+      )
+    }
 
-  // Start executing pipeline
-  next(state, pipeline)
+    // Start executing pipeline
+    next(state, pipeline)
+  } catch (err) {
+    // A synchronous initialization failure (a reserved-name input, a pipe
+    // throwing with no handler and no observer) must not leave the abort
+    // listener retaining the run state on a long-lived signal.
+    detachAbort(state)
+    throw err
+  }
 
   return state.container
 }

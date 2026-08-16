@@ -99,6 +99,10 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
     disabled = true
     consume()
     advance = null
+    // Sever the bookkeeping closures too: `callbacks.onConsumed`/`onError`
+    // close over the whole run state, and a retained (disabled) wrapper must
+    // not keep that state reachable after cancellation.
+    callbacks = undefined
   }
   return wrapped
 }

@@ -2666,3 +2666,60 @@ describe('endAsync abort contract', () => {
     expect(ran).to.equal(true)
   })
 })
+
+// --- endAsync abort contract: review round 1 (#50) ---
+describe('endAsync abort contract (review round 1)', () => {
+  it('does not execute a pipe after an abort during dependency resolution', async () => {
+    const controller = new AbortController()
+    let pipeRan = false
+    const sp = superpipe({
+      get dep() {
+        controller.abort()
+        return () => 'value'
+      },
+    })
+    const run = sp('abort-during-resolve')
+      .pipe('dep', null, 'out') // resolving the injected `dep` aborts the run
+      .pipe(() => {
+        pipeRan = true
+      }, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(pipeRan).to.equal(false)
+  })
+
+  it('does not execute a pipe after an abort during input resolution', async () => {
+    const controller = new AbortController()
+    let pipeRan = false
+    const sp = superpipe({
+      makeFn: (x) => x,
+      get inputDep() {
+        controller.abort()
+        return 'x'
+      },
+    })
+    const run = sp('abort-during-fetch')
+      .pipe('makeFn', 'inputDep', 'out') // fetching `inputDep` aborts the run
+      .pipe(() => {
+        pipeRan = true
+      }, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(pipeRan).to.equal(false)
+  })
+
+  it('still rejects with the namespace error when initialization throws with a signal', async () => {
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-reserved-input')
+      .input(['next']) // reserved name → OutputNameError during input mapping
+      .pipe(() => 'x', null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    // The reserved-name failure surfaces as a rejection (not a hang or an
+    // abort) even though a signal was registered before the input mapping.
+    await expect(run()).rejects.toThrow('reserved')
+  })
+})
