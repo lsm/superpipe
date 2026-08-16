@@ -3202,3 +3202,61 @@ describe('endAsync abort contract (review round 8)', () => {
     expect(secondRead).to.equal(0)
   })
 })
+
+// --- endAsync abort contract: review round 9 (#50) ---
+describe('endAsync abort contract (review round 9)', () => {
+  it('does not run a following pipe dependency getter after an output accessor aborts', async () => {
+    const controller = new AbortController()
+    let depRead = 0
+    const sp = superpipe({
+      get dep() {
+        depRead += 1
+        return () => 'x'
+      },
+    })
+    const run = sp('abort-output-advance')
+      .pipe(
+        () => ({
+          get out() {
+            controller.abort()
+            return 'a'
+          },
+        }),
+        null,
+        'out',
+      )
+      .pipe('dep', 'out', 'final')
+      .endAsync('out', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(depRead).to.equal(0)
+  })
+
+  it('defers a custom thenable output invocation past an intervening microtask', async () => {
+    const order = []
+    const sp = superpipe({})
+    const run = sp('deferred-thenable-order')
+      .pipe(
+        () => ({
+          out: {
+            // biome-ignore lint/suspicious/noThenProperty: deliberately a thenable
+            then(resolve) {
+              order.push('then')
+              resolve('v')
+            },
+          },
+        }),
+        null,
+        'out',
+      )
+      .endAsync('out')
+
+    const promise = run()
+    Promise.resolve().then(() => {
+      order.push('user-microtask')
+    })
+    const result = await promise
+    expect(result).to.equal('v')
+    expect(order).to.deep.equal(['user-microtask', 'then'])
+  })
+})

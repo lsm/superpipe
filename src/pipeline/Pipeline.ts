@@ -248,18 +248,22 @@ export default class Pipeline implements PipelineBase {
                   onAbort = fire
                   signal.addEventListener('abort', onAbort)
                 }
-                try {
-                  Reflect.apply(then as AnyFunction, value, [finishResolve, finishReject])
-                } catch (err) {
-                  finishReject(err)
-                }
+                // Defer the custom `then` invocation to a promise job (matching
+                // native assimilation ordering) after the abort gate is installed.
+                Promise.resolve().then(() => {
+                  try {
+                    Reflect.apply(then as AnyFunction, value, [finishResolve, finishReject])
+                  } catch (err) {
+                    finishReject(err)
+                  }
+                })
               })
               resolve(adopted)
               return
             }
             resolve(value)
           },
-          options,
+          signal === undefined ? undefined : { signal },
         )
       })
     }

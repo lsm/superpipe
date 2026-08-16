@@ -269,7 +269,10 @@ invoking the error handler. A signal already aborted at call time rejects
 before the first pipe runs:
 
 ```javascript
+import superpipe, { PipelineAbortedError } from 'superpipe'
+
 const controller = new AbortController()
+const sp = superpipe({})
 const run = sp('fetch-workflow')
   .pipe(() => repository.getWorkflow(), null, 'workflow')
   .endAsync('workflow', { signal: controller.signal })

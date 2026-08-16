@@ -781,6 +781,12 @@ function continuePipeline(
       pipes[producerIndex].producer.produce(value, (): boolean => state.settled),
       false,
     )
+    // Producing the output may have aborted the run via an accessor; stop
+    // before advancing to the next pipe (whose dependency getter would run
+    // after cancellation).
+    if (state.settled) {
+      return
+    }
   }
 
   // The active error is the one passed to `next` — data named `error`
