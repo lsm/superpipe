@@ -306,6 +306,28 @@ cancelled. For cancellable work, prefer promise-returning pipes whose
 underlying operation receives the same signal: when that operation
 rejects, the run settles and releases its state.
 
+A pipe that must park a `next` callback on an external source can free
+itself the same way — observe the signal and fire the callback with the
+abort reason, so the run terminates instead of hanging. Guard the
+double-fire:
+
+```javascript
+.pipe((next, source) => {
+  let fired = false
+  const fire = (err, value) => {
+    if (fired) return // a late double-fire must not reach next
+    fired = true
+    next(err, value)
+  }
+  source.addEventListener('data', (e) => fire(null, e.data))
+  signal.addEventListener('abort', () => fire(signal.reason), { once: true })
+}, ['next', 'source'], 'data')
+```
+
+The fired error follows the pipeline's normal error path — the `.error()`
+handler sees it even though the returned promise already rejected with
+`PipelineAbortedError`.
+
 A run counts as completed only once the returned promise settles: a
 successful run defers its settlement by one job (so an error dispatched in
 the same unwind wins), which means an abort fired synchronously right
