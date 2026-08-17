@@ -298,6 +298,14 @@ not interrupted, so if a pipe later fails, that error still routes to the
 pipeline's error handler as it normally would; it just never changes the
 already-rejected returned promise.
 
+Abandonment does not disable live callbacks: cancellation never touches a
+run's `next` wrappers, so a pipe holding an unfired callback keeps its
+run's state reachable until the callback fires or the reference is dropped
+— the aborted run continues or hangs exactly as if it were never
+cancelled. For cancellable work, prefer promise-returning pipes whose
+underlying operation receives the same signal: when that operation
+rejects, the run settles and releases its state.
+
 A run counts as completed only once the returned promise settles: a
 successful run defers its settlement by one job (so an error dispatched in
 the same unwind wins), which means an abort fired synchronously right

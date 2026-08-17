@@ -2567,6 +2567,29 @@ describe('endAsync abort contract', () => {
     expect(handled.message).to.equal('late failure')
   })
 
+  it('stays silent when a retained next fires into the abandoned run', async () => {
+    // Cancellation abandons the run without disabling live callbacks: the
+    // late call merges into the abandoned run on its own stack — it must
+    // not throw there, and the already-rejected promise must not change.
+    let retained
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-retained-next')
+      .pipe((next) => {
+        retained = next
+      }, 'next')
+      .pipe(() => 'done', null, 'done')
+      .endAsync('done', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+
+    expect(() => retained(null, 'late')).to.not.throw()
+    const err = await promise.catch((e) => e)
+    expect(err).toBeInstanceOf(PipelineAbortedError)
+  })
+
   it('rejects without running pipes when addEventListener throws', async () => {
     let ran = false
     const signal = {
