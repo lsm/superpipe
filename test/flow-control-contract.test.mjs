@@ -2537,10 +2537,10 @@ describe('endAsync abort contract', () => {
     expect(handlerRuns).to.equal(0)
   })
 
-  it('still routes a late pipeline error to the error handler after an abort', async () => {
-    // The abandoned run is not interrupted: a pipe failing after the abort
-    // still invokes the error handler, even though the returned promise
-    // already rejected with PipelineAbortedError.
+  it('discards a late pipeline error after an abort', async () => {
+    // The cancellation gate is terminal: a pipe rejecting after the abort
+    // is discarded — no handler run, no unhandled rejection — and the
+    // returned promise stays rejected with PipelineAbortedError.
     let handled = null
     const controller = new AbortController()
     const sp = superpipe({})
@@ -2561,10 +2561,134 @@ describe('endAsync abort contract', () => {
     const promise = run()
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
-    // Wait for the abandoned run's late rejection to dispatch.
+    // Wait past the late rejection so a handler run would be recorded.
     await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(handled).toBeInstanceOf(Error)
-    expect(handled.message).to.equal('late failure')
+    expect(handled).to.equal(null)
+  })
+
+  it('skips pipes that have not started when the signal aborts mid-run', async () => {
+    // The core cancellation guarantee: after abort, no pipe that has not
+    // started will execute — downstream side effects cannot fire for a
+    // cancelled run. The in-flight pipe's operation may still settle; its
+    // result is discarded.
+    const controller = new AbortController()
+    let resolveFourth
+    const ran = []
+    const sp = superpipe({})
+    const run = sp('abort-skips-rest')
+      .pipe(
+        () => {
+          ran.push(1)
+          return 'a'
+        },
+        null,
+        'a',
+      )
+      .pipe(
+        () => {
+          ran.push(2)
+          return 'b'
+        },
+        null,
+        'b',
+      )
+      .pipe(
+        () => {
+          ran.push(3)
+          return 'c'
+        },
+        null,
+        'c',
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveFourth = resolve
+          }),
+        null,
+        'd',
+      )
+      .pipe(
+        () => {
+          ran.push(5) // side effect — must NOT run after the abort
+          return 'e'
+        },
+        null,
+        'e',
+      )
+      .endAsync('e', { signal: controller.signal })
+
+    const promise = run()
+    await new Promise((resolve) => setTimeout(resolve, 10)) // pipes 1-3 done, 4 in flight
+    controller.abort()
+    resolveFourth('too late')
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(ran).to.deep.equal([1, 2, 3])
+  })
+
+  it('skips remaining pipes when a pipe aborts during the initial cascade', async () => {
+    // The cancel handle is registered before the first pipe runs, so an
+    // abort fired synchronously inside a pipe gates the very cascade it
+    // interrupted — not just the caller's promise.
+    const controller = new AbortController()
+    let secondRan = false
+    const sp = superpipe({})
+    const run = sp('abort-cascade-skip')
+      .pipe(
+        () => {
+          controller.abort()
+          return 'a'
+        },
+        null,
+        'a',
+      )
+      .pipe(
+        () => {
+          secondRan = true
+          return 'b'
+        },
+        null,
+        'b',
+      )
+      .endAsync('b', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRan).to.equal(false)
+  })
+
+  it('disables retained next callbacks when the signal aborts', async () => {
+    // Cancellation reaches the wrappers themselves: a retained callback
+    // becomes a no-op (freeing its hold on the run's state) instead of a
+    // live continuation that keeps the abandoned run open forever. The
+    // error handler never sees the cancellation.
+    let retained
+    let handlerRuns = 0
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-retained-freed')
+      .pipe(
+        (first, second) => {
+          retained = second // stays live; the run holds itself open on it
+          first(null, 'value') // advance past this pipe
+        },
+        ['next', 'next'],
+        'value',
+      )
+      .pipe(() => 'done', null, 'done')
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('done', { signal: controller.signal })
+
+    const promise = run()
+    // Every pipe completed, but the run stays open on the live callback.
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    // The wrapper was disabled by the cancellation: a late invocation is a
+    // silent no-op that cannot advance the run or throw on the caller's stack.
+    expect(() => retained(null, 'late')).to.not.throw()
+    expect(handlerRuns).to.equal(0)
   })
 
   it('rejects without running pipes when addEventListener throws', async () => {

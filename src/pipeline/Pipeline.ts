@@ -117,8 +117,11 @@ export default class Pipeline implements PipelineBase {
   // `options.signal` opts into AbortSignal cancellation: when the signal
   // aborts, the returned promise rejects with `PipelineAbortedError` (never
   // routed through the error handler) and the abort listener is detached.
-  // Cancellation is racing at the promise boundary — the underlying run is
-  // not interrupted, only abandoned; its late settle is discarded. A signal
+  // Cancellation also gates the run itself — no pipe that has not started
+  // will execute, live `next` wrappers are disabled, and in-flight
+  // continuations are discarded when they land. An operation already in
+  // flight is not preempted (JavaScript cannot interrupt it); pass the
+  // signal into underlying operations so they stop early too. A signal
   // already aborted at call time rejects before the first pipe runs.
   //
   // "Completed" means the returned promise has settled: because a successful
@@ -143,29 +146,38 @@ export default class Pipeline implements PipelineBase {
     // Run the pipeline and settle with its outcome. Synchronous pipe code and
     // dependency getters run inside the promise executor, so a synchronous
     // throw (a reserved-name input, an ambiguous continuation) rejects the
-    // returned promise rather than escaping the caller.
-    const runPipelinePromise = (args: PipeResult): Promise<PipeOutput> =>
+    // returned promise rather than escaping the caller. `onRegisterCancel`
+    // receives the executor-side cancellation handle when the run starts.
+    const runPipelinePromise = (
+      args: PipeResult,
+      onRegisterCancel?: (cancel: (reason: unknown) => void) => void,
+    ): Promise<PipeOutput> =>
       new Promise<PipeOutput>((resolve, reject) => {
-        runPipeline(args, pipeline, (outcome) => {
-          if (outcome.error != null) {
-            reject(outcome.error)
-            return
-          }
-          // With no output spec the run's completion is the result; fetch
-          // the requested names from the settled container otherwise. The
-          // fetch runs in the settlement job — a throwing dependency
-          // accessor here must reject the returned promise, not die as an
-          // unhandled rejection while it hangs.
-          if (fetcher === null) {
-            resolve(undefined as PipeOutput)
-            return
-          }
-          try {
-            resolve(fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput)
-          } catch (err) {
-            reject(err as Error)
-          }
-        })
+        runPipeline(
+          args,
+          pipeline,
+          (outcome) => {
+            if (outcome.error != null) {
+              reject(outcome.error)
+              return
+            }
+            // With no output spec the run's completion is the result; fetch
+            // the requested names from the settled container otherwise. The
+            // fetch runs in the settlement job — a throwing dependency
+            // accessor here must reject the returned promise, not die as an
+            // unhandled rejection while it hangs.
+            if (fetcher === null) {
+              resolve(undefined as PipeOutput)
+              return
+            }
+            try {
+              resolve(fetcher.fetch(outcome.container, [], pipeline.functions) as PipeOutput)
+            } catch (err) {
+              reject(err as Error)
+            }
+          },
+          onRegisterCancel,
+        )
       })
 
     return function (): Promise<PipeOutput> {
@@ -188,8 +200,16 @@ export default class Pipeline implements PipelineBase {
       // `rejectAborted` is assigned synchronously by the promise executor
       // below (executors always run synchronously); the no-op initial value
       // keeps `onAbort` a plain callable with no undefined guards at its uses.
+      // The executor-side cancellation handle is assigned by the same
+      // mechanism — `runPipeline` registers it before its first pipe runs.
+      // Stopping the run itself, not just the caller's view of it, is what
+      // makes cancellation safe around side effects: no pipe that has not
+      // started will start, and every live `next` wrapper is disabled,
+      // releasing its hold on the run's state.
+      let cancelRun: ((reason: unknown) => void) | undefined
       let rejectAborted: (reason: unknown) => void = () => {}
       const onAbort = (): void => {
+        cancelRun?.(signalReason(signal))
         rejectAborted(new PipelineAbortedError(signalReason(signal)))
       }
       let listenerAttached = false
@@ -234,8 +254,15 @@ export default class Pipeline implements PipelineBase {
       // `Promise.race` settles with whichever comes first; `finally` detaches
       // the listener either way. The losing promise's settlement is simply
       // discarded — `race` never rethrows an unhandled rejection from the
-      // side that lost.
-      return Promise.race([runPipelinePromise(args), aborted]).finally(cleanup)
+      // side that lost. The registrar captures the run's cancel handle
+      // before its first pipe executes, so an abort fired synchronously
+      // during the initial cascade still gates the run.
+      return Promise.race([
+        runPipelinePromise(args, (cancel) => {
+          cancelRun = cancel
+        }),
+        aborted,
+      ]).finally(cleanup)
     }
   }
 }

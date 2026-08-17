@@ -4,6 +4,7 @@ import {
   type FunctionContainer,
   NextCalledTwiceError,
   OutputNameError,
+  PipelineAbortedError,
   type PipelineBase,
   type PipeOutput,
   type PipeResult,
@@ -186,6 +187,16 @@ interface PipeState {
   // continuations still merge their own outputs, but no further pipes
   // run — the run settles with the partial snapshot.
   halted: boolean
+  // True once an AbortSignal cancelled this run through its boundary
+  // observer: no pipe that has not started will execute, live `next`
+  // wrappers are disabled, and the cancellation is reported to the
+  // observer without ever dispatching to the error handler.
+  aborted: boolean
+  // Every pipe execution's next-callback registry. The wrappers close over
+  // this state with no back-reference — the registry is the only way a
+  // cancellation can reach them to disable a retained callback and free
+  // the run's state.
+  nextRegistries: NextCallbacks[]
   // Optional run-completion observer (`.endAsync`): receives the container
   // snapshot and the active error, if any. Absent for sync `.end()` runs.
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
@@ -232,6 +243,25 @@ function settle(state: PipeState, error: Error | null): void {
   state.onSettled?.({ container: state.container, error })
 }
 
+// Cancel a run whose AbortSignal fired. Live `next` wrappers are disabled
+// whether or not the run already settled — a retained unfired callback
+// pins the run's state either way, and its late invocation must become a
+// no-op rather than a duplicate-continuation throw on a foreign stack. An
+// unsettled run is then gated terminally: no pipe that has not started
+// will execute, in-flight continuations are discarded when they land, and
+// the observer receives `PipelineAbortedError` directly — the pipeline's
+// error handler never sees a cancellation.
+function cancelRun(state: PipeState, reason: unknown): void {
+  for (const callbacks of state.nextRegistries) {
+    invalidateNextCallbacks(callbacks)
+  }
+  if (state.settled || state.aborted) {
+    return
+  }
+  state.aborted = true
+  settle(state, new PipelineAbortedError(reason))
+}
+
 function executePipe(
   pipe: Pipe,
   state: PipeState,
@@ -274,11 +304,20 @@ function executePipe(
     },
     pipeIndex: state.step - 1,
   }
+  // Registered so a cancellation can disable this pipe's live wrappers
+  // after the fact, wherever they were parked.
+  state.nextRegistries.push(nextCallbacks)
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
   // Each wrapper handed to the pipe is a live continuation until invoked
   // or invalidated: a retained `next` keeps the run open exactly like an
   // adopted promise does.
   state.pending += nextCallbacks.wrappers.length
+  // A getter during the fetch above may itself have cancelled this run —
+  // the gate is terminal, and a pipe that has not started must not start.
+  if (state.aborted) {
+    invalidateNextCallbacks(nextCallbacks)
+    return
+  }
   const advance = next as unknown as Continuation
 
   let result: PipeResult
@@ -652,6 +691,11 @@ function continuePipeline(
   if (state.activeError == null) {
     // Clear any stale flag from a previous, fully-handled error path.
     state.handlingError = false
+    if (state.aborted) {
+      // Cancellation gated this run: no pipe that has not started will
+      // start. (The settlement already reported PipelineAbortedError.)
+      return
+    }
     if (state.halted) {
       // A flow-control halt ended progression: a late sibling continuation
       // merges its own output above, but no further pipes run.
@@ -698,6 +742,7 @@ export function runPipeline(
   args: PipeResult,
   pipeline: PipelineBase,
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void,
+  registerCancel?: (cancel: (reason: unknown) => void) => void,
 ): ResultContainer {
   // Internal pipeline execution state.
   const state: PipeState = {
@@ -715,8 +760,17 @@ export function runPipeline(
     settling: false,
     pending: 0,
     halted: false,
+    aborted: false,
+    nextRegistries: [],
     onSettled,
   }
+
+  // Hand the cancellation entry to the observer before any pipe executes:
+  // a pipe (or a dependency getter) that aborts synchronously during the
+  // initial cascade must be able to gate the run it is part of.
+  registerCancel?.((reason: unknown): void => {
+    cancelRun(state, reason)
+  })
 
   // Start from the input pipes, if any: each maps the invocation arguments
   // into the shared container.
