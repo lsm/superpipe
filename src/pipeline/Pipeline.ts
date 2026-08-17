@@ -185,12 +185,16 @@ export default class Pipeline implements PipelineBase {
       // a listener attached after dispatch never fires). The listener is
       // detached on either terminal transition, so a long-lived shared
       // controller never retains a completed run.
-      let onAbort: (() => void) | undefined
+      // `rejectAborted` is assigned synchronously by the promise executor
+      // below (executors always run synchronously); the no-op initial value
+      // keeps `onAbort` a plain callable with no undefined guards at its uses.
+      let rejectAborted: (reason: unknown) => void = () => {}
+      const onAbort = (): void => {
+        rejectAborted(new PipelineAbortedError(signalReason(signal)))
+      }
       let listenerAttached = false
       const aborted = new Promise<PipeOutput>((_, reject) => {
-        onAbort = (): void => {
-          reject(new PipelineAbortedError(signalReason(signal)))
-        }
+        rejectAborted = reject
         try {
           signal.addEventListener('abort', onAbort)
           listenerAttached = true
@@ -201,10 +205,10 @@ export default class Pipeline implements PipelineBase {
         }
       })
 
+      // Removal is always attempted: a signal whose addEventListener
+      // registered the listener and then threw must not leak it, and
+      // removing a listener that was never registered is a spec no-op.
       const cleanup = (): void => {
-        if (!listenerAttached || onAbort === undefined) {
-          return
-        }
         try {
           signal.removeEventListener('abort', onAbort)
         } catch {
@@ -212,13 +216,18 @@ export default class Pipeline implements PipelineBase {
         }
       }
 
-      // A non-conforming signal that could not register its listener, or one
-      // already aborted at call time, rejects before the first pipe runs.
-      // Register-then-check: an abort fired between `runPipelinePromise` and
-      // this check is already observed by the listener above; this covers an
-      // abort that predates the listener (missed by `addEventListener` alone).
-      if (!listenerAttached || signalAborted(signal)) {
-        onAbort?.()
+      // A signal that could not register its listener can never deliver an
+      // abort — reject before the first pipe runs rather than starting a run
+      // whose cancellation is already broken.
+      if (!listenerAttached) {
+        return aborted.finally(cleanup)
+      }
+
+      // Register-then-check: the `abort` event never re-dispatches, so a
+      // signal already aborted before this point would never fire the
+      // listener above. Reject before the first pipe runs.
+      if (signalAborted(signal)) {
+        onAbort()
         return aborted.finally(cleanup)
       }
 

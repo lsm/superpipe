@@ -60,9 +60,11 @@ export interface AbortSignalLike {
 }
 
 // Options accepted by `endAsync`. Cancellation is opt-in: without a signal
-// the run behaves exactly as before.
+// the run behaves exactly as before. `null` is tolerated like an absent
+// signal — consumers often hold `AbortSignal | null` for optional
+// controllers.
 export interface EndAsyncOptions {
-  readonly signal?: AbortSignalLike
+  readonly signal?: AbortSignalLike | null
 }
 
 // Read a signal's aborted flag defensively: a polyfill's getter may throw,

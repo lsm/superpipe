@@ -298,6 +298,12 @@ not interrupted, so if a pipe later fails, that error still routes to the
 pipeline's error handler as it normally would; it just never changes the
 already-rejected returned promise.
 
+A run counts as completed only once the returned promise settles: a
+successful run defers its settlement by one job (so an error dispatched in
+the same unwind wins), which means an abort fired synchronously right
+after `run()` returns — before any `await` — still cancels a run whose
+pipes all finished in that tick.
+
 ### Object-String Syntax
 
 Use an `{a, b}` object string to destructure a single object argument into

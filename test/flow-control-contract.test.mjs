@@ -2661,7 +2661,14 @@ describe('endAsync abort contract', () => {
     expect(resolved).to.equal(false)
   })
 
-  it('abort wins over a later promise rejection', async () => {
+  it('abort wins over a later promise rejection without an unhandled rejection', async () => {
+    // The race loser's late rejection is observed by the race itself and
+    // must never surface as an unhandled rejection — asserted explicitly,
+    // not left to vitest's implicit reporting.
+    const seen = []
+    const onUnhandled = (err) => seen.push(err)
+    process.on('unhandledRejection', onUnhandled)
+
     const controller = new AbortController()
     const sp = superpipe({})
     const run = sp('abort-vs-reject')
@@ -2678,6 +2685,115 @@ describe('endAsync abort contract', () => {
     const promise = run()
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    // Wait past the losing rejection (20ms) so a leak would be recorded.
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    process.off('unhandledRejection', onUnhandled)
+    expect(seen).to.deep.equal([])
+  })
+
+  it('rejects a run aborted synchronously right after it completes', async () => {
+    // A successful run defers its settlement by one job while the abort
+    // listener stays attached, so an abort in the same synchronous tick —
+    // before any await — wins over a run whose pipes all finished.
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-same-tick')
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+  })
+
+  it('proceeds normally when the aborted getter throws', async () => {
+    // signalAborted neutralizes a throwing `aborted` getter: it reads as
+    // not-aborted and the run proceeds.
+    const signal = {
+      get aborted() {
+        throw new Error('getter exploded')
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+    const sp = superpipe({})
+    const run = sp('abort-throwing-aborted-getter')
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out', { signal })
+
+    await expect(run()).resolves.toEqual('done')
+  })
+
+  it('tolerates a throwing reason getter when aborting', async () => {
+    let listener
+    const signal = {
+      aborted: false,
+      get reason() {
+        throw new Error('reason getter exploded')
+      },
+      addEventListener(_type, fn) {
+        listener = fn
+      },
+      removeEventListener() {},
+    }
+    const sp = superpipe({})
+    const run = sp('abort-throwing-reason-getter')
+      .pipe(() => new Promise(() => {}), null, 'never')
+      .endAsync('out', { signal })
+
+    const promise = run()
+    listener()
+    const err = await promise.catch((e) => e)
+    expect(err).toBeInstanceOf(PipelineAbortedError)
+    // signalReason neutralizes the throwing getter to an undefined reason.
+    expect(err.reason).to.equal(undefined)
+  })
+
+  it('detaches the abort listener on the pre-aborted short-circuit', async () => {
+    let active = 0
+    const signal = {
+      aborted: true,
+      addEventListener() {
+        active += 1
+      },
+      removeEventListener() {
+        active -= 1
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('abort-pre-detach')
+      .pipe(() => new Promise(() => {}), null, 'never')
+      .endAsync('out', { signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(active).to.equal(0)
+  })
+
+  it('detaches listeners from concurrent runs sharing one controller', async () => {
+    let active = 0
+    const controller = new AbortController()
+    const signal = {
+      get aborted() {
+        return controller.signal.aborted
+      },
+      addEventListener(_type, fn) {
+        active += 1
+        controller.signal.addEventListener('abort', fn)
+      },
+      removeEventListener(_type, fn) {
+        active -= 1
+        controller.signal.removeEventListener('abort', fn)
+      },
+    }
+    const sp = superpipe({})
+    const run = sp('abort-shared-controller')
+      .pipe(() => 'done', null, 'out')
+      .endAsync('out', { signal })
+
+    const [first, second] = await Promise.all([run(), run()])
+    expect(first).to.equal('done')
+    expect(second).to.equal('done')
+    expect(active).to.equal(0)
   })
 
   it('ignores an abort after the run already completed', async () => {
