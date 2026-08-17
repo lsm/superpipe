@@ -1,11 +1,15 @@
-import type {
-  AnyFunction,
-  FunctionContainer,
-  PipeFunction,
-  PipelineBase,
-  PipeOutput,
-  PipeParameter,
-  PipeResult,
+import {
+  type AnyFunction,
+  type EndAsyncOptions,
+  type FunctionContainer,
+  type PipeFunction,
+  PipelineAbortedError,
+  type PipelineBase,
+  type PipeOutput,
+  type PipeParameter,
+  type PipeResult,
+  signalAborted,
+  signalReason,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
@@ -109,8 +113,24 @@ export default class Pipeline implements PipelineBase {
   // not when the synchronous cascade ends. Halted runs resolve with the
   // partial snapshot; errored runs reject with the active error even when
   // an error handler ran (the promise is an additional observer).
-  endAsync(output?: PipeParameter): (...args: unknown[]) => Promise<PipeOutput> {
+  //
+  // `options.signal` opts into AbortSignal cancellation: when the signal
+  // aborts, the returned promise rejects with `PipelineAbortedError` (never
+  // routed through the error handler) and the abort listener is detached.
+  // Cancellation is racing at the promise boundary — the underlying run is
+  // not interrupted, only abandoned; its late settle is discarded. A signal
+  // already aborted at call time rejects before the first pipe runs.
+  //
+  // "Completed" means the returned promise has settled: because a successful
+  // run defers its settlement by one job (so an in-flight error wins), an
+  // abort fired synchronously right after `run()` returns — before any
+  // `await` — still cancels a run whose pipes all finished in that tick.
+  endAsync(
+    output?: PipeParameter,
+    options?: EndAsyncOptions,
+  ): (...args: unknown[]) => Promise<PipeOutput> {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
+    const signal = options?.signal
     // Make shallow copies of pipeline properties.
     const pipeline: PipelineBase = {
       name: this.name,
@@ -120,10 +140,12 @@ export default class Pipeline implements PipelineBase {
       errorHandler: this.errorHandler,
     }
 
-    return function (): Promise<PipeOutput> {
-      const args: PipeResult = Array.prototype.slice.apply(arguments)
-
-      return new Promise<PipeOutput>((resolve, reject) => {
+    // Run the pipeline and settle with its outcome. Synchronous pipe code and
+    // dependency getters run inside the promise executor, so a synchronous
+    // throw (a reserved-name input, an ambiguous continuation) rejects the
+    // returned promise rather than escaping the caller.
+    const runPipelinePromise = (args: PipeResult): Promise<PipeOutput> =>
+      new Promise<PipeOutput>((resolve, reject) => {
         runPipeline(args, pipeline, (outcome) => {
           if (outcome.error != null) {
             reject(outcome.error)
@@ -145,6 +167,75 @@ export default class Pipeline implements PipelineBase {
           }
         })
       })
+
+    return function (): Promise<PipeOutput> {
+      const args: PipeResult = Array.prototype.slice.apply(arguments)
+
+      // No signal (or a `null`/missing one): the run's own settlement is the
+      // result.
+      if (signal == null) {
+        return runPipelinePromise(args)
+      }
+
+      // Register the abort listener BEFORE the run starts. `runPipeline` runs
+      // synchronous pipe code (and dependency getters) inside the promise
+      // executor, so an abort fired synchronously during that initial cascade
+      // — a self-cancelling pipe, a throwing accessor — is dispatched to the
+      // listener synchronously and not missed (the `abort` event is one-shot:
+      // a listener attached after dispatch never fires). The listener is
+      // detached on either terminal transition, so a long-lived shared
+      // controller never retains a completed run.
+      // `rejectAborted` is assigned synchronously by the promise executor
+      // below (executors always run synchronously); the no-op initial value
+      // keeps `onAbort` a plain callable with no undefined guards at its uses.
+      let rejectAborted: (reason: unknown) => void = () => {}
+      const onAbort = (): void => {
+        rejectAborted(new PipelineAbortedError(signalReason(signal)))
+      }
+      let listenerAttached = false
+      const aborted = new Promise<PipeOutput>((_, reject) => {
+        rejectAborted = reject
+        try {
+          signal.addEventListener('abort', onAbort)
+          listenerAttached = true
+        } catch (err) {
+          // A non-conforming signal whose addEventListener throws rejects the
+          // run rather than escaping the caller synchronously.
+          reject(err)
+        }
+      })
+
+      // Removal is always attempted: a signal whose addEventListener
+      // registered the listener and then threw must not leak it, and
+      // removing a listener that was never registered is a spec no-op.
+      const cleanup = (): void => {
+        try {
+          signal.removeEventListener('abort', onAbort)
+        } catch {
+          // A throwing removeEventListener must not break settlement.
+        }
+      }
+
+      // A signal that could not register its listener can never deliver an
+      // abort — reject before the first pipe runs rather than starting a run
+      // whose cancellation is already broken.
+      if (!listenerAttached) {
+        return aborted.finally(cleanup)
+      }
+
+      // Register-then-check: the `abort` event never re-dispatches, so a
+      // signal already aborted before this point would never fire the
+      // listener above. Reject before the first pipe runs.
+      if (signalAborted(signal)) {
+        onAbort()
+        return aborted.finally(cleanup)
+      }
+
+      // `Promise.race` settles with whichever comes first; `finally` detaches
+      // the listener either way. The losing promise's settlement is simply
+      // discarded — `race` never rethrows an unhandled rejection from the
+      // side that lost.
+      return Promise.race([runPipelinePromise(args), aborted]).finally(cleanup)
     }
   }
 }

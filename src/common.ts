@@ -33,6 +33,62 @@ export class AmbiguousContinuationError extends Error {
   }
 }
 
+// Rejection reason for an `endAsync` run cancelled through its AbortSignal.
+// Carries the conventional `AbortError` name so consumers branching on
+// `error.name` keep working, while remaining `instanceof
+// PipelineAbortedError` for library-specific handling. `reason` is the
+// signal's abort reason, preserved so callers can tell *why* it aborted.
+export class PipelineAbortedError extends Error {
+  readonly reason: unknown
+
+  constructor(reason?: unknown) {
+    super('Pipeline aborted.')
+    this.name = 'AbortError'
+    this.reason = reason
+  }
+}
+
+// Minimal structural view of the standard AbortSignal. The library compiles
+// against ES2022 with no DOM/Node ambient types, so the global AbortSignal
+// type is unavailable; accepting this shape keeps `endAsync` compatible with
+// any AbortController or polyfill.
+export interface AbortSignalLike {
+  readonly aborted: boolean
+  readonly reason?: unknown
+  addEventListener(type: string, listener: () => void): void
+  removeEventListener(type: string, listener: () => void): void
+}
+
+// Options accepted by `endAsync`. Cancellation is opt-in: without a signal
+// the run behaves exactly as before. `null` is tolerated like an absent
+// signal — consumers often hold `AbortSignal | null` for optional
+// controllers.
+export interface EndAsyncOptions {
+  readonly signal?: AbortSignalLike | null
+}
+
+// Read a signal's aborted flag defensively: a polyfill's getter may throw,
+// and a failure there must not break the returned promise. A throwing getter
+// reads as not-aborted, letting the normal path proceed.
+export function signalAborted(signal: AbortSignalLike): boolean {
+  try {
+    return signal.aborted === true
+  } catch {
+    return false
+  }
+}
+
+// Read a signal's abort reason defensively: a non-standard signal (or
+// polyfill) may not expose one, and a throwing getter must not break the
+// rejection path.
+export function signalReason(signal: AbortSignalLike): unknown {
+  try {
+    return signal.reason
+  } catch {
+    return undefined
+  }
+}
+
 // Generic callable — the runtime accepts any function shape
 // (next callbacks, pipe fns, error handlers) and validates at the call
 // site. The `never[]` parameters make every concrete signature assignable

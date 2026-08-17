@@ -262,6 +262,48 @@ synchronous pipelines resolve immediately, so `await` works uniformly.
 Alternatively, deliver async results through a final pipe, `next`, or an
 error handler.
 
+`.endAsync(output, { signal })` accepts an `AbortSignal` for cancellation.
+An aborted run rejects with `PipelineAbortedError` — its `name` is
+`AbortError`, and its `reason` carries the signal's abort reason — without
+invoking the error handler. A signal already aborted at call time rejects
+before the first pipe runs:
+
+```javascript
+import superpipe, { PipelineAbortedError } from 'superpipe'
+
+const controller = new AbortController()
+const run = sp('fetch-workflow')
+  .pipe(() => repository.getWorkflow(), null, 'workflow')
+  .endAsync('workflow', { signal: controller.signal })
+
+const promise = run()
+controller.abort()   // elsewhere / on cancel: rejects the pending run
+
+try {
+  const workflow = await promise
+  // ... use workflow
+} catch (error) {
+  if (!(error instanceof PipelineAbortedError)) {
+    throw error   // a real pipeline failure, not a cancellation
+  }
+  // cancelled — nothing to do
+}
+```
+
+Cancellation races the run at the promise boundary: when the signal aborts,
+the returned promise rejects immediately (the abort listener is detached),
+and any later settle of the underlying run is discarded. "Without invoking
+the error handler" refers to the cancellation itself — the abandoned run is
+not interrupted, so if a pipe later fails, that error still routes to the
+pipeline's error handler as it normally would; it just never changes the
+already-rejected returned promise.
+
+A run counts as completed only once the returned promise settles: a
+successful run defers its settlement by one job (so an error dispatched in
+the same unwind wins), which means an abort fired synchronously right
+after `run()` returns — before any `await` — still cancels a run whose
+pipes all finished in that tick.
+
 ### Object-String Syntax
 
 Use an `{a, b}` object string to destructure a single object argument into
