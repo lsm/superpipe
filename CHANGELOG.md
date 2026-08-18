@@ -1,3 +1,43 @@
+0.16.0 2026-08-18
+=================
+- `.endAsync(output)` — a promise-returning `.end()` for async pipelines.
+  Resolves with the output (or partial snapshot on a flow-control halt),
+  rejects with the active error on failure. Sync `.end()` is unchanged;
+  fully-sync pipelines resolve immediately under `.endAsync()`.
+- Per-run cancellation: the runner returned by `.endAsync()` exposes
+  `withSignal(signal, ...args)`, binding one AbortSignal to one execution.
+  Aborting rejects that run's promise with PipelineAbortedError and leaves
+  the runner reusable; concurrent runs cancel independently.
+- Stack safety: the synchronous pipe cascade is trampolined. Pipelines of
+  any length run in O(1) stack (previously RangeError at ~2,000 sync pipes);
+  async pipes were already safe.
+- Thenable returns are sugar for `next`: a pipe that does not declare `next`
+  may return a promise — resolution continues the pipeline, rejection routes
+  to the error handler. Returning a thenable from a pipe that also declares
+  `next` throws AmbiguousContinuationError. Fully synchronous pipelines stay
+  synchronous.
+- Contract change: `false` returned from a pipe function is ordinary data —
+  it is stored under the output name and the pipeline continues. Boolean
+  flow control lives only on the declarative channels (raw boolean
+  dependencies and `!`-prefixed pipes).
+- Contract change: a pipe result or output named `error` is ordinary data
+  and no longer fires the error handler; the active error travels on
+  execution state instead of the dependency container.
+- Stricter namespace validation: outputs (declared, renamed, or merged) and
+  invocation inputs named `next` throw, as do pipe outputs that collide with
+  a configured dependency name (OutputNameError). Invocation inputs may
+  still deliberately override a configured dependency.
+- Public contracts are `any`-free: PipeResult and PipeOutput are `unknown`,
+  AnyFunction uses `never[]` parameters, and PipeRename / PipeName are
+  exported. `Function` remains in the PipeFunction union for compatibility.
+- Toolchain: Vitest 4 replaces mocha/chai/nyc; tsdown (rolldown) replaces
+  tsc+Babel+Rollup (one config emits CJS, ESM, .d.ts, .d.mts plus the
+  superpipe.js / superpipe.min.js browser bundles); Biome replaces ESLint 8;
+  TypeScript 7.0.2 (native port). Standards-compliant `exports` map with
+  per-condition types — Node ESM consumers now resolve real ESM.
+- CI: coverage badge published to the badges branch, HTML report uploaded
+  as a workflow artifact; publint + attw package lint gate.
+
 0.15.0 2026-08-14
 =================
 - New internal architecture: pipeline decomposed into builder / executor /
