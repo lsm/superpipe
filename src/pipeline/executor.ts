@@ -431,6 +431,7 @@ function next(
 
   state.driving = true
   try {
+    let cursor = 0
     for (;;) {
       try {
         continuePipeline(state, pipeline, error, value, fromStep)
@@ -442,13 +443,11 @@ function next(
           settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
         }
       }
-      if (state.settled) {
+      if (state.settled || cursor >= state.queue.length) {
         break
       }
-      const item = state.queue.shift()
-      if (!item) {
-        break
-      }
+      const item = state.queue[cursor]
+      cursor += 1
       error = item.error
       value = item.value
       fromStep = item.fromStep
