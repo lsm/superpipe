@@ -268,4 +268,46 @@ describe('Executor', () => {
       expect(() => func(1)).to.throw('Dependency "arg" is not a function or boolean.')
     })
   })
+
+  describe('stack safety of the synchronous cascade', () => {
+    const buildDeepPipeline = (sp, depth) => {
+      let pipeline = sp('deep-sync')
+      for (let i = 0; i < depth; i++) {
+        pipeline = pipeline.pipe((v) => (v || 0) + 1, i === 0 ? null : 'v', 'v')
+      }
+      return pipeline
+    }
+
+    it('runs a deep synchronous pipeline without stack overflow', () => {
+      const sp = superpipe({})
+      const run = buildDeepPipeline(sp, 20000).end('v')
+
+      expect(run()).to.equal(20000)
+    })
+
+    it('runs a deep synchronous pipeline via endAsync', async () => {
+      const sp = superpipe({})
+      const run = buildDeepPipeline(sp, 20000).endAsync('v')
+
+      await expect(run()).resolves.to.equal(20000)
+    })
+
+    it('propagates an error thrown deep in the cascade', async () => {
+      const sp = superpipe({})
+      let pipeline = sp('deep-sync-error')
+      for (let i = 0; i < 20000; i++) {
+        pipeline = pipeline.pipe(
+          (v) => {
+            if (i === 15000) throw new Error('deep failure')
+            return (v || 0) + 1
+          },
+          i === 0 ? null : 'v',
+          'v',
+        )
+      }
+      const run = pipeline.endAsync('v')
+
+      await expect(run()).rejects.toThrow('deep failure')
+    })
+  })
 })

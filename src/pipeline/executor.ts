@@ -119,6 +119,12 @@ function mergeIntoContainer(
   Object.assign(state.container, produced)
 }
 
+interface QueuedContinuation {
+  error?: Error
+  value?: PipeResult
+  fromStep?: number
+}
+
 interface PipeState {
   step: 0
   container: ResultContainer
@@ -140,6 +146,10 @@ interface PipeState {
   aborted: boolean
 
   nextRegistries: NextCallbacks[]
+
+  driving: boolean
+
+  queue: QueuedContinuation[]
 
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
 }
@@ -324,21 +334,14 @@ function executePipe(
       if (pipe.not && typeof resolved === 'boolean') {
         resolved = !resolved
       }
-      try {
-        if (isFlowControl && resolved === false) {
-          state.halted = true
-          if (state.pending === 0) {
-            settle(state, null)
-          }
-          return
+      if (isFlowControl && resolved === false) {
+        state.halted = true
+        if (state.pending === 0) {
+          settle(state, null)
         }
-        advance(state, pipeline, null, resolved, pipeIndex)
-      } catch (err) {
-        if (!state.onSettled) {
-          throw err
-        }
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+        return
       }
+      advance(state, pipeline, null, resolved, pipeIndex)
     }
     const onRejected = (reason: unknown): void => {
       state.pending -= 1
@@ -346,20 +349,13 @@ function executePipe(
         return
       }
 
-      try {
-        advance(
-          state,
-          pipeline,
-          (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
-          undefined,
-          pipeIndex,
-        )
-      } catch (err) {
-        if (!state.onSettled) {
-          throw err
-        }
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
-      }
+      advance(
+        state,
+        pipeline,
+        (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+        undefined,
+        pipeIndex,
+      )
     }
 
     if (thenFn === Promise.prototype.then) {
@@ -427,16 +423,38 @@ function next(
   if (state.settled) {
     return
   }
+
+  if (state.driving) {
+    state.queue.push({ error, value, fromStep })
+    return
+  }
+
+  state.driving = true
   try {
-    continuePipeline(state, pipeline, error, value, fromStep)
-  } catch (err) {
-    if (state.onSettled) {
-      if (!state.settled) {
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+    let cursor = 0
+    for (;;) {
+      try {
+        continuePipeline(state, pipeline, error, value, fromStep)
+      } catch (err) {
+        if (!state.onSettled) {
+          throw err
+        }
+        if (!state.settled) {
+          settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+        }
       }
-      return
+      if (state.settled || cursor >= state.queue.length) {
+        break
+      }
+      const item = state.queue[cursor]
+      cursor += 1
+      error = item.error
+      value = item.value
+      fromStep = item.fromStep
     }
-    throw err
+    state.queue.length = 0
+  } finally {
+    state.driving = false
   }
 }
 
@@ -521,6 +539,8 @@ export function runPipeline(
     halted: false,
     aborted: false,
     nextRegistries: [],
+    driving: false,
+    queue: [],
     onSettled,
   }
 
