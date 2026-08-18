@@ -149,9 +149,7 @@ interface PipeState {
 
   driving: boolean
 
-  depth: number
-
-  queue: QueuedContinuation[] | null
+  queue: QueuedContinuation[]
 
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
 }
@@ -415,8 +413,6 @@ function executePipe(
   }
 }
 
-const SYNC_CASCADE_BUDGET = 512
-
 function next(
   state: PipeState,
   pipeline: PipelineBase,
@@ -429,18 +425,11 @@ function next(
   }
 
   if (state.driving) {
-    if (state.queue === null) {
-      state.queue = []
-    }
     state.queue.push({ error, value, fromStep })
     return
   }
 
-  const iterative = state.depth >= SYNC_CASCADE_BUDGET
-  if (iterative) {
-    state.driving = true
-  }
-  state.depth += 1
+  state.driving = true
   try {
     for (;;) {
       try {
@@ -453,10 +442,10 @@ function next(
           settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
         }
       }
-      if (!iterative || state.settled) {
+      if (state.settled) {
         break
       }
-      const item = state.queue?.shift()
+      const item = state.queue.shift()
       if (!item) {
         break
       }
@@ -464,12 +453,9 @@ function next(
       value = item.value
       fromStep = item.fromStep
     }
+    state.queue.length = 0
   } finally {
-    state.depth -= 1
-    if (iterative) {
-      state.driving = false
-      state.queue = null
-    }
+    state.driving = false
   }
 }
 
@@ -555,8 +541,7 @@ export function runPipeline(
     aborted: false,
     nextRegistries: [],
     driving: false,
-    depth: 0,
-    queue: null,
+    queue: [],
     onSettled,
   }
 
