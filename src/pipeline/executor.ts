@@ -119,6 +119,12 @@ function mergeIntoContainer(
   Object.assign(state.container, produced)
 }
 
+interface QueuedContinuation {
+  error?: Error
+  value?: PipeResult
+  fromStep?: number
+}
+
 interface PipeState {
   step: 0
   container: ResultContainer
@@ -140,6 +146,18 @@ interface PipeState {
   aborted: boolean
 
   nextRegistries: NextCallbacks[]
+
+  driving: boolean
+
+  hasQueued: boolean
+
+  qError?: Error
+
+  qValue?: PipeResult
+
+  qFromStep?: number
+
+  queue: QueuedContinuation[]
 
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
 }
@@ -427,16 +445,61 @@ function next(
   if (state.settled) {
     return
   }
-  try {
-    continuePipeline(state, pipeline, error, value, fromStep)
-  } catch (err) {
-    if (state.onSettled) {
-      if (!state.settled) {
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
-      }
-      return
+
+  if (state.driving) {
+    if (!state.hasQueued) {
+      state.hasQueued = true
+      state.qError = error
+      state.qValue = value
+      state.qFromStep = fromStep
+    } else {
+      state.queue.push({ error, value, fromStep })
     }
-    throw err
+    return
+  }
+
+  state.driving = true
+  try {
+    for (;;) {
+      try {
+        continuePipeline(state, pipeline, error, value, fromStep)
+      } catch (err) {
+        if (!state.onSettled) {
+          throw err
+        }
+        if (!state.settled) {
+          settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+        }
+      }
+
+      if (state.settled) {
+        break
+      }
+      if (state.hasQueued) {
+        state.hasQueued = false
+        error = state.qError
+        value = state.qValue
+        fromStep = state.qFromStep
+        state.qError = undefined
+        state.qValue = undefined
+        state.qFromStep = undefined
+      } else {
+        const item = state.queue.shift()
+        if (!item) {
+          break
+        }
+        error = item.error
+        value = item.value
+        fromStep = item.fromStep
+      }
+    }
+    state.hasQueued = false
+    state.qError = undefined
+    state.qValue = undefined
+    state.qFromStep = undefined
+    state.queue.length = 0
+  } finally {
+    state.driving = false
   }
 }
 
@@ -521,6 +584,9 @@ export function runPipeline(
     halted: false,
     aborted: false,
     nextRegistries: [],
+    driving: false,
+    hasQueued: false,
+    queue: [],
     onSettled,
   }
 
