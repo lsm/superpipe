@@ -20,10 +20,8 @@ import type { InputPipe } from './Pipe'
 export default class Pipeline implements PipelineBase {
   name: string
 
-  
   pipes: Pipe[] = []
 
-  
   functions: FunctionContainer
 
   inputPipes: InputPipe[] = []
@@ -32,8 +30,7 @@ export default class Pipeline implements PipelineBase {
 
   constructor(name: string, functions?: FunctionContainer) {
     this.name = name
-    
-    
+
     this.functions = functions || {}
   }
 
@@ -45,7 +42,6 @@ export default class Pipeline implements PipelineBase {
       throw new Error('Input pipe requires a non-empty string or array of non-empty strings.')
     }
 
-    
     this.inputPipes.push(createInputPipe(input))
     return this
   }
@@ -54,8 +50,7 @@ export default class Pipeline implements PipelineBase {
     if (this.errorHandler) {
       throw new Error('Adding new pipe after error pipe is not allowed.')
     }
-    
-    
+
     if (fn === 'input') {
       return this.input(input)
     }
@@ -77,7 +72,7 @@ export default class Pipeline implements PipelineBase {
 
   end(output?: PipeParameter): (...args: unknown[]) => PipeOutput {
     const fetcher = new Fetcher(output, 'raw')
-    
+
     const pipeline: PipelineBase = {
       name: this.name,
       pipes: [...this.pipes],
@@ -86,13 +81,7 @@ export default class Pipeline implements PipelineBase {
       errorHandler: this.errorHandler,
     }
 
-    
-    
-    
-    
-    
     if (output === undefined) {
-      
       return function (): undefined {
         runPipeline(Array.prototype.slice.apply(arguments), pipeline)
       }
@@ -101,40 +90,18 @@ export default class Pipeline implements PipelineBase {
     return function (): PipeOutput {
       const args: PipeResult = Array.prototype.slice.apply(arguments)
 
-      
       const container = runPipeline(args, pipeline)
       return fetcher.fetch(container, [], pipeline.functions)
     }
   }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   endAsync(
     output?: PipeParameter,
     options?: EndAsyncOptions,
   ): (...args: unknown[]) => Promise<PipeOutput> {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
     const signal = options?.signal
-    
+
     const pipeline: PipelineBase = {
       name: this.name,
       pipes: [...this.pipes],
@@ -143,11 +110,6 @@ export default class Pipeline implements PipelineBase {
       errorHandler: this.errorHandler,
     }
 
-    
-    
-    
-    
-    
     const runPipelinePromise = (
       args: PipeResult,
       onRegisterCancel?: (cancel: (reason: unknown) => void) => void,
@@ -161,11 +123,7 @@ export default class Pipeline implements PipelineBase {
               reject(outcome.error)
               return
             }
-            
-            
-            
-            
-            
+
             if (fetcher === null) {
               resolve(undefined as PipeOutput)
               return
@@ -183,29 +141,10 @@ export default class Pipeline implements PipelineBase {
     return function (): Promise<PipeOutput> {
       const args: PipeResult = Array.prototype.slice.apply(arguments)
 
-      
-      
       if (signal == null) {
         return runPipelinePromise(args)
       }
 
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
       let cancelRun: ((reason: unknown) => void) | undefined
       let rejectAborted: (reason: unknown) => void = () => {}
       const onAbort = (): void => {
@@ -219,44 +158,25 @@ export default class Pipeline implements PipelineBase {
           signal.addEventListener('abort', onAbort)
           listenerAttached = true
         } catch (err) {
-          
-          
           reject(err)
         }
       })
 
-      
-      
-      
       const cleanup = (): void => {
         try {
           signal.removeEventListener('abort', onAbort)
-        } catch {
-          
-        }
+        } catch {}
       }
 
-      
-      
-      
       if (!listenerAttached) {
         return aborted.finally(cleanup)
       }
 
-      
-      
-      
       if (signalAborted(signal)) {
         onAbort()
         return aborted.finally(cleanup)
       }
 
-      
-      
-      
-      
-      
-      
       return Promise.race([
         runPipelinePromise(args, (cancel) => {
           cancelRun = cancel

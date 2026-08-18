@@ -2,12 +2,6 @@ import { defineConfig } from 'tsdown'
 import { renameSync } from 'node:fs'
 import { join } from 'node:path'
 
-
-
-
-
-
-
 const outDir = 'dist'
 
 function iifeConfig(name: string, target: string, minify: boolean) {

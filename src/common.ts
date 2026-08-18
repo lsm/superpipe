@@ -3,18 +3,12 @@ import type { InputPipe } from './pipeline/Pipe'
 
 export const RE_IS_OBJ_STRING = /^{.+}$/
 
-
-
 export class NextCalledTwiceError extends Error {
   constructor() {
     super('"next" could not be called more than once in a pipe.')
     this.name = 'NextCalledTwiceError'
   }
 }
-
-
-
-
 
 export class OutputNameError extends Error {
   constructor(message: string) {
@@ -23,20 +17,12 @@ export class OutputNameError extends Error {
   }
 }
 
-
-
-
 export class AmbiguousContinuationError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'AmbiguousContinuationError'
   }
 }
-
-
-
-
-
 
 export class PipelineAbortedError extends Error {
   readonly reason: unknown
@@ -48,10 +34,6 @@ export class PipelineAbortedError extends Error {
   }
 }
 
-
-
-
-
 export interface AbortSignalLike {
   readonly aborted: boolean
   readonly reason?: unknown
@@ -59,16 +41,9 @@ export interface AbortSignalLike {
   removeEventListener(type: string, listener: () => void): void
 }
 
-
-
-
-
 export interface EndAsyncOptions {
   readonly signal?: AbortSignalLike | null
 }
-
-
-
 
 export function signalAborted(signal: AbortSignalLike): boolean {
   try {
@@ -78,9 +53,6 @@ export function signalAborted(signal: AbortSignalLike): boolean {
   }
 }
 
-
-
-
 export function signalReason(signal: AbortSignalLike): unknown {
   try {
     return signal.reason
@@ -89,32 +61,18 @@ export function signalReason(signal: AbortSignalLike): unknown {
   }
 }
 
-
-
-
-
 export type AnyFunction = (...args: never[]) => unknown
-
-
-
 
 export type PipeResult = unknown
 export type PipeOutput = PipeResult | PipeResult[] | { [key: string]: PipeResult }
 
-
-
-
 export type PipeFunction = string | AnyFunction | Function
-
-
 
 export type PipeName = string
 export type PipeRename = `${string}:${string}`
 export type PipeParameter = PipeName | PipeRename | string[]
 
 export interface FunctionContainer {
-  
-  
   [key: string]: unknown
 }
 
@@ -153,10 +111,6 @@ export function isValidArrayParameters<T>(array: T): boolean {
 }
 
 export function throwNoErrorHandlerError(error: unknown): never {
-  
-  
-  
-  
   if (error instanceof Error) {
     throw error
   }

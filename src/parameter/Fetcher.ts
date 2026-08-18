@@ -10,48 +10,27 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
-
 export interface NextCallback {
   (error?: Error, value?: PipeResult): void
-  
-  
+
   disable: () => void
 }
-
-
-
-
-
-
 
 export interface NextCallbacks {
   wrappers: NextCallback[]
   holding: boolean
   held: { error?: Error; value?: PipeResult }[]
   onConsumed?: () => void
-  
-  
-  
+
   onError?: (err: Error) => boolean
-  
-  
-  
+
   pipeIndex?: number
 }
-
-
-
-
-
-
-
-
 
 function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
-  
-  
+
   let counted = true
   const consume = (): void => {
     if (counted) {
@@ -59,25 +38,17 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       callbacks?.onConsumed?.()
     }
   }
-  
-  
-  
+
   let advance: ((error?: Error, value?: PipeResult, fromStep?: number) => void) | null = next as (
     error?: Error,
     value?: PipeResult,
     fromStep?: number,
   ) => void
   const wrapped = ((error?: Error, value?: PipeResult): void => {
-    
-    
-    
     if (disabled) {
       return
     }
     if (called) {
-      
-      
-      
       const duplicate = new NextCalledTwiceError()
       if (callbacks?.onError?.(duplicate)) {
         return
@@ -104,7 +75,6 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
 }
 
 export default class Fetcher {
-  
   private keys: string[] = []
 
   private _fetch: (
@@ -114,8 +84,6 @@ export default class Fetcher {
     nextCallbacks?: NextCallbacks,
   ) => PipeOutput = this.fetchNothing
 
-  
-  
   private raw: boolean = false
 
   hasNext: boolean = false
@@ -133,8 +101,7 @@ export default class Fetcher {
         this.keys = [parameter]
         this._fetch = this.fetchSingle
       }
-      
-      
+
       parameter = [parameter]
     }
 
@@ -155,15 +122,6 @@ export default class Fetcher {
     this.hasNext = this.keys.indexOf('next') > -1
   }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
   fetch(
     container: PipeResult,
     args?: PipeResult[],
@@ -205,7 +163,6 @@ export default class Fetcher {
     return wrapped
   }
 
-  
   hasUnresolved(container: PipeResult, functions?: FunctionContainer): boolean {
     return this.keys.some(
       (key: string): boolean =>
@@ -219,7 +176,6 @@ export default class Fetcher {
     _functions?: FunctionContainer,
     _nextCallbacks?: NextCallbacks,
   ): PipeOutput {
-    
     return args
   }
 
@@ -252,16 +208,12 @@ export default class Fetcher {
     const result: Record<string, PipeResult> = {}
 
     for (const key of this.keys) {
-      
-      
       if (key === 'next' && result.next !== undefined) {
         continue
       }
       result[key] = this.value(container, functions, key, nextCallbacks)
     }
 
-    
-    
     return this.raw ? result : [result]
   }
 }

@@ -11,9 +11,7 @@ const config = {
   output: {
     format: 'umd',
     name: 'Superpipe',
-    
-    
-    
+
     exports: 'default',
   },
 
@@ -28,10 +26,7 @@ const config = {
           '@babel/env',
           {
             targets: {
-              browsers: [
-                '> 0.25%',
-                'not dead',
-              ],
+              browsers: ['> 0.25%', 'not dead'],
             },
             modules: false,
           },
@@ -44,13 +39,15 @@ const config = {
 }
 
 if (NODE_ENV === 'production') {
-  config.plugins.push(terser({
-    compress: {
-      pure_getters: true,
-      unsafe: true,
-      unsafe_comps: true,
-    },
-  }))
+  config.plugins.push(
+    terser({
+      compress: {
+        pure_getters: true,
+        unsafe: true,
+        unsafe_comps: true,
+      },
+    }),
+  )
 }
 
 export default config

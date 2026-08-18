@@ -13,14 +13,9 @@ import {
 import type { NextCallbacks } from '../parameter/Fetcher'
 import type Pipe from './Pipe'
 
-
-
-
 function holdNextCallbacks(callbacks: NextCallbacks): void {
   callbacks.holding = true
 }
-
-
 
 function flushNextCallbacks(
   state: PipeState,
@@ -37,8 +32,6 @@ function flushNextCallbacks(
   }
 }
 
-
-
 function invalidateNextCallbacks(callbacks: NextCallbacks): void {
   for (const wrapper of callbacks.wrappers) {
     wrapper.disable()
@@ -50,10 +43,6 @@ interface ResultContainer {
   [key: string]: PipeResult
 }
 
-
-
-
-
 type Continuation = (
   state: PipeState,
   pipeline: PipelineBase,
@@ -62,21 +51,13 @@ type Continuation = (
   fromStep?: number,
 ) => void
 
-
 type ErrorHandler = (
   container: ResultContainer,
   functions: FunctionContainer,
   error?: Error,
 ) => void
 
-
-
-
 const RESERVED_OUTPUT_NAMES = ['next']
-
-
-
-
 
 function hasConfiguredDependency(functions: FunctionContainer, key: string): boolean {
   for (let obj: unknown = functions; obj != null; obj = Object.getPrototypeOf(obj)) {
@@ -86,8 +67,6 @@ function hasConfiguredDependency(functions: FunctionContainer, key: string): boo
   return false
 }
 
-
-
 function swallow(value: unknown): void {
   Promise.resolve(value).then(
     () => {},
@@ -95,14 +74,7 @@ function swallow(value: unknown): void {
   )
 }
 
-
-
-
 function ignoreReason(): void {}
-
-
-
-
 
 function isNativePromiseBrand(value: PipeResult): boolean {
   try {
@@ -111,13 +83,6 @@ function isNativePromiseBrand(value: PipeResult): boolean {
     return false
   }
 }
-
-
-
-
-
-
-
 
 function observeOriginalRejection(value: PipeResult): boolean {
   if (!isNativePromiseBrand(value)) {
@@ -130,11 +95,6 @@ function observeOriginalRejection(value: PipeResult): boolean {
     return false
   }
 }
-
-
-
-
-
 
 function mergeIntoContainer(
   state: PipeState,
@@ -162,55 +122,29 @@ function mergeIntoContainer(
 interface PipeState {
   step: 0
   container: ResultContainer
-  
+
   args: PipeResult[]
-  
-  
+
   activeError: Error | null
-  
-  
+
   handlingError: boolean
-  
-  
-  
+
   settled: boolean
-  
-  
-  
+
   settling: boolean
-  
-  
-  
-  
+
   pending: number
-  
-  
-  
+
   halted: boolean
-  
-  
-  
-  
+
   aborted: boolean
-  
-  
-  
-  
+
   nextRegistries: NextCallbacks[]
-  
-  
+
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
 }
 
-
-
-
-
-
 function settle(state: PipeState, error: Error | null): void {
-  
-  
-  
   if (!state.onSettled) {
     return
   }
@@ -228,28 +162,17 @@ function settle(state: PipeState, error: Error | null): void {
     })
     return
   }
-  
-  
+
   if (state.settled) {
     return
   }
-  
-  
-  
+
   if (state.activeError == null) {
     state.activeError = error
   }
   state.settled = true
   state.onSettled?.({ container: state.container, error })
 }
-
-
-
-
-
-
-
-
 
 function cancelRun(state: PipeState, reason: unknown): void {
   for (const callbacks of state.nextRegistries) {
@@ -272,15 +195,12 @@ function executePipe(
   const { container, args } = state
   const { functions } = pipeline
 
-  
-  
   const fn = pipe.injected
     ? Object.prototype.hasOwnProperty.call(container, fnName)
       ? container[fnName]
       : functions[fnName]
     : pipe.fn
-  
-  
+
   const nextCallbacks: NextCallbacks = {
     wrappers: [],
     holding: false,
@@ -290,13 +210,9 @@ function executePipe(
     },
     onError: (err: Error): boolean => {
       if (!state.onSettled) {
-        
-        
         return false
       }
-      
-      
-      
+
       if (!state.settled) {
         settle(state, err)
       }
@@ -304,16 +220,12 @@ function executePipe(
     },
     pipeIndex: state.step - 1,
   }
-  
-  
+
   state.nextRegistries.push(nextCallbacks)
   const inputArgs = pipe.fetcher.fetch(container, args, functions, nextCallbacks)
-  
-  
-  
+
   state.pending += nextCallbacks.wrappers.length
-  
-  
+
   if (state.aborted) {
     invalidateNextCallbacks(nextCallbacks)
     return
@@ -322,31 +234,17 @@ function executePipe(
 
   let result: PipeResult
 
-  
-  
-  
-  
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
-    
-    
     invalidateNextCallbacks(nextCallbacks)
     advance(state, pipeline)
     return
   } else if (typeof fn === 'function') {
-    
-    
-    
     holdNextCallbacks(nextCallbacks)
     try {
       result = fn.apply(0, inputArgs as PipeResult[])
     } catch (err) {
-      
-      
       flushNextCallbacks(state, pipeline, advance, nextCallbacks)
-      
-      
-      
-      
+
       if (
         err instanceof NextCalledTwiceError ||
         err instanceof OutputNameError ||
@@ -354,26 +252,19 @@ function executePipe(
       ) {
         throw err
       }
-      
-      
-      
+
       if (state.handlingError) {
         state.handlingError = false
         throw err
       }
-      
-      
+
       advance(state, pipeline, (err || new Error('Pipe threw a falsey value')) as Error)
       return
     }
   } else if (typeof fn === 'boolean') {
-    
-    
-    
     invalidateNextCallbacks(nextCallbacks)
     result = fn
   } else {
-    
     throw new Error(
       `Pipeline [${pipeline.name}] step [${state.step}|${
         pipe.fnName
@@ -381,35 +272,21 @@ function executePipe(
     )
   }
 
-  
-  
   if (pipe.not && typeof result === 'boolean') {
     result = !result
   }
 
-  
-  
-  
-  
   const isFlowControl = pipe.not === true || typeof fn === 'boolean'
 
-  
-  
-  
-  
   let thenFn: unknown
   if (result !== null && (typeof result === 'object' || typeof result === 'function')) {
     try {
       thenFn = (result as { then?: unknown }).then
     } catch (err) {
-      
-      
       invalidateNextCallbacks(nextCallbacks)
-      
-      
+
       observeOriginalRejection(result)
-      
-      
+
       const failure = (err || new Error('Pipe promise rejected with a falsey value')) as Error
       Promise.reject(failure).catch((reason: Error): void => {
         advance(state, pipeline, reason)
@@ -419,70 +296,36 @@ function executePipe(
   }
   const thenable = typeof thenFn === 'function'
 
-  
-  
-  
-  
-  
-  
   if (pipe.fetcher.hasNext && thenable) {
     invalidateNextCallbacks(nextCallbacks)
     Promise.resolve().then(() => {
-      
-      
-      
-      
       observeOriginalRejection(result)
       try {
-        
-        
-        
-        
-        
         Reflect.apply(thenFn as AnyFunction, result, [swallow, ignoreReason])
-      } catch {
-        
-      }
+      } catch {}
     })
     throw new AmbiguousContinuationError(
       `Pipeline [${pipeline.name}] step [${state.step}|${pipe.fnName}] : Pipe declares "next" as an input and returned a thenable — use one continuation channel, not both.`,
     )
   }
 
-  
-  
-  
-  
-  
-  
   if (pipe.fetcher.hasNext === false && thenable) {
-    
-    
-    
     const pipeIndex = state.step - 1
-    
-    
+
     state.pending += 1
     const onFulfilled = (value: PipeResult): void => {
       state.pending -= 1
-      
-      
-      
+
       if (state.activeError != null) {
         return
       }
-      
-      
+
       let resolved = value
       if (pipe.not && typeof resolved === 'boolean') {
         resolved = !resolved
       }
       try {
         if (isFlowControl && resolved === false) {
-          
-          
-          
-          
           state.halted = true
           if (state.pending === 0) {
             settle(state, null)
@@ -491,11 +334,6 @@ function executePipe(
         }
         advance(state, pipeline, null, resolved, pipeIndex)
       } catch (err) {
-        
-        
-        
-        
-        
         if (!state.onSettled) {
           throw err
         }
@@ -507,8 +345,7 @@ function executePipe(
       if (state.activeError != null) {
         return
       }
-      
-      
+
       try {
         advance(
           state,
@@ -526,15 +363,6 @@ function executePipe(
     }
 
     if (thenFn === Promise.prototype.then) {
-      
-      
-      
-      
-      
-      
-      
-      
-      
       let settled = false
       const settleFulfilled = (value: PipeResult): void => {
         if (settled) {
@@ -563,60 +391,31 @@ function executePipe(
     }
 
     new Promise<PipeResult>((resolve, reject) => {
-      
-      
-      
       Promise.resolve().then(() => {
         try {
-          
-          
-          
-          
-          
           Reflect.apply(thenFn as AnyFunction, result, [resolve, reject])
         } catch (err) {
           reject(err)
         }
-        
-        
-        
-        
+
         observeOriginalRejection(result)
       })
     }).then(onFulfilled, onRejected)
     return
   }
 
-  
-  
   flushNextCallbacks(state, pipeline, advance, nextCallbacks)
 
-  
-  
-  
-  
-  
   const ownsContinuation = pipe.fetcher.hasNext && typeof fn !== 'boolean'
   if (!ownsContinuation && !(isFlowControl && result === false)) {
     advance(state, pipeline, null, result)
   } else if (!ownsContinuation) {
-    
-    
-    
     state.halted = true
     if (state.pending === 0) {
       settle(state, null)
     }
   }
 }
-
-
-
-
-
-
-
-
 
 function next(
   state: PipeState,
@@ -625,9 +424,6 @@ function next(
   value?: PipeResult,
   fromStep?: number,
 ): void {
-  
-  
-  
   if (state.settled) {
     return
   }
@@ -635,11 +431,6 @@ function next(
     continuePipeline(state, pipeline, error, value, fromStep)
   } catch (err) {
     if (state.onSettled) {
-      
-      
-      
-      
-      
       if (!state.settled) {
         settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
       }
@@ -660,9 +451,6 @@ function continuePipeline(
   const { step } = state
 
   if (value != null) {
-    
-    
-    
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
     mergeIntoContainer(
       state,
@@ -674,59 +462,38 @@ function continuePipeline(
     )
   }
 
-  
-  
-  
   if (error != null) {
     state.activeError = error
   }
 
   if (state.activeError == null) {
-    
     state.handlingError = false
     if (state.aborted) {
-      
-      
       return
     }
     if (state.halted) {
-      
-      
       if (state.pending === 0) {
         settle(state, null)
       }
       return
     }
     if (state.pending > 0) {
-      
-      
-      
-      
       return
     }
     if (pipes.length > state.step) {
-      
       executePipe(pipes[state.step++], state, pipeline, next)
     } else {
-      
       settle(state, null)
     }
     return
   }
 
-  
-  
   state.handlingError = true
-  
-  
-  
-  
+
   settle(state, state.activeError)
   if (errorHandler) {
     ;(errorHandler as ErrorHandler)(state.container, pipeline.functions, state.activeError)
   } else if (!state.onSettled) {
-    
-    
     throwNoErrorHandlerError(state.activeError)
   }
 }
@@ -737,10 +504,9 @@ export function runPipeline(
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void,
   registerCancel?: (cancel: (reason: unknown) => void) => void,
 ): ResultContainer {
-  
   const state: PipeState = {
     step: 0,
-    
+
     container: {
       next: (error?: Error, value?: PipeResult, fromStep?: number): void => {
         next(state, pipeline, error, value, fromStep)
@@ -758,15 +524,10 @@ export function runPipeline(
     onSettled,
   }
 
-  
-  
-  
   registerCancel?.((reason: unknown): void => {
     cancelRun(state, reason)
   })
 
-  
-  
   for (const inputPipe of pipeline.inputPipes || []) {
     mergeIntoContainer(
       state,
@@ -778,7 +539,6 @@ export function runPipeline(
     )
   }
 
-  
   next(state, pipeline)
 
   return state.container

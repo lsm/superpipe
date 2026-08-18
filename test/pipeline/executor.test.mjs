@@ -130,7 +130,7 @@ describe('Executor', () => {
 
         const result = func(input)
         expect(typeof result).to.equal('object')
-        expect(Object.keys(result).length).to.equal(5) 
+        expect(Object.keys(result).length).to.equal(5)
       }))
 
     it('should not invoke next pipe if next is not called', () => {
@@ -243,7 +243,7 @@ describe('Executor', () => {
           throw new Error()
         })
         .end()
-      
+
       expect(() => func()).to.throw()
 
       const errorFunc = (next) => {

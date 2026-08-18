@@ -37,8 +37,6 @@ describe('Superpipe', () => {
       ])
       expect(func).to.be.a('function')
 
-      
-      
       const pl = sp('builder form')
       expect(pl.pipe).to.be.a('function')
     })

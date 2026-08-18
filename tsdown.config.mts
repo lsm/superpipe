@@ -8,10 +8,7 @@ export default defineConfig({
   target: 'es2018',
   outDir: 'dist',
   unbundle: false,
-  
-  
-  
-  
+
   cjsDefault: false,
   footer: (ctx) => ({
     js: ctx.format === 'cjs' ? 'module.exports = exports.default;' : '',

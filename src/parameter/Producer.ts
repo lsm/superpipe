@@ -7,8 +7,6 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
-
-
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
@@ -21,17 +19,12 @@ function applyKey(output: Record<string, PipeResult>, key: string, value: PipeRe
 }
 
 export default class Producer {
-  
   private keys: string[] = []
 
   private _produce: (result: PipeResult) => PipeOutput
 
-  
-  
   private inputMode: boolean = false
 
-  
-  
   private objString: boolean = false
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
@@ -59,8 +52,6 @@ export default class Producer {
       return
     }
 
-    
-    
     if (parameter === '') {
       throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
     }
@@ -72,8 +63,6 @@ export default class Producer {
         this.keys = [parameter]
       }
     } else if (Array.isArray(parameter)) {
-      
-      
       if (parameter.length > 0 && !isValidArrayParameters(parameter)) {
         throw new Error('Pipe input/output parameter must be string or array of strings')
       }
@@ -90,10 +79,6 @@ export default class Producer {
     return this._produce(result)
   }
 
-  
-  
-  
-  
   produceOutput(result: PipeResult): PipeOutput {
     const output: Record<string, PipeResult> = {}
     const keys = this.keys
@@ -124,13 +109,10 @@ export default class Producer {
     }
 
     if (keys.length === 1) {
-      
-      
       applyKey(output, keys[0], this.objString ? undefined : result)
       return output
     }
 
-    
     return {}
   }
 
@@ -140,7 +122,7 @@ export default class Producer {
 
   produceFromArray(result: PipeResult): PipeOutput {
     const output: Record<string, PipeResult> = {}
-    
+
     let i = 0
     for (const key of this.keys) {
       output[key] = (result as PipeResult[])[i]
@@ -153,14 +135,11 @@ export default class Producer {
     const output: Record<string, PipeResult> = {}
     const source = this.inputSource(result) as Record<string, PipeResult> | null | undefined
     for (const key of this.keys) {
-      
       output[key] = source == null ? undefined : source[key]
     }
     return output
   }
 
-  
-  
   private inputSource(result: PipeResult): PipeResult {
     return Array.isArray(result) ? result[0] : result
   }

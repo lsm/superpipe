@@ -30,25 +30,19 @@ export function createPipe(
     injected: false,
   }
 
-  
   if (isNonEmptyString(fn)) {
     fn = fn as string
-    
-    
+
     pipe.not = /^!/.test(fn)
     if (pipe.not) {
       fn = fn.slice(1)
     }
 
-    
-    
     pipe.optional = /^\?/.test(fn)
     if (pipe.optional) {
       fn = fn.slice(1)
     }
 
-    
-    
     pipe.fnName = fn
     pipe.injected = true
   } else if (typeof fn === 'function') {
@@ -99,9 +93,6 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
     functions: FunctionContainer,
     error?: Error,
   ): void {
-    
-    
-    
     const source = Object.assign({}, container, { error })
     const inputArgs = fetcher.fetch(source, [], functions)
     const fn = getErrorFn(container, functions) as AnyFunction | undefined

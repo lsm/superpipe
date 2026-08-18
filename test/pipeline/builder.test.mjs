@@ -166,12 +166,10 @@ describe('Test pipe builder', () => {
         [() => {}, '{input}', 'output'],
         ['myFunc', 'input', ['output']],
         ['error', 'myErrorHandlerFunc', 'error'],
-        
       ]
 
       const sp = superpipe()
-      
-      
+
       const pipeline = sp('myPipelineName')
         .input('{myKey}')
         .pipe(defs[1][0], '{input}', 'output')

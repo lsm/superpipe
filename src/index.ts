@@ -13,8 +13,6 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
   functions?: T,
 ): SuperPipeFactory {
   return (name: string, defs?: PipeDefinition[]): PipelineAPI | ((...args: unknown[]) => void) => {
-    
-    
     let endOutput: PipeParameter | undefined
     const pipeline = new PipelineBuilder(name, functions)
 
@@ -36,18 +34,12 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
         }
       })
 
-      
-      
-      
       return pipeline.end(endOutput)
     }
 
     return pipeline
   }
 }
-
-
-
 
 export type {
   AbortSignalLike,
@@ -66,14 +58,12 @@ export type {
 export { PipelineAbortedError } from './common'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
-
 export interface Pipeline {
   name: string
   pipes: Pipe[]
   errorHandler?: Pipe
   deps: FunctionContainer
 }
-
 
 export interface Pipe {
   fn: ((...args: unknown[]) => unknown) | null
@@ -85,27 +75,18 @@ export interface Pipe {
 }
 export type { FunctionContainer as Dependencies } from './common'
 
-
-
 export interface PipelineAPI {
   input: (input?: PipeParameter) => PipelineAPI
   pipe: (fn: PipeFunction, input?: PipeParameter, output?: PipeParameter) => PipelineAPI
   error: (fn: PipeFunction, input?: PipeParameter) => PipelineAPI
-  
-  
-  
-  
+
   end: (output?: PipeParameter) => Function
-  
-  
-  
-  
+
   endAsync: (
     output?: PipeParameter,
     options?: EndAsyncOptions,
   ) => (...args: unknown[]) => Promise<PipeOutput>
 }
-
 
 export type SuperPipeFactory = (
   name: string,
