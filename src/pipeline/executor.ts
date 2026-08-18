@@ -369,6 +369,7 @@ function executePipe(
     }
 
     Promise.resolve(result).then(onFulfilled, onRejected)
+    observeOriginalRejection(result)
     return
   }
 
