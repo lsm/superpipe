@@ -10,48 +10,48 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
-// A once-wrapped `next` callback handed to a pipe.
+
 export interface NextCallback {
   (error?: Error, value?: PipeResult): void
-  // Void the callback outright — used when the executor rejects an
-  // ambiguous continuation, so a late `next` cannot fire afterwards.
+  
+  
   disable: () => void
 }
 
-// Per-invocation state shared by the `next` callbacks handed to one pipe:
-// the wrappers created by the fetch, and the buffer holding their
-// synchronous invocations (in call order) until the pipe's return channel
-// is known. Owned by the executor, so reentrant runs of the same pipeline
-// never share buffer state. `onConsumed` fires once per wrapper when it is
-// invoked or invalidated, so an outstanding-continuation count can drop.
+
+
+
+
+
+
 export interface NextCallbacks {
   wrappers: NextCallback[]
   holding: boolean
   held: { error?: Error; value?: PipeResult }[]
   onConsumed?: () => void
-  // Offers a wrapper-raised programming error (a duplicate invocation) to
-  // the run: true when the error was routed to a completion observer,
-  // false when it must be thrown onto the invoking stack.
+  
+  
+  
   onError?: (err: Error) => boolean
-  // The originating pipe's index: a retained callback fired later merges
-  // its value through that pipe's producer, even after the step counter
-  // advanced past it.
+  
+  
+  
   pipeIndex?: number
 }
 
-// Wrap a `next` callback so it can only be invoked once. The guard is bound
-// to the pipe that received the callback, not to a mutable step counter, so
-// a stale `next` retained by an earlier pipe cannot advance the pipeline
-// around a pipe that is still waiting for its own `next`. While the shared
-// buffer is holding, an invocation is queued there instead of advancing.
-// A disabled callback discards late invocations silently — the ambiguity
-// has already surfaced, and throwing from an unrelated callback stack
-// (a timer, an event emitter) would be uncatchable.
+
+
+
+
+
+
+
+
 function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
   let called = false
   let disabled = false
-  // The wrapper counts as a live continuation from creation until it is
-  // invoked or invalidated — exactly once.
+  
+  
   let counted = true
   const consume = (): void => {
     if (counted) {
@@ -59,25 +59,25 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
       callbacks?.onConsumed?.()
     }
   }
-  // Cleared on disable: the underlying continuation closes over the whole
-  // per-run execution state, and a wrapper retained by a long-lived timer
-  // or listener must not keep that state reachable after invalidation.
+  
+  
+  
   let advance: ((error?: Error, value?: PipeResult, fromStep?: number) => void) | null = next as (
     error?: Error,
     value?: PipeResult,
     fromStep?: number,
   ) => void
   const wrapped = ((error?: Error, value?: PipeResult): void => {
-    // Invalidation is checked before the duplicate-call guard: a late call
-    // on a disabled callback (even a repeat of an earlier held call) must
-    // be discarded, never thrown from an unrelated callback stack.
+    
+    
+    
     if (disabled) {
       return
     }
     if (called) {
-      // A duplicate invocation from a foreign callback stack: route it to
-      // the run's completion observer when one exists — throwing there
-      // would be uncatchable and could terminate the process.
+      
+      
+      
       const duplicate = new NextCalledTwiceError()
       if (callbacks?.onError?.(duplicate)) {
         return
@@ -104,7 +104,7 @@ function once(next: AnyFunction, callbacks?: NextCallbacks): NextCallback {
 }
 
 export default class Fetcher {
-  // Array of property name to fetch.
+  
   private keys: string[] = []
 
   private _fetch: (
@@ -114,8 +114,8 @@ export default class Fetcher {
     nextCallbacks?: NextCallbacks,
   ) => PipeOutput = this.fetchNothing
 
-  // Set for the fetcher created by `.end(output)`, whose result is returned
-  // to the caller rather than spread as invocation arguments.
+  
+  
   private raw: boolean = false
 
   hasNext: boolean = false
@@ -133,8 +133,8 @@ export default class Fetcher {
         this.keys = [parameter]
         this._fetch = this.fetchSingle
       }
-      // Normalize string as array.
-      // When it's not object string or flag equals raw.
+      
+      
       parameter = [parameter]
     }
 
@@ -155,15 +155,15 @@ export default class Fetcher {
     this.hasNext = this.keys.indexOf('next') > -1
   }
 
-  // `args` are the wrapped invocation arguments, handed to pipes that declare
-  // no inputs. `functions` is the configured dependency container, consulted
-  // for keys that are not present in `container`.
-  // `nextCallbacks`, when given, receives the once-wrapped `next` callbacks
-  // created by this fetch — an input list may declare `next` more than once,
-  // and the executor must be able to buffer or invalidate all of them. It is
-  // threaded through the call chain rather than stored on the instance: this
-  // fetcher is shared, and a dependency accessor that re-enters the executor
-  // mid-fetch would otherwise interfere with the outer invocation's state.
+  
+  
+  
+  
+  
+  
+  
+  
+  
   fetch(
     container: PipeResult,
     args?: PipeResult[],
@@ -205,7 +205,7 @@ export default class Fetcher {
     return wrapped
   }
 
-  // True when any requested input (except `next`) resolves to undefined.
+  
   hasUnresolved(container: PipeResult, functions?: FunctionContainer): boolean {
     return this.keys.some(
       (key: string): boolean =>
@@ -219,7 +219,7 @@ export default class Fetcher {
     _functions?: FunctionContainer,
     _nextCallbacks?: NextCallbacks,
   ): PipeOutput {
-    // Pipes without an input declaration receive the original invocation args.
+    
     return args
   }
 
@@ -252,16 +252,16 @@ export default class Fetcher {
     const result: Record<string, PipeResult> = {}
 
     for (const key of this.keys) {
-      // A repeated key maps to the same value — create the `next` wrapper
-      // only once, so the pipe exposes and the run counts one callback.
+      
+      
       if (key === 'next' && result.next !== undefined) {
         continue
       }
       result[key] = this.value(container, functions, key, nextCallbacks)
     }
 
-    // The array wrapper suits function invocation; the `.end()` fetcher
-    // returns the picked object itself.
+    
+    
     return this.raw ? result : [result]
   }
 }

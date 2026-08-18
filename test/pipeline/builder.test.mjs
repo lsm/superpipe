@@ -166,12 +166,12 @@ describe('Test pipe builder', () => {
         [() => {}, '{input}', 'output'],
         ['myFunc', 'input', ['output']],
         ['error', 'myErrorHandlerFunc', 'error'],
-        // [ 'end', '{output}' ],
+        
       ]
 
       const sp = superpipe()
-      // Definitions auto-finalize, so build the same pipeline through the
-      // programmatic API to inspect its pipes.
+      
+      
       const pipeline = sp('myPipelineName')
         .input('{myKey}')
         .pipe(defs[1][0], '{input}', 'output')

@@ -7,8 +7,8 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
-// `source:destination` renaming, e.g. an output of `'arg2:mappedArgName'`
-// stores the returned `arg2` under `mappedArgName`.
+
+
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
@@ -21,17 +21,17 @@ function applyKey(output: Record<string, PipeResult>, key: string, value: PipeRe
 }
 
 export default class Producer {
-  // Array of property names to produce.
+  
   private keys: string[] = []
 
   private _produce: (result: PipeResult) => PipeOutput
 
-  // Input producers receive the wrapped invocation-arguments array, so
-  // single-name and object-string specs read from its first element.
+  
+  
   private inputMode: boolean = false
 
-  // True when the output spec used `{a, b}` object-string syntax, which
-  // selects named properties and never stores a scalar whole.
+  
+  
   private objString: boolean = false
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
@@ -59,8 +59,8 @@ export default class Producer {
       return
     }
 
-    // Output mode: every spec form reduces to a list of output names; the
-    // mapping semantics depend only on the produced value's shape.
+    
+    
     if (parameter === '') {
       throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
     }
@@ -72,8 +72,8 @@ export default class Producer {
         this.keys = [parameter]
       }
     } else if (Array.isArray(parameter)) {
-      // An empty output list means no declared outputs; otherwise every
-      // element must be a non-empty plain string (no object-strings).
+      
+      
       if (parameter.length > 0 && !isValidArrayParameters(parameter)) {
         throw new Error('Pipe input/output parameter must be string or array of strings')
       }
@@ -90,10 +90,10 @@ export default class Producer {
     return this._produce(result)
   }
 
-  // Mirrors master's setValueToStore: array results map positionally,
-  // plain-object results map by property name (either counts), a scalar
-  // maps whole under a single name, and with no outputs plain objects
-  // merge while everything else is dropped.
+  
+  
+  
+  
   produceOutput(result: PipeResult): PipeOutput {
     const output: Record<string, PipeResult> = {}
     const keys = this.keys
@@ -124,13 +124,13 @@ export default class Producer {
     }
 
     if (keys.length === 1) {
-      // Object-string syntax selects properties only — a scalar return
-      // means the property is absent, not the whole value.
+      
+      
       applyKey(output, keys[0], this.objString ? undefined : result)
       return output
     }
 
-    // A primitive with multiple output names has nothing to map to.
+    
     return {}
   }
 
@@ -140,7 +140,7 @@ export default class Producer {
 
   produceFromArray(result: PipeResult): PipeOutput {
     const output: Record<string, PipeResult> = {}
-    // Input names are literal — colon renaming applies to outputs only.
+    
     let i = 0
     for (const key of this.keys) {
       output[key] = (result as PipeResult[])[i]
@@ -153,14 +153,14 @@ export default class Producer {
     const output: Record<string, PipeResult> = {}
     const source = this.inputSource(result) as Record<string, PipeResult> | null | undefined
     for (const key of this.keys) {
-      // Only take the keys we need; a missing argument maps to undefined.
+      
       output[key] = source == null ? undefined : source[key]
     }
     return output
   }
 
-  // In input mode the producer receives the wrapped arguments array; a
-  // single-name or object-string spec addresses the first argument.
+  
+  
   private inputSource(result: PipeResult): PipeResult {
     return Array.isArray(result) ? result[0] : result
   }
