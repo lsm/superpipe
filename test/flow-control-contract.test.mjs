@@ -2364,9 +2364,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-mid-run')
       .pipe(() => new Promise(() => {}), null, 'never')
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
   })
@@ -2376,9 +2376,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-reason')
       .pipe(() => new Promise(() => {}), null, 'never')
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     controller.abort('custom-reason')
     const err = await promise.catch((e) => e)
     expect(err).toBeInstanceOf(PipelineAbortedError)
@@ -2395,9 +2395,9 @@ describe('endAsync abort contract', () => {
       .error(() => {
         handlerRuns += 1
       }, 'error')
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     controller.abort()
     await promise.catch(() => {})
     expect(handlerRuns).to.equal(0)
@@ -2419,9 +2419,9 @@ describe('endAsync abort contract', () => {
       .error((error) => {
         handled = error
       }, 'error')
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
 
@@ -2475,9 +2475,9 @@ describe('endAsync abort contract', () => {
         null,
         'e',
       )
-      .endAsync('e', { signal: controller.signal })
+      .endAsync('e')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     await new Promise((resolve) => setTimeout(resolve, 10))
     controller.abort()
     resolveFourth('too late')
@@ -2507,9 +2507,9 @@ describe('endAsync abort contract', () => {
         null,
         'b',
       )
-      .endAsync('b', { signal: controller.signal })
+      .endAsync('b')
 
-    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    await expect(run.withSignal(controller.signal)).rejects.toBeInstanceOf(PipelineAbortedError)
     expect(secondRan).to.equal(false)
   })
 
@@ -2531,9 +2531,9 @@ describe('endAsync abort contract', () => {
       .error(() => {
         handlerRuns += 1
       }, 'error')
-      .endAsync('done', { signal: controller.signal })
+      .endAsync('done')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
 
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
@@ -2561,20 +2561,65 @@ describe('endAsync abort contract', () => {
         null,
         'out',
       )
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    const err = await run().catch((e) => e)
+    const err = await run.withSignal(signal).catch((e) => e)
     expect(err.message).to.equal('non-conforming signal')
     expect(ran).to.equal(false)
   })
 
-  it('tolerates a null signal', async () => {
+  it('keeps the runner reusable after an aborted run', async () => {
     const sp = superpipe({})
-    const run = sp('abort-null-signal')
+    const run = sp('abort-runner-reusable')
       .pipe(() => 'done', null, 'out')
-      .endAsync('out', { signal: null })
+      .endAsync('out')
 
+    const first = new AbortController()
+    const aborted = run.withSignal(first.signal)
+    first.abort()
+    await expect(aborted).rejects.toBeInstanceOf(PipelineAbortedError)
+
+    const second = new AbortController()
+    await expect(run.withSignal(second.signal)).resolves.toEqual('done')
     await expect(run()).resolves.toEqual('done')
+  })
+
+  it('cancels concurrent runs from one runner independently', async () => {
+    let resolveA
+    let resolveB
+    const sp = superpipe({})
+    const runA = sp('abort-independent-a')
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveA = resolve
+          }),
+        null,
+        'out',
+      )
+      .endAsync('out')
+    const runB = sp('abort-independent-b')
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveB = resolve
+          }),
+        null,
+        'out',
+      )
+      .endAsync('out')
+
+    const controllerA = new AbortController()
+    const controllerB = new AbortController()
+    const pa = runA.withSignal(controllerA.signal)
+    const pb = runB.withSignal(controllerB.signal)
+
+    controllerA.abort()
+    await expect(pa).rejects.toBeInstanceOf(PipelineAbortedError)
+
+    resolveA('late')
+    resolveB('kept')
+    await expect(pb).resolves.toEqual('kept')
   })
 
   it('preserves the reason on a pre-aborted signal', async () => {
@@ -2583,9 +2628,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-pre-reason')
       .pipe(() => new Promise(() => {}), null, 'never')
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const err = await run().catch((e) => e)
+    const err = await run.withSignal(controller.signal).catch((e) => e)
     expect(err).toBeInstanceOf(PipelineAbortedError)
     expect(err.reason).to.equal('pre-reason')
   })
@@ -2604,9 +2649,9 @@ describe('endAsync abort contract', () => {
         null,
         'out',
       )
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    await expect(run.withSignal(controller.signal)).rejects.toBeInstanceOf(PipelineAbortedError)
     expect(ran).to.equal(false)
   })
 
@@ -2626,9 +2671,9 @@ describe('endAsync abort contract', () => {
         null,
         'out',
       )
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
 
@@ -2651,9 +2696,9 @@ describe('endAsync abort contract', () => {
         null,
         'out',
       )
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
 
@@ -2667,9 +2712,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-same-tick')
       .pipe(() => 'done', null, 'out')
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(controller.signal)
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
   })
@@ -2685,9 +2730,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-throwing-aborted-getter')
       .pipe(() => 'done', null, 'out')
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    await expect(run()).resolves.toEqual('done')
+    await expect(run.withSignal(signal)).resolves.toEqual('done')
   })
 
   it('tolerates a throwing reason getter when aborting', async () => {
@@ -2705,9 +2750,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-throwing-reason-getter')
       .pipe(() => new Promise(() => {}), null, 'never')
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(signal)
     listener()
     const err = await promise.catch((e) => e)
     expect(err).toBeInstanceOf(PipelineAbortedError)
@@ -2715,7 +2760,7 @@ describe('endAsync abort contract', () => {
     expect(err.reason).to.equal(undefined)
   })
 
-  it('detaches the abort listener on the pre-aborted short-circuit', async () => {
+  it('never attaches a listener on the pre-aborted short-circuit', async () => {
     let active = 0
     const signal = {
       aborted: true,
@@ -2729,9 +2774,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-pre-detach')
       .pipe(() => new Promise(() => {}), null, 'never')
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    await expect(run.withSignal(signal)).rejects.toBeInstanceOf(PipelineAbortedError)
     expect(active).to.equal(0)
   })
 
@@ -2754,9 +2799,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-shared-controller')
       .pipe(() => 'done', null, 'out')
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    const [first, second] = await Promise.all([run(), run()])
+    const [first, second] = await Promise.all([run.withSignal(signal), run.withSignal(signal)])
     expect(first).to.equal('done')
     expect(second).to.equal('done')
     expect(active).to.equal(0)
@@ -2767,15 +2812,14 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-after-complete')
       .pipe(() => 'done', null, 'out')
-      .endAsync('out', { signal: controller.signal })
+      .endAsync('out')
 
-    const promise = run()
-    const value = await promise
+    const value = await run.withSignal(controller.signal)
     controller.abort()
     expect(value).to.equal('done')
   })
 
-  it('leaves endAsync unchanged when no signal is supplied', async () => {
+  it('runs without cancellation when no signal is supplied', async () => {
     const sp = superpipe({})
     const run = sp('abort-no-signal')
       .pipe(() => 'done', null, 'out')
@@ -2793,7 +2837,7 @@ describe('endAsync abort contract', () => {
     expect(run()).to.equal('done')
   })
 
-  it('supports plain AbortSignal-shaped options without a reason', async () => {
+  it('supports plain AbortSignal-shaped objects without a reason', async () => {
     let listener
     const signal = {
       aborted: false,
@@ -2807,9 +2851,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-structural')
       .pipe(() => new Promise(() => {}), null, 'never')
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(signal)
     listener()
     const err = await promise.catch((e) => e)
     expect(err).toBeInstanceOf(PipelineAbortedError)
@@ -2829,9 +2873,9 @@ describe('endAsync abort contract', () => {
         'a',
       )
       .pipe(() => new Promise(() => {}), null, 'b')
-      .endAsync('b', { signal: controller.signal })
+      .endAsync('b')
 
-    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    await expect(run.withSignal(controller.signal)).rejects.toBeInstanceOf(PipelineAbortedError)
   })
 
   it('detaches the abort listener when the run completes first', async () => {
@@ -2849,9 +2893,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-detach-on-complete')
       .pipe(() => 'done', null, 'out')
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    await expect(run()).resolves.toEqual('done')
+    await expect(run.withSignal(signal)).resolves.toEqual('done')
     expect(active).to.equal(0)
   })
 
@@ -2871,9 +2915,9 @@ describe('endAsync abort contract', () => {
     const sp = superpipe({})
     const run = sp('abort-detach-on-abort')
       .pipe(() => new Promise(() => {}), null, 'never')
-      .endAsync('out', { signal })
+      .endAsync('out')
 
-    const promise = run()
+    const promise = run.withSignal(signal)
     listener()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
     expect(active).to.equal(0)

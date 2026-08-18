@@ -1,10 +1,4 @@
-import type {
-  EndAsyncOptions,
-  FunctionContainer,
-  PipeFunction,
-  PipeOutput,
-  PipeParameter,
-} from './common'
+import type { AsyncPipelineRunner, FunctionContainer, PipeFunction, PipeParameter } from './common'
 import { FN_TYPE } from './pipeline/builder'
 import type { PipeDefinition } from './pipeline/Pipe'
 import PipelineBuilder from './pipeline/Pipeline'
@@ -44,7 +38,7 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
 export type {
   AbortSignalLike,
   AnyFunction,
-  EndAsyncOptions,
+  AsyncPipelineRunner,
   FunctionContainer,
   PipeFunction,
   PipelineBase,
@@ -82,10 +76,7 @@ export interface PipelineAPI {
 
   end: (output?: PipeParameter) => Function
 
-  endAsync: (
-    output?: PipeParameter,
-    options?: EndAsyncOptions,
-  ) => (...args: unknown[]) => Promise<PipeOutput>
+  endAsync: (output?: PipeParameter) => AsyncPipelineRunner
 }
 
 export type SuperPipeFactory = (

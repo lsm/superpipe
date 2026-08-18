@@ -41,8 +41,9 @@ export interface AbortSignalLike {
   removeEventListener(type: string, listener: () => void): void
 }
 
-export interface EndAsyncOptions {
-  readonly signal?: AbortSignalLike | null
+export interface AsyncPipelineRunner {
+  (...args: unknown[]): Promise<PipeOutput>
+  withSignal(signal: AbortSignalLike, ...args: unknown[]): Promise<PipeOutput>
 }
 
 export function signalAborted(signal: AbortSignalLike): boolean {
