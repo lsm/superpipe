@@ -149,15 +149,9 @@ interface PipeState {
 
   driving: boolean
 
-  hasQueued: boolean
+  depth: number
 
-  qError?: Error
-
-  qValue?: PipeResult
-
-  qFromStep?: number
-
-  queue: QueuedContinuation[]
+  queue: QueuedContinuation[] | null
 
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
 }
@@ -342,21 +336,14 @@ function executePipe(
       if (pipe.not && typeof resolved === 'boolean') {
         resolved = !resolved
       }
-      try {
-        if (isFlowControl && resolved === false) {
-          state.halted = true
-          if (state.pending === 0) {
-            settle(state, null)
-          }
-          return
+      if (isFlowControl && resolved === false) {
+        state.halted = true
+        if (state.pending === 0) {
+          settle(state, null)
         }
-        advance(state, pipeline, null, resolved, pipeIndex)
-      } catch (err) {
-        if (!state.onSettled) {
-          throw err
-        }
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+        return
       }
+      advance(state, pipeline, null, resolved, pipeIndex)
     }
     const onRejected = (reason: unknown): void => {
       state.pending -= 1
@@ -364,20 +351,13 @@ function executePipe(
         return
       }
 
-      try {
-        advance(
-          state,
-          pipeline,
-          (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
-          undefined,
-          pipeIndex,
-        )
-      } catch (err) {
-        if (!state.onSettled) {
-          throw err
-        }
-        settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
-      }
+      advance(
+        state,
+        pipeline,
+        (reason || new Error('Pipe promise rejected with a falsey value')) as Error,
+        undefined,
+        pipeIndex,
+      )
     }
 
     if (thenFn === Promise.prototype.then) {
@@ -435,6 +415,8 @@ function executePipe(
   }
 }
 
+const SYNC_CASCADE_BUDGET = 512
+
 function next(
   state: PipeState,
   pipeline: PipelineBase,
@@ -447,18 +429,18 @@ function next(
   }
 
   if (state.driving) {
-    if (!state.hasQueued) {
-      state.hasQueued = true
-      state.qError = error
-      state.qValue = value
-      state.qFromStep = fromStep
-    } else {
-      state.queue.push({ error, value, fromStep })
+    if (state.queue === null) {
+      state.queue = []
     }
+    state.queue.push({ error, value, fromStep })
     return
   }
 
-  state.driving = true
+  const iterative = state.depth >= SYNC_CASCADE_BUDGET
+  if (iterative) {
+    state.driving = true
+  }
+  state.depth += 1
   try {
     for (;;) {
       try {
@@ -471,35 +453,23 @@ function next(
           settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
         }
       }
-
-      if (state.settled) {
+      if (!iterative || state.settled) {
         break
       }
-      if (state.hasQueued) {
-        state.hasQueued = false
-        error = state.qError
-        value = state.qValue
-        fromStep = state.qFromStep
-        state.qError = undefined
-        state.qValue = undefined
-        state.qFromStep = undefined
-      } else {
-        const item = state.queue.shift()
-        if (!item) {
-          break
-        }
-        error = item.error
-        value = item.value
-        fromStep = item.fromStep
+      const item = state.queue?.shift()
+      if (!item) {
+        break
       }
+      error = item.error
+      value = item.value
+      fromStep = item.fromStep
     }
-    state.hasQueued = false
-    state.qError = undefined
-    state.qValue = undefined
-    state.qFromStep = undefined
-    state.queue.length = 0
   } finally {
-    state.driving = false
+    state.depth -= 1
+    if (iterative) {
+      state.driving = false
+      state.queue = null
+    }
   }
 }
 
@@ -585,8 +555,8 @@ export function runPipeline(
     aborted: false,
     nextRegistries: [],
     driving: false,
-    hasQueued: false,
-    queue: [],
+    depth: 0,
+    queue: null,
     onSettled,
   }
 
