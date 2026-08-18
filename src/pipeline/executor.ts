@@ -38,12 +38,20 @@ function flushNextCallbacks(
 }
 
 // Void the callbacks and discard any held invocation and its payload — used
-// when the executor rejects an ambiguous or unobservable continuation.
+// when the executor rejects an ambiguous or unobservable continuation, or
+// when a cancellation gates the run.
 function invalidateNextCallbacks(callbacks: NextCallbacks): void {
   for (const wrapper of callbacks.wrappers) {
     wrapper.disable()
   }
   callbacks.held.length = 0
+  // Sever the wrapper→state closure path: a retained disabled callback must
+  // not keep the run's execution state reachable through these handlers.
+  // Neither can fire after invalidation — `disable` consumes the once-guard
+  // `onConsumed` fires through, and the disabled check precedes `onError`'s
+  // only call site.
+  callbacks.onConsumed = undefined
+  callbacks.onError = undefined
 }
 
 interface ResultContainer {
@@ -721,6 +729,13 @@ function continuePipeline(
     return
   }
 
+  // Cancellation is terminal and silent: once the run was gated, an error
+  // is never dispatched to the handler. (Unreachable through the settled
+  // guard on every entry path — stated here so the contract reads locally.)
+  if (state.aborted) {
+    return
+  }
+
   // Stays set while the handler (or the no-handler rethrow) unwinds, so
   // executePipe's catch does not re-dispatch it as a fresh pipe error.
   state.handlingError = true
@@ -738,6 +753,10 @@ function continuePipeline(
   }
 }
 
+// Internal execution entry — not re-exported from the package index.
+// `registerCancel` exists solely for `.endAsync`'s abort wiring: it hands
+// the boundary a per-run cancellation handle before the first pipe runs.
+// @internal
 export function runPipeline(
   args: PipeResult,
   pipeline: PipelineBase,

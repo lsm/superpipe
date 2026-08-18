@@ -2619,7 +2619,8 @@ describe('endAsync abort contract', () => {
       .endAsync('e', { signal: controller.signal })
 
     const promise = run()
-    await new Promise((resolve) => setTimeout(resolve, 10)) // pipes 1-3 done, 4 in flight
+    // Pipes 1-3 are synchronous — they completed inside run(); pipe 4's
+    // promise is in flight by construction, so no timer wait is needed.
     controller.abort()
     resolveFourth('too late')
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
@@ -2689,6 +2690,52 @@ describe('endAsync abort contract', () => {
     // silent no-op that cannot advance the run or throw on the caller's stack.
     expect(() => retained(null, 'late')).to.not.throw()
     expect(handlerRuns).to.equal(0)
+  })
+
+  it('discards a retained next error fired after the abort', async () => {
+    // The error-carrying twin of the retained-callback test: a disabled
+    // wrapper invoked with an error is a silent no-op — it must not reach
+    // the error handler nor throw on the invoking stack.
+    let retained
+    let handlerRuns = 0
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-retained-late-error')
+      .pipe(
+        (first, second) => {
+          retained = second
+          first(null, 'value')
+        },
+        ['next', 'next'],
+        'value',
+      )
+      .pipe(() => 'done', null, 'done')
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('done', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(() => retained(new Error('late failure'))).to.not.throw()
+    expect(handlerRuns).to.equal(0)
+  })
+
+  it('tolerates repeated abort calls', async () => {
+    // A second abort dispatch is a no-op: one rejection, no throw, and the
+    // already-gated run is not touched again.
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-twice')
+      .pipe(() => new Promise(() => {}), null, 'never')
+      .endAsync('out', { signal: controller.signal })
+
+    const promise = run()
+    controller.abort()
+    expect(() => controller.abort()).to.not.throw()
+    const err = await promise.catch((e) => e)
+    expect(err).toBeInstanceOf(PipelineAbortedError)
   })
 
   it('rejects without running pipes when addEventListener throws', async () => {

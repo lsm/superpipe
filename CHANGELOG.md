@@ -1,3 +1,23 @@
+Unreleased
+==========
+- `.endAsync(output, options)`: a promise-returning counterpart of `.end()`
+  for async pipelines. The returned executor settles when the run settles —
+  every pipe executed, a flow-control halt fired, or an error dispatched.
+  Halted runs resolve with the partial snapshot; failed runs reject with the
+  active error even when an error handler ran. (#49)
+- `AbortSignal` cancellation: `.endAsync(output, { signal })` rejects with
+  `PipelineAbortedError` (`name` `AbortError`, `reason` carries the signal's
+  reason). The cancellation itself never routes through the error handler,
+  and a signal already aborted at call time rejects before the first pipe
+  runs. (#52, #54)
+- **Behavior of cancelled runs:** cancellation gates the run itself — no
+  pipe that has not started will execute, live `next` callbacks are disabled
+  (a retained callback becomes a no-op and releases its hold on the run's
+  state), and in-flight continuations are discarded when they land, errors
+  included. This is a deliberate break from the previously documented
+  boundary-only behavior, where the abandoned run kept executing and late
+  errors reached the `.error()` handler. (#54)
+
 0.15.0 2026-08-14
 =================
 - New internal architecture: pipeline decomposed into builder / executor /

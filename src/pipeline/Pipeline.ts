@@ -228,7 +228,11 @@ export default class Pipeline implements PipelineBase {
       // Removal is always attempted: a signal whose addEventListener
       // registered the listener and then threw must not leak it, and
       // removing a listener that was never registered is a spec no-op.
+      // The cancel handle is dropped with it — the settled run's state must
+      // not stay reachable from this executor closure (a throwing
+      // removeEventListener can leave `onAbort` registered on the signal).
       const cleanup = (): void => {
+        cancelRun = undefined
         try {
           signal.removeEventListener('abort', onAbort)
         } catch {

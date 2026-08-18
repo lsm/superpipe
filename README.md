@@ -277,7 +277,7 @@ const run = sp('fetch-workflow')
   .endAsync('workflow', { signal: controller.signal })
 
 const promise = run()
-controller.abort()   // elsewhere / on cancel: rejects the pending run
+controller.abort()   // elsewhere, when cancelled: rejects and stops the run
 
 try {
   const workflow = await promise
