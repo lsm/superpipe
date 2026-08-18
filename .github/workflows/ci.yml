@@ -66,6 +66,8 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     needs: test
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -82,3 +84,41 @@ jobs:
 
       - name: Run coverage
         run: npm run coverage
+
+      - name: Generate badge JSON
+        run: |
+          node -e "
+            const pct = require('./coverage/coverage-summary.json').total.lines.pct
+            const color =
+              pct >= 90 ? 'brightgreen'
+              : pct >= 80 ? 'green'
+              : pct >= 70 ? 'yellowgreen'
+              : pct >= 60 ? 'yellow'
+              : pct >= 50 ? 'orange'
+              : 'red'
+            const badge = { schemaVersion: 1, label: 'coverage', message: pct + '%', color }
+            require('fs').writeFileSync('coverage-badge.json', JSON.stringify(badge))
+            console.log('coverage badge:', JSON.stringify(badge))
+          "
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage/
+            coverage-badge.json
+
+      - name: Publish badge to badges branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          mkdir -p "$RUNNER_TEMP/badge"
+          cp coverage-badge.json "$RUNNER_TEMP/badge/"
+          cd "$RUNNER_TEMP/badge"
+          git init -q
+          git checkout -q --orphan badges
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add coverage-badge.json
+          git commit -q -m "coverage badge"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" badges
