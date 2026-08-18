@@ -71,6 +71,34 @@
           "unsafeParameterDecoratorsEnabled": true
         }
       }
+    },
+    {
+      "includes": [
+        "src/common.ts",
+        "src/index.ts"
+      ],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noBannedTypes": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "test/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noThenProperty": "off"
+          },
+          "style": {
+            "useTemplate": "off"
+          }
+        }
+      }
     }
   ]
 }

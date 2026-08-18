@@ -130,7 +130,7 @@ describe('Executor', () => {
 
         const result = func(input)
         expect(typeof result).to.equal('object')
-        expect(Object.keys(result).length).to.equal(5) // five undefineds
+        expect(Object.keys(result).length).to.equal(5)
       }))
 
     it('should not invoke next pipe if next is not called', () => {
@@ -243,7 +243,7 @@ describe('Executor', () => {
           throw new Error()
         })
         .end()
-      // The original exception is rethrown as-is when no handler exists.
+
       expect(() => func()).to.throw()
 
       const errorFunc = (next) => {

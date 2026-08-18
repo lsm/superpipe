@@ -30,25 +30,19 @@ export function createPipe(
     injected: false,
   }
 
-  // fn is the name of the function being injected during execution.
   if (isNonEmptyString(fn)) {
     fn = fn as string
-    // It's a `not` pipe if the pipe name is started with `!`.
-    // The actual funfromction name is the value without the exclamation mark.
+
     pipe.not = /^!/.test(fn)
     if (pipe.not) {
       fn = fn.slice(1)
     }
 
-    // It's an `optional` pipe if the name is started with `?`.
-    // The actual function name is the value without the question mark.
     pipe.optional = /^\?/.test(fn)
     if (pipe.optional) {
       fn = fn.slice(1)
     }
 
-    // Set the original function name to the pipe object
-    // for later dependency discovery.
     pipe.fnName = fn
     pipe.injected = true
   } else if (typeof fn === 'function') {
@@ -99,9 +93,6 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
     functions: FunctionContainer,
     error?: Error,
   ): void {
-    // The `error` input resolves from execution state, never from container
-    // data — a data value named `error` must not reach the handler as the
-    // active failure.
     const source = Object.assign({}, container, { error })
     const inputArgs = fetcher.fetch(source, [], functions)
     const fn = getErrorFn(container, functions) as AnyFunction | undefined

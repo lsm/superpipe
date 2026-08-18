@@ -290,13 +290,19 @@ try {
 }
 ```
 
-Cancellation races the run at the promise boundary: when the signal aborts,
-the returned promise rejects immediately (the abort listener is detached),
-and any later settle of the underlying run is discarded. "Without invoking
-the error handler" refers to the cancellation itself — the abandoned run is
-not interrupted, so if a pipe later fails, that error still routes to the
-pipeline's error handler as it normally would; it just never changes the
-already-rejected returned promise.
+Cancellation stops the run, not just the caller's view of it: when the
+signal aborts, no pipe that has not started will execute, every live
+`next` callback is disabled (a retained callback becomes a no-op and
+releases its hold on the run's state), and the returned promise rejects
+immediately with `PipelineAbortedError` — the cancellation itself never
+reaches the pipeline's error handler. Continuations already in flight are
+discarded when they land, errors included.
+
+An operation already in flight is not preempted — JavaScript cannot
+interrupt a running function — so a pipe whose operation ignores the
+signal may still finish that operation; its result is discarded and no
+downstream pipe runs. Pass the same signal into the underlying operations
+(fetch, model calls) so they stop early too.
 
 A run counts as completed only once the returned promise settles: a
 successful run defers its settlement by one job (so an error dispatched in

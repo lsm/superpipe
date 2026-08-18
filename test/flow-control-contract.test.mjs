@@ -1,25 +1,7 @@
-/**
- * Flow-control contract tests.
- *
- * These pin three README-documented behaviors and use only the public API,
- * so the file runs unchanged on any branch:
- *
- *   1. Boolean flow control — `false` steers the pipeline only on the
- *      declarative channels (raw boolean dependencies, `!`-pipes); a
- *      function pipe's `false` return is ordinary data.
- *   2. `!` not-pipes — prefixing an injected name with `!` inverts its boolean
- *      result (observed via flow control: `!isBlocked` continues only when
- *      isBlocked is falsey, halts when truthy).
- *   3. `?` optional-pipes — prefixing an injected name with `?` skips the pipe
- *      when the dependency (or its input) is undefined, instead of throwing.
- */
 import { describe, expect, it } from 'vitest'
 import superpipe, { PipelineAbortedError } from '../src'
 
 describe('Flow-control contract (README-pinned behaviors)', () => {
-  // --- control: MUST pass on every branch, else the harness is broken ---
-  // Uses two positional args (both branches wrap multiple args into an array
-  // identically) so input mapping is unambiguous.
   it('runs a basic pipeline to completion', () =>
     new Promise((done) => {
       const sp = superpipe({})
@@ -35,13 +17,12 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
       run('Hello', 'World')
     }))
 
-  // --- 1. function returns are data; false no longer halts (DISCRIMINATOR) ---
   describe('boolean returns — a function pipe returning false is data', () => {
     it('stores a returned false under the output name and continues', () => {
       let observed = 'unset'
       const sp = superpipe({})
       const run = sp('false-data')
-        .pipe(() => false, null, 'flag') // data return, not flow control
+        .pipe(() => false, null, 'flag')
         .pipe((flag) => {
           observed = flag
         }, 'flag')
@@ -56,7 +37,7 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
       const sp = superpipe({ check: () => false })
       const run = sp('injected-bool-data')
         .input(['user'])
-        .pipe('check', 'user', 'ok') // injected fn return, no ! → data
+        .pipe('check', 'user', 'ok')
         .pipe((ok) => {
           observed = ok
         }, 'ok')
@@ -67,15 +48,14 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
     })
 
     it('halts only on the declarative channels: boolean deps and !-pipes', () => {
-      // Raw boolean dependency false → halt (kept from the README contract).
       let afterRan = false
       const sp = superpipe({ isBlocked: false })
       const run = sp('bool-dep-halt')
         .input(['user'])
-        .pipe('isBlocked', 'user') // raw boolean dependency → flow control
+        .pipe('isBlocked', 'user')
         .pipe(() => {
           afterRan = true
-        }) // sentinel — must NOT run
+        })
         .end()
 
       run({ role: 'admin' })
@@ -83,34 +63,31 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
     })
   })
 
-  // --- 2. `!` not-pipe inverts the boolean ---
   describe('! not-pipes — invert the boolean result', () => {
-    // 2a — DISCRIMINATOR
     it('halts when the !-inverted dependency is true', () => {
       let afterRan = false
       const sp = superpipe({ isBlocked: () => true })
       const run = sp('not-true')
         .input(['user'])
-        .pipe('!isBlocked', 'user') // !true === false → must halt
+        .pipe('!isBlocked', 'user')
         .pipe(() => {
           afterRan = true
-        }) // sentinel — must NOT run
+        })
         .end()
 
       run({ role: 'admin' })
       expect(afterRan).to.equal(false)
     })
 
-    // 2b — control (passes on both)
     it('continues when the !-inverted dependency is false', () => {
       let afterRan = false
       const sp = superpipe({ isBlocked: () => false })
       const run = sp('not-false')
         .input(['user'])
-        .pipe('!isBlocked', 'user') // !false === true → must continue
+        .pipe('!isBlocked', 'user')
         .pipe(() => {
           afterRan = true
-        }) // sentinel — must run
+        })
         .end()
 
       run({ role: 'admin' })
@@ -118,17 +95,16 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
     })
   })
 
-  // --- 3. `?` prefix marks a pipe optional (DISCRIMINATOR) ---
   describe('? optional-pipes — prefix marks a pipe optional', () => {
     it('skips a ?-prefixed pipe when the dependency is undefined', () => {
       let afterRan = false
-      const sp = superpipe({}) // no `maybeHandler` dependency provided
+      const sp = superpipe({})
       const run = sp('optional-prefix')
         .input(['user'])
-        .pipe('?maybeHandler', 'maybeValue') // dep + input both undefined → must skip
+        .pipe('?maybeHandler', 'maybeValue')
         .pipe(() => {
           afterRan = true
-        }) // sentinel — MUST run
+        })
         .end()
 
       expect(() => run({ user: 'x' })).to.not.throw()
@@ -136,7 +112,6 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
     })
   })
 
-  // --- 4. single positional scalar arg maps to its input name (DISCRIMINATOR) ---
   describe('positional input — single scalar arg maps to its input name', () => {
     it('assigns the whole arg, not arg[0], to a single input name', () =>
       new Promise((done) => {
@@ -154,14 +129,13 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
       }))
   })
 
-  // --- 5. raw boolean dependency (flow control) ---
   describe('raw boolean dependency — used as flow control', () => {
     it('continues when a raw boolean dependency is true', () => {
       let afterRan = false
-      const sp = superpipe({ isBlocked: true }) // raw boolean, not a function
+      const sp = superpipe({ isBlocked: true })
       const run = sp('bool-true')
         .input(['user'])
-        .pipe('isBlocked', 'user') // true → must continue
+        .pipe('isBlocked', 'user')
         .pipe(() => {
           afterRan = true
         })
@@ -176,10 +150,10 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
       const sp = superpipe({ isBlocked: false })
       const run = sp('bool-false')
         .input(['user'])
-        .pipe('isBlocked', 'user') // false → must halt
+        .pipe('isBlocked', 'user')
         .pipe(() => {
           afterRan = true
-        }) // sentinel — must NOT run
+        })
         .end()
 
       run({ role: 'admin' })
@@ -191,10 +165,10 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
       const sp = superpipe({ isBlocked: true })
       const run = sp('bool-not')
         .input(['user'])
-        .pipe('!isBlocked', 'user') // !true === false → must halt
+        .pipe('!isBlocked', 'user')
         .pipe(() => {
           afterRan = true
-        }) // sentinel — must NOT run
+        })
         .end()
 
       run({ role: 'admin' })
@@ -203,7 +177,6 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
   })
 })
 
-// --- review round 2: parity behaviors pinned from the codex findings ---
 describe('review-fix contract (parity behaviors)', () => {
   it('resolves pipe inputs from configured dependencies', () => {
     let observed
@@ -282,7 +255,7 @@ describe('review-fix contract (parity behaviors)', () => {
     const sp = superpipe({ enabled: () => true })
     const run = sp('runtime-false')
       .input(['enabled'])
-      .pipe('enabled') // runtime false must halt, not fall back to the dep
+      .pipe('enabled')
       .pipe(() => {
         afterRan = true
       })
@@ -383,7 +356,6 @@ describe('review-fix contract (parity behaviors)', () => {
   })
 })
 
-// --- review round 3: parity behaviors pinned from the second codex round ---
 describe('review-fix contract (round 2 parity behaviors)', () => {
   it('resolves error-handler inputs from configured dependencies', () =>
     new Promise((done) => {
@@ -427,8 +399,6 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
     const sp = superpipe({})
     const run = sp('falsy-throw')
       .pipe(() => {
-        // Intentional falsy throw — pins the contract that falsy thrown
-        // values are treated as errors, not as successful completion.
         throw null
       })
       .pipe(() => {
@@ -442,8 +412,6 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
 
   it('stores nothing when multiple outputs receive a primitive return value', () =>
     new Promise((done) => {
-      // Master maps only arrays (positionally) and objects (by property);
-      // a primitive with multiple output names maps to nothing.
       const sp = superpipe({})
       const run = sp('primitive-multi-output')
         .pipe(() => 'ab', null, ['x', 'y'])
@@ -467,7 +435,6 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
   })
 })
 
-// --- review round 4: behaviors pinned from the third codex round ---
 describe('review-fix contract (round 3 parity behaviors)', () => {
   it('selects the declared property for a single output over an object return', () => {
     let observed
@@ -540,14 +507,13 @@ describe('review-fix contract (round 3 parity behaviors)', () => {
   })
 })
 
-// --- review round 5: behaviors pinned from the fourth codex round ---
 describe('review-fix contract (round 4 parity behaviors)', () => {
   it('processes tuples that follow an explicit end tuple', () =>
     new Promise((done) => {
       const sp = superpipe({ tag: (s) => `tagged:${s}` })
       const run = sp('end-then-more', [
         ['input', ['x']],
-        ['end'], // explicit end, then more tuples
+        ['end'],
         ['tag', 'x', 'y'],
         [
           (y) => {
@@ -576,14 +542,13 @@ describe('review-fix contract (round 4 parity behaviors)', () => {
     }))
 })
 
-// --- review round 6: behaviors pinned from the fifth codex round ---
 describe('review-fix contract (round 5 parity behaviors)', () => {
   it('sees dependency updates made after the executor was built', () => {
     const deps = { enabled: false }
     const sp = superpipe(deps)
     let afterRan = false
     const run = sp('live-deps')
-      .pipe('enabled') // falsey raw boolean → halts
+      .pipe('enabled')
       .pipe(() => {
         afterRan = true
       })
@@ -592,7 +557,7 @@ describe('review-fix contract (round 5 parity behaviors)', () => {
     run()
     expect(afterRan).to.equal(false)
 
-    deps.enabled = true // mutate the configured container
+    deps.enabled = true
     run()
     expect(afterRan).to.equal(true)
   })
@@ -606,7 +571,7 @@ describe('review-fix contract (round 5 parity behaviors)', () => {
     })
     const run = sp('optional-object-input')
       .input(['user'])
-      .pipe('?handler', '{user, config}') // config is undefined
+      .pipe('?handler', '{user, config}')
       .pipe(() => {
         afterRan = true
       })
@@ -618,12 +583,10 @@ describe('review-fix contract (round 5 parity behaviors)', () => {
 
   it('accumulates multiple input declarations', () =>
     new Promise((done) => {
-      // Each declaration maps the same invocation arguments positionally;
-      // what matters is that an earlier declaration is not lost.
       const sp = superpipe({})
       const run = sp('multi-input')
         .input(['arg1'])
-        .pipe('input', ['arg2']) // restored reserved form as a second declaration
+        .pipe('input', ['arg2'])
         .pipe(
           (arg1, arg2) => {
             expect(arg1).to.equal('a')
@@ -652,7 +615,6 @@ describe('review-fix contract (round 5 parity behaviors)', () => {
   })
 })
 
-// --- review round 7: behaviors pinned from the sixth codex round ---
 describe('review-fix contract (round 6 parity behaviors)', () => {
   it('wraps non-Error values passed to next(error)', () => {
     const sp = superpipe({})
@@ -672,7 +634,6 @@ describe('review-fix contract (round 6 parity behaviors)', () => {
   })
 })
 
-// --- review round 8: behaviors pinned from the seventh codex round ---
 describe('review-fix contract (round 7 parity behaviors)', () => {
   it('maps an absent object-string input argument to undefined values', () =>
     new Promise((done) => {
@@ -703,7 +664,6 @@ describe('review-fix contract (round 7 parity behaviors)', () => {
   })
 })
 
-// --- error channel contract: active error lives on execution state (#39) ---
 describe('error channel contract (state-based error)', () => {
   it('treats an error property merged from a pipe result as data', () =>
     new Promise((done) => {
@@ -712,8 +672,6 @@ describe('error channel contract (state-based error)', () => {
       const run = sp('error-in-result')
         .pipe(() => ({ error: failure }), null, '{error}')
         .pipe((error) => {
-          // The pipeline continues past the data named `error`; it is an
-          // ordinary input here, not a failure signal.
           expect(error).to.equal(failure)
           done()
         }, 'error')
@@ -761,7 +719,6 @@ describe('error channel contract (state-based error)', () => {
   })
 })
 
-// --- output namespace contract: reserved names and shadowing (#40) ---
 describe('output namespace contract (reserved names and shadowing)', () => {
   it('throws when a declared output writes the reserved name next', () => {
     const sp = superpipe({})
@@ -800,9 +757,6 @@ describe('output namespace contract (reserved names and shadowing)', () => {
   })
 
   it('allows an invocation input to override a configured dependency', () => {
-    // Invocation inputs are the caller's per-run values — overriding a
-    // configured dependency here is deliberate (the runtime-false parity
-    // behavior), unlike mid-flight output shadowing.
     let observed
     const sp = superpipe({ data: () => 'configured' })
     const run = sp('override-input')
@@ -840,7 +794,6 @@ describe('output namespace contract (reserved names and shadowing)', () => {
   })
 })
 
-// --- review round: namespace errors surface regardless of delivery path ---
 describe('output namespace contract (delivery parity)', () => {
   it('surfaces a namespace error raised through a synchronous next, not the error handler', () => {
     const sp = superpipe({ shared: (v) => v })
@@ -848,7 +801,7 @@ describe('output namespace contract (delivery parity)', () => {
     const run = sp('sync-next-namespace')
       .pipe(
         (next) => {
-          next(null, 'value') // merge happens inside fn.apply's try block
+          next(null, 'value')
         },
         'next',
         'shared',
@@ -872,8 +825,6 @@ describe('output namespace contract (delivery parity)', () => {
   })
 
   it('allows standard Object.prototype names as outputs', () => {
-    // Object.prototype built-ins are not user-configured dependencies;
-    // a data output named like one must not trip the shadow guard.
     const sp = superpipe({})
     const run = sp('proto-ok')
       .pipe(() => 'value', null, 'toString')
@@ -883,7 +834,6 @@ describe('output namespace contract (delivery parity)', () => {
   })
 })
 
-// --- promise continuation contract: thenable returns are next sugar (#41) ---
 describe('promise continuation contract', () => {
   it('continues the pipeline with the resolved value', () =>
     new Promise((done) => {
@@ -964,8 +914,6 @@ describe('promise continuation contract', () => {
     run()
     return new Promise((resolve) => {
       setTimeout(() => {
-        // Same behavior as a synchronous `return false`: stored as data,
-        // pipeline continues.
         expect(observed).to.equal(false)
         resolve()
       }, 20)
@@ -977,19 +925,18 @@ describe('promise continuation contract', () => {
     const run = sp('sync-still')
       .pipe(() => 'v', null, 'out')
       .end('out')
-    // .end(output) returns populated data synchronously for sync pipelines.
+
     expect(run()).to.equal('v')
   })
 })
 
-// --- review round: thenable edge cases ---
 describe('promise continuation contract (thenable edge cases)', () => {
   it('inverts a !-pipe whose async dependency resolves true (halts)', () => {
     let afterRan = false
     const sp = superpipe({ isBlocked: async () => true })
     const run = sp('not-async-true')
       .input(['user'])
-      .pipe('!isBlocked', 'user') // resolves true → \!true === false → must halt
+      .pipe('!isBlocked', 'user')
       .pipe(() => {
         afterRan = true
       })
@@ -1009,7 +956,7 @@ describe('promise continuation contract (thenable edge cases)', () => {
       const sp = superpipe({ isBlocked: async () => false })
       const run = sp('not-async-false')
         .input(['user'])
-        .pipe('!isBlocked', 'user') // resolves false → \!false === true → must continue
+        .pipe('!isBlocked', 'user')
         .pipe(() => {
           done()
         })
@@ -1021,7 +968,6 @@ describe('promise continuation contract (thenable edge cases)', () => {
   it('adopts callable thenables (functions with a then method)', () =>
     new Promise((done) => {
       const callableThenable = Object.assign(() => {}, {
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then(resolve) {
           resolve('from-callable')
         },
@@ -1041,7 +987,6 @@ describe('promise continuation contract (thenable edge cases)', () => {
   it('routes a throwing then method to the error handler, not a sync throw', () =>
     new Promise((done) => {
       const throwingThenable = {
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then() {
           throw new Error('then threw')
         },
@@ -1063,9 +1008,9 @@ describe('promise continuation contract (thenable edge cases)', () => {
     const sp = superpipe({})
     const run = sp('nested-ambiguity')
       .pipe((next) => {
-        next() // advances into the next pipe inside this fn.apply
+        next()
       }, 'next')
-      .pipe((_next) => Promise.resolve('x'), 'next') // ambiguous continuation
+      .pipe((_next) => Promise.resolve('x'), 'next')
       .error(() => {
         handlerCalled = true
       })
@@ -1076,12 +1021,10 @@ describe('promise continuation contract (thenable edge cases)', () => {
   })
 })
 
-// --- review round 2: guarded assimilation and ambiguity invalidation ---
 describe('promise continuation contract (guarded assimilation)', () => {
   it('routes a throwing then accessor to the error handler', () =>
     new Promise((done) => {
       const throwingAccessor = {
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         get then() {
           throw new Error('accessor threw')
         },
@@ -1099,8 +1042,6 @@ describe('promise continuation contract (guarded assimilation)', () => {
     }))
 
   it('consumes a rejected promise returned alongside next', () => {
-    // The ambiguity error must surface without leaving the returned
-    // rejection unhandled behind it.
     const sp = superpipe({})
     const run = sp('ambiguous-rejected')
       .pipe((_next) => Promise.reject(new Error('mixed channels')), 'next')
@@ -1128,14 +1069,13 @@ describe('promise continuation contract (guarded assimilation)', () => {
   })
 })
 
-// --- review round 3: next buffering and invalidation ---
 describe('promise continuation contract (next buffering)', () => {
   it('does not advance when a pipe calls next and returns a thenable', async () => {
     let advanced = false
     const sp = superpipe({})
     const run = sp('sync-next-thenable')
       .pipe((next) => {
-        next() // synchronous call, held until the return channel is known
+        next()
         return Promise.resolve('x')
       }, 'next')
       .pipe(() => {
@@ -1177,7 +1117,6 @@ describe('promise continuation contract (next buffering)', () => {
       .pipe((next) => {
         retainedNext = next
         return {
-          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
           get then() {
             throw new Error('accessor threw')
           },
@@ -1191,8 +1130,7 @@ describe('promise continuation contract (next buffering)', () => {
     expect(() => run()).to.not.throw()
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(handlerRuns).to.equal(1)
-    // A disabled callback discards the late call instead of throwing from
-    // an unrelated callback stack.
+
     expect(() => retainedNext()).to.not.throw()
     expect(handlerRuns).to.equal(1)
   })
@@ -1218,7 +1156,6 @@ describe('promise continuation contract (next buffering)', () => {
     }))
 })
 
-// --- review round 4: invocation-local callback state ---
 describe('promise continuation contract (reentrancy)', () => {
   it('keeps buffered next callbacks invocation-local under reentrancy', () => {
     let downstreamRuns = 0
@@ -1229,7 +1166,7 @@ describe('promise continuation contract (reentrancy)', () => {
       .pipe(
         (next, depth) => {
           if (depth === undefined) {
-            run(1) // nested synchronous invocation of the same executor
+            run(1)
           }
           next()
         },
@@ -1241,13 +1178,11 @@ describe('promise continuation contract (reentrancy)', () => {
       .end()
 
     run()
-    // Both the nested and the outer invocation must reach the downstream
-    // pipe — a shared per-fetcher buffer would stall the outer one.
+
     expect(downstreamRuns).to.equal(2)
   })
 })
 
-// --- review round 5: reentrancy inside dependency lookup ---
 describe('promise continuation contract (getter reentrancy)', () => {
   it('keeps the next collector invocation-local when a dependency getter re-enters', async () => {
     let advanced = false
@@ -1258,10 +1193,8 @@ describe('promise continuation contract (getter reentrancy)', () => {
         if (!reentered) {
           reentered = true
           try {
-            run() // synchronous re-entry during dependency lookup
-          } catch {
-            // the nested invocation's own ambiguity surfaces here
-          }
+            run()
+          } catch {}
         }
         return 'value'
       },
@@ -1270,7 +1203,7 @@ describe('promise continuation contract (getter reentrancy)', () => {
       .pipe(
         (_dep, next) => {
           next()
-          return Promise.resolve('x') // ambiguous — must throw before advancing
+          return Promise.resolve('x')
         },
         ['dep', 'next'],
       )
@@ -1285,7 +1218,6 @@ describe('promise continuation contract (getter reentrancy)', () => {
   })
 })
 
-// --- review round 6: promise-job adoption and call-order flushing ---
 describe('promise continuation contract (adoption timing and flush order)', () => {
   it('invokes a custom then method in a later promise job', () =>
     new Promise((done) => {
@@ -1295,7 +1227,6 @@ describe('promise continuation contract (adoption timing and flush order)', () =
       const run = sp('deferred-then')
         .pipe(
           () => ({
-            // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
             then(resolve) {
               observedInThen = afterRun
               resolve('value')
@@ -1312,7 +1243,7 @@ describe('promise continuation contract (adoption timing and flush order)', () =
         .end()
 
       run()
-      afterRun = true // the then method must observe post-run state
+      afterRun = true
     }))
 
   it('flushes buffered next calls in invocation order, not declaration order', () =>
@@ -1322,7 +1253,7 @@ describe('promise continuation contract (adoption timing and flush order)', () =
       const run = sp('flush-order')
         .pipe(
           (first, second) => {
-            second(null, 'first-invoked') // invoked first, declared second
+            second(null, 'first-invoked')
             first(null, 'invoked-second')
           },
           ['next', 'next'],
@@ -1341,14 +1272,12 @@ describe('promise continuation contract (adoption timing and flush order)', () =
     }))
 })
 
-// --- review round 7: nested assimilation and intrinsic invocation ---
 describe('promise continuation contract (cleanup assimilation)', () => {
   it('consumes a nested rejected promise resolved during ambiguity cleanup', () => {
     const sp = superpipe({})
     const run = sp('nested-reject-ambiguity')
       .pipe(
         (_next) => ({
-          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
           then(resolve) {
             resolve(Promise.reject(new Error('nested')))
           },
@@ -1358,7 +1287,7 @@ describe('promise continuation contract (cleanup assimilation)', () => {
       .end()
 
     expect(() => run()).to.throw('one continuation channel')
-    // An unhandled rejection would fail the test run once microtasks drain.
+
     return new Promise((resolve) => setTimeout(resolve, 20))
   })
 
@@ -1369,7 +1298,6 @@ describe('promise continuation contract (cleanup assimilation)', () => {
       const run = sp('shadowed-call')
         .pipe(
           () => ({
-            // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
             then: then,
           }),
           null,
@@ -1385,7 +1313,6 @@ describe('promise continuation contract (cleanup assimilation)', () => {
     }))
 })
 
-// --- review round 8: failure timing and disabled-callback semantics ---
 describe('promise continuation contract (failure timing and discards)', () => {
   it('defers a then accessor failure to the rejection path', () => {
     let handlerObservedAfterRun
@@ -1394,7 +1321,6 @@ describe('promise continuation contract (failure timing and discards)', () => {
     const run = sp('accessor-timing')
       .pipe(
         () => ({
-          // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
           get then() {
             throw new Error('accessor threw')
           },
@@ -1412,8 +1338,6 @@ describe('promise continuation contract (failure timing and discards)', () => {
     afterRun = true
     return new Promise((resolve) => {
       setTimeout(() => {
-        // Same timing as a throwing then method: the handler runs in a
-        // microtask after the caller's synchronous initialization.
         expect(handlerObservedAfterRun).to.equal(true)
         resolve()
       }, 10)
@@ -1425,7 +1349,7 @@ describe('promise continuation contract (failure timing and discards)', () => {
     const sp = superpipe({})
     const run = sp('external-late-next')
       .pipe((next) => {
-        setTimeout(next, 5) // scheduled outside the returned thenable
+        setTimeout(next, 5)
         return Promise.resolve('x')
       }, 'next')
       .pipe(() => {
@@ -1434,13 +1358,12 @@ describe('promise continuation contract (failure timing and discards)', () => {
       .end()
 
     expect(() => run()).to.throw('one continuation channel')
-    // The timer firing must not crash the process nor advance the pipeline.
+
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(advanced).to.equal(false)
   })
 })
 
-// --- review round 9: guard ordering and native-promise adoption ---
 describe('promise continuation contract (guard order and native adoption)', () => {
   it('discards a repeat call on a disabled callback before the duplicate check', async () => {
     let advanced = false
@@ -1449,7 +1372,7 @@ describe('promise continuation contract (guard order and native adoption)', () =
     const run = sp('disabled-before-called')
       .pipe((next) => {
         retained = next
-        next() // first call — held, then discarded by invalidation
+        next()
         return Promise.resolve('x')
       }, 'next')
       .pipe(() => {
@@ -1459,7 +1382,7 @@ describe('promise continuation contract (guard order and native adoption)', () =
 
     expect(() => run()).to.throw('one continuation channel')
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // The invalidation guard runs first: no NextCalledTwiceError, no crash.
+
     expect(() => retained()).to.not.throw()
     expect(advanced).to.equal(false)
   })
@@ -1478,20 +1401,17 @@ describe('promise continuation contract (guard order and native adoption)', () =
       run()
       Promise.resolve().then(() => {
         order.push('caller-microtask')
-        // The pipeline's reaction was attached directly to the native
-        // promise, so it runs before a caller microtask queued after run().
+
         expect(order).to.deep.equal(['pipeline', 'caller-microtask'])
         done()
       })
     }))
 })
 
-// --- review round 10: guarded native-promise adoption ---
 describe('promise continuation contract (native subclass adoption)', () => {
   it('routes a throwing then override on a native promise subclass to the error handler', () =>
     new Promise((done) => {
       class ThrowingThen extends Promise {
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then() {
           throw new Error('subclass then threw')
         }
@@ -1509,19 +1429,15 @@ describe('promise continuation contract (native subclass adoption)', () => {
     }))
 })
 
-// --- review round 11: hostile native-promise overrides ---
 describe('promise continuation contract (hostile overrides)', () => {
   it('ignores repeated settlements from a hostile then override', () => {
     let handlerRuns = 0
     let downstreamRuns = 0
     class Hostile extends Promise {
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
       then(onFulfilled, onRejected) {
         if (onFulfilled) {
           onFulfilled('first')
-          // The second settlement must be ignored — without a once-settled
-          // guard this would run the error handler after the pipeline
-          // already completed.
+
           onRejected(new Error('should never surface'))
         }
         return new Promise(() => {})
@@ -1544,8 +1460,8 @@ describe('promise continuation contract (hostile overrides)', () => {
     run()
     return new Promise((resolve) => {
       setTimeout(() => {
-        expect(downstreamRuns).to.equal(2) // both downstream pipes ran once
-        expect(handlerRuns).to.equal(0) // the second settlement was ignored
+        expect(downstreamRuns).to.equal(2)
+        expect(handlerRuns).to.equal(0)
         resolve()
       }, 10)
     })
@@ -1553,7 +1469,6 @@ describe('promise continuation contract (hostile overrides)', () => {
 
   it('consumes a rejected native subclass whose then override throws in cleanup', () => {
     class RejectedThrowing extends Promise {
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
       then() {
         throw new Error('override threw')
       }
@@ -1564,18 +1479,15 @@ describe('promise continuation contract (hostile overrides)', () => {
       .end()
 
     expect(() => run()).to.throw('one continuation channel')
-    // The original rejection must be observed through the intrinsic then;
-    // an unhandled rejection would fail the run once microtasks drain.
+
     return new Promise((resolve) => setTimeout(resolve, 20))
   })
 })
 
-// --- review round 12: proxy traps and deferred override adoption ---
 describe('promise continuation contract (proxies and deferred overrides)', () => {
   it('adopts a proxied thenable whose prototype trap throws', () =>
     new Promise((done) => {
       const target = {
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then(resolve) {
           resolve('proxied')
         },
@@ -1601,7 +1513,6 @@ describe('promise continuation contract (proxies and deferred overrides)', () =>
     new Promise((done) => {
       let afterRun = false
       class SyncThen extends Promise {
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then(onFulfilled) {
           if (onFulfilled) {
             onFulfilled('sync')
@@ -1613,8 +1524,6 @@ describe('promise continuation contract (proxies and deferred overrides)', () =>
       const run = sp('sync-override-deferred')
         .pipe(() => new SyncThen(() => {}), null, 'out')
         .pipe(() => {
-          // The downstream pipe runs after the caller's initialization,
-          // like every other thenable adoption.
           expect(afterRun).to.equal(true)
           done()
         }, 'out')
@@ -1625,12 +1534,10 @@ describe('promise continuation contract (proxies and deferred overrides)', () =>
     }))
 })
 
-// --- review round 13: hostile-settlement edge cases and release-on-disable ---
 describe('promise continuation contract (settlement edge cases)', () => {
   it('ignores an override throw after fulfillment', () => {
     let handlerRuns = 0
     class SettleThenThrow extends Promise {
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
       then(resolve) {
         resolve('value')
         throw new Error('threw after settling')
@@ -1658,7 +1565,6 @@ describe('promise continuation contract (settlement edge cases)', () => {
 
   it('consumes the original rejection when an adoption override throws', () => {
     class RejectedThrowing extends Promise {
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
       then() {
         throw new Error('override threw')
       }
@@ -1688,7 +1594,6 @@ describe('promise continuation contract (settlement edge cases)', () => {
   it('assimilates a nested thenable resolved by an override', () =>
     new Promise((done) => {
       class NestedResolve extends Promise {
-        // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
         then(resolve) {
           resolve(Promise.resolve('nested-adopted'))
         }
@@ -1706,7 +1611,6 @@ describe('promise continuation contract (settlement edge cases)', () => {
     }))
 })
 
-// --- review round 14: opaque rejection reasons and getter-throw observation ---
 describe('promise continuation contract (rejection observation)', () => {
   it('observes the original rejection when the then getter throws', () => {
     const promise = Promise.reject(new Error('original'))
@@ -1736,7 +1640,6 @@ describe('promise continuation contract (rejection observation)', () => {
   it('never invokes a thenable rejection reason during cleanup', async () => {
     let reasonThenCalls = 0
     const reason = {
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
       then() {
         reasonThenCalls += 1
       },
@@ -1748,20 +1651,16 @@ describe('promise continuation contract (rejection observation)', () => {
 
     expect(() => run()).to.throw('one continuation channel')
     await new Promise((resolve) => setTimeout(resolve, 20))
-    // The rejection reason is opaque: observing the rejection must not
-    // assimilate (and thereby invoke) the then-looking reason.
+
     expect(reasonThenCalls).to.equal(0)
   })
 })
 
-// --- review round 15: verified observation and terminal-error discards ---
 describe('promise continuation contract (verified observation)', () => {
   it('consumes the captured thenable when the brand check false-positives', () => {
-    // Object.create(Promise.prototype) passes instanceof Promise but has no
-    // internal slots; the intrinsic then cannot run on it.
     let consumed = false
     const slotless = Object.create(Promise.prototype)
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
+
     slotless.then = (resolve) => {
       consumed = true
       resolve('slotless-value')
@@ -1782,7 +1681,6 @@ describe('promise continuation contract (verified observation)', () => {
 
   it('observes a rejected subclass whose override swallows the rejection', () => {
     class SwallowingOverride extends Promise {
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable under test
       then(onFulfilled) {
         if (onFulfilled) {
           onFulfilled('synthetic')
@@ -1818,7 +1716,7 @@ describe('promise continuation contract (verified observation)', () => {
     const sp = superpipe({})
     const run = sp('error-wins')
       .pipe((next) => {
-        next() // advance synchronously; the downstream pipe starts a promise
+        next()
         throw new Error('first error')
       }, 'next')
       .pipe(
@@ -1839,12 +1737,11 @@ describe('promise continuation contract (verified observation)', () => {
     expect(handlerRuns).to.equal(1)
     resolveLate('late-value')
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // The late resolution must not merge into or re-run the failed execution.
+
     expect(handlerRuns).to.equal(1)
   })
 })
 
-// --- endAsync contract: promise-returning .end (#48) ---
 describe('endAsync contract', () => {
   it('resolves a fully synchronous pipeline immediately', async () => {
     const sp = superpipe({})
@@ -1896,7 +1793,6 @@ describe('endAsync contract', () => {
       })
       .endAsync('out')
 
-    // The failure becomes a rejection, never a sync throw out of run().
     await expect(run()).rejects.toThrow('boom')
   })
 
@@ -1919,7 +1815,7 @@ describe('endAsync contract', () => {
     const run = sp('endasync-halted')
       .input(['user'])
       .pipe(() => 'kept-value', null, 'kept')
-      .pipe('isBlocked', 'user') // raw boolean dep false → halt
+      .pipe('isBlocked', 'user')
       .pipe(() => 'never', null, 'never')
       .endAsync('kept')
 
@@ -1931,7 +1827,7 @@ describe('endAsync contract', () => {
     const sp = superpipe({})
     const run = sp('endasync-error-wins')
       .pipe((next) => {
-        next() // advance; the downstream pipe starts a pending promise
+        next()
         throw new Error('first error')
       }, 'next')
       .pipe(
@@ -1963,30 +1859,26 @@ describe('endAsync contract', () => {
       }, 'error')
       .endAsync('out')
 
-    // Settled before the handler ran, so the promise still rejects with
-    // the original error rather than hanging.
     await expect(run()).rejects.toThrow('original')
   })
 })
 
-// --- review round 1 on endAsync: async halts, async exceptions, error priority ---
 describe('endAsync contract (settlement edge cases)', () => {
   it('settles a promise-based flow-control halt', async () => {
     const sp = superpipe({ isBlocked: async () => true })
     const run = sp('endasync-promise-halt')
       .input(['user'])
-      .pipe('!isBlocked', 'user') // resolves true → inverted → halt
+      .pipe('!isBlocked', 'user')
       .pipe(() => 'never', null, 'never')
       .endAsync('out')
 
-    // Halted: resolves with the partial snapshot — 'out' was never produced.
     await expect(run()).resolves.toEqual(undefined)
   })
 
   it('rejects when an async continuation raises a namespace error', async () => {
     const sp = superpipe({})
     const run = sp('endasync-async-namespace')
-      // Undeclared object return merges a reserved name from a microtask.
+
       .pipe(() => Promise.resolve({ next: () => {} }), null)
       .endAsync('out')
 
@@ -1997,7 +1889,7 @@ describe('endAsync contract (settlement edge cases)', () => {
     const sp = superpipe({})
     const run = sp('endasync-flush-error')
       .pipe((next) => {
-        next() // held; downstream completes synchronously on flush
+        next()
         throw new Error('pipe error')
       }, 'next')
       .pipe(() => 'done', null, 'out')
@@ -2008,14 +1900,11 @@ describe('endAsync contract (settlement edge cases)', () => {
   })
 })
 
-// --- review round 2 on endAsync: foreign-stack exceptions and fetch failures ---
 describe('endAsync contract (foreign-stack exceptions)', () => {
   it('rejects when a retained next raises from a foreign callback stack', async () => {
     const sp = superpipe({})
     const run = sp('endasync-late-next-throw')
       .pipe((next) => {
-        // The reserved-name merge throws after runPipeline returned, on
-        // the timer's stack.
         setTimeout(() => next(null, { next: () => {} }), 5)
       }, 'next')
       .endAsync('out')
@@ -2032,7 +1921,7 @@ describe('endAsync contract (foreign-stack exceptions)', () => {
     const sp = superpipe(functions)
     const run = sp('endasync-fetch-throw')
       .pipe(() => 'v', null, 'value')
-      .endAsync('out') // 'out' falls back to the configured getter
+      .endAsync('out')
 
     await expect(run()).rejects.toThrow('getter threw')
   })
@@ -2043,20 +1932,18 @@ describe('endAsync contract (foreign-stack exceptions)', () => {
     process.on('unhandledRejection', onUnhandled)
     const sp = superpipe({})
     const run = sp('end-async-unhandled')
-      .pipe(() => Promise.reject(new Error('boom'))) // no handler, no observer
+      .pipe(() => Promise.reject(new Error('boom')))
       .end()
 
     run()
     await new Promise((resolve) => setTimeout(resolve, 20))
     process.off('unhandledRejection', onUnhandled)
-    // Preserved pre-endAsync behavior: the failure surfaces on the
-    // reaction stack instead of being swallowed.
+
     expect(seen.length).to.equal(1)
     expect(seen[0].message).to.equal('boom')
   })
 })
 
-// --- review round 3 on endAsync: in-flight continuations ---
 describe('endAsync contract (in-flight continuations)', () => {
   it('waits for an in-flight continuation before settling and merges through its own pipe', async () => {
     let resolveAsync
@@ -2065,8 +1952,8 @@ describe('endAsync contract (in-flight continuations)', () => {
     const run = sp('endasync-inflight')
       .pipe(
         (first, second) => {
-          first() // starts the pending promise pipe below
-          second() // advances past it while it is in flight
+          first()
+          second()
         },
         ['next', 'next'],
       )
@@ -2086,18 +1973,15 @@ describe('endAsync contract (in-flight continuations)', () => {
       settledEarly = true
     })
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // Still waiting: the second next advanced past the pending pipe, but
-    // the run cannot complete while its promise is in flight.
+
     expect(settledEarly).to.equal(false)
 
     resolveAsync('late-value')
-    // The late value merges through its own pipe's producer, not the
-    // final pipe's.
+
     await expect(outcome).resolves.toEqual({ late: 'late-value', out: 'done' })
   })
 })
 
-// --- review round 4 on endAsync: slot, sibling halts, terminal exceptions ---
 describe('endAsync contract (sibling continuations)', () => {
   it('does not fabricate output from a rejected continuation', async () => {
     let observedOut = 'unset'
@@ -2113,7 +1997,7 @@ describe('endAsync contract (sibling continuations)', () => {
       .endAsync('out')
 
     await expect(run()).rejects.toThrow('reject')
-    expect(observedOut).to.equal(undefined) // no fabricated out: 0
+    expect(observedOut).to.equal(undefined)
   })
 
   it('waits for other in-flight continuations when an async guard halts', async () => {
@@ -2137,7 +2021,7 @@ describe('endAsync contract (sibling continuations)', () => {
         null,
         'late',
       )
-      .pipe('!allow', 'user') // resolves true → inverted → async halt
+      .pipe('!allow', 'user')
       .endAsync('{late}')
 
     const outcome = run({ role: 'admin' })
@@ -2145,7 +2029,7 @@ describe('endAsync contract (sibling continuations)', () => {
       settledEarly = true
     })
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // The guard halted, but the value pipe is still in flight.
+
     expect(settledEarly).to.equal(false)
 
     resolveAsync('late-value')
@@ -2160,11 +2044,11 @@ describe('endAsync contract (sibling continuations)', () => {
       .pipe(
         (first, second) => {
           first()
-          retained = second // the sibling stays live past the exception
+          retained = second
         },
         ['next', 'next'],
       )
-      // Resolves with a reserved name — its merge raises OutputNameError.
+
       .pipe(() => Promise.resolve({ next: () => {} }), null)
       .pipe(() => {
         sideEffect = true
@@ -2172,21 +2056,18 @@ describe('endAsync contract (sibling continuations)', () => {
       .endAsync('out')
 
     const outcome = run()
-    // Attach the handler immediately so the eventual rejection is never
-    // unhandled while the test waits out the timers.
+
     const assertion = expect(outcome).rejects.toThrow('reserved')
-    await new Promise((resolve) => setTimeout(resolve, 10)) // exception lands
-    // The late sibling would also violate the namespace — it must be
-    // discarded, not merged or executed.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
     retained(null, { next: () => {} })
     await new Promise((resolve) => setTimeout(resolve, 10))
     await assertion
-    // The sibling continuation is discarded: no post-rejection execution.
+
     expect(sideEffect).to.equal(false)
   })
 })
 
-// --- review round 5 on endAsync: halt preserved across siblings ---
 describe('endAsync contract (halt preservation)', () => {
   it('preserves a halt while sibling continuations finish', async () => {
     let sideEffect = false
@@ -2209,23 +2090,22 @@ describe('endAsync contract (halt preservation)', () => {
         null,
         'late',
       )
-      .pipe('!allow', 'user') // async halt: resolves true, inverted to false
+      .pipe('!allow', 'user')
       .pipe(() => {
         sideEffect = true
-      }, 'late') // after the guard — must never run
+      }, 'late')
       .endAsync('{late}')
 
     const outcome = run({ role: 'admin' })
-    await new Promise((resolve) => setTimeout(resolve, 10)) // guard halted
+    await new Promise((resolve) => setTimeout(resolve, 10))
     resolveSlow('late-value')
     const result = await outcome
-    // The sibling merged its own output, but nothing after the halt ran.
+
     expect(result.late).to.equal('late-value')
     expect(sideEffect).to.equal(false)
   })
 })
 
-// --- review round 6 on endAsync: retained next callbacks ---
 describe('endAsync contract (retained continuations)', () => {
   it('waits for a retained next callback before resolving', async () => {
     let settledEarly = false
@@ -2234,8 +2114,8 @@ describe('endAsync contract (retained continuations)', () => {
     const run = sp('endasync-retained-next')
       .pipe(
         (first, second) => {
-          first() // drives the pipeline onward
-          retained = second // still live, fired later from a timer
+          first()
+          retained = second
         },
         ['next', 'next'],
       )
@@ -2247,7 +2127,7 @@ describe('endAsync contract (retained continuations)', () => {
       settledEarly = true
     })
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // The retained callback is a live continuation — the run stays open.
+
     expect(settledEarly).to.equal(false)
 
     retained()
@@ -2275,18 +2155,15 @@ describe('endAsync contract (retained continuations)', () => {
   })
 })
 
-// --- review round 7 on endAsync: skipped optionals, post-error discards, fromStep ---
 describe('endAsync contract (wrapper lifecycle)', () => {
   it('settles when an optional pipe declaring next is skipped', async () => {
     const sp = superpipe({})
     const run = sp('endasync-optional-next')
       .input(['user'])
-      .pipe('?missing', ['next', 'missingValue'], 'out') // skipped: dep missing
+      .pipe('?missing', ['next', 'missingValue'], 'out')
       .pipe(() => 'done', null, 'done')
       .endAsync('done')
 
-    // Without wrapper invalidation the skipped pipe's counted callback
-    // holds the run open forever.
     await expect(run()).resolves.toEqual('done')
   })
 
@@ -2310,8 +2187,7 @@ describe('endAsync contract (wrapper lifecycle)', () => {
     const outcome = run()
     const assertion = expect(outcome).rejects.toThrow('pipe error')
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // Would raise OutputNameError on the test's stack if late callbacks
-    // still entered the pipeline after the terminal error.
+
     retained(null, { next: () => {} })
     await new Promise((resolve) => setTimeout(resolve, 10))
     await assertion
@@ -2324,8 +2200,8 @@ describe('endAsync contract (wrapper lifecycle)', () => {
     const run = sp('endasync-retained-fromstep')
       .pipe(
         (first, second) => {
-          retained = second // fires later; its value belongs to this pipe
-          first() // advance now
+          retained = second
+          first()
         },
         ['next', 'next'],
         'firstValue',
@@ -2336,8 +2212,7 @@ describe('endAsync contract (wrapper lifecycle)', () => {
     const outcome = run()
     await new Promise((resolve) => setTimeout(resolve, 10))
     retained(null, 'the-first-value')
-    // The late value merges through the first pipe's producer, not the
-    // last pipe's.
+
     await expect(outcome).resolves.toEqual({
       firstValue: 'the-first-value',
       secondValue: 'second-value',
@@ -2345,7 +2220,6 @@ describe('endAsync contract (wrapper lifecycle)', () => {
   })
 })
 
-// --- review round 8 on endAsync: handler throws from late callbacks, held fromStep ---
 describe('endAsync contract (late-callback handlers)', () => {
   it('swallows a throwing handler invoked from a late callback', async () => {
     let retained
@@ -2372,8 +2246,7 @@ describe('endAsync contract (late-callback handlers)', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     process.off('unhandledRejection', onUnhandled)
     await assertion
-    // The run already rejected with the original error; the handler's own
-    // throw must not escape onto the timer stack.
+
     expect(seen).to.deep.equal([])
   })
 
@@ -2383,7 +2256,7 @@ describe('endAsync contract (late-callback handlers)', () => {
       .pipe(
         (first, second) => {
           first(null, 'first-value')
-          second(null, 'second-value') // both held; both belong to this pipe
+          second(null, 'second-value')
         },
         ['next', 'next'],
         'value',
@@ -2392,12 +2265,11 @@ describe('endAsync contract (late-callback handlers)', () => {
       .endAsync('{value, downstream}')
 
     const result = await run()
-    // The second held value merges through the first pipe's producer.
+
     expect(result).toEqual({ value: 'second-value', downstream: 'next:first-value' })
   })
 })
 
-// --- review round 9 on endAsync: downstream deferral ---
 describe('endAsync contract (downstream deferral)', () => {
   it('defers downstream pipes until sibling continuations merge', async () => {
     let resolveA
@@ -2423,14 +2295,12 @@ describe('endAsync contract (downstream deferral)', () => {
 
     const outcome = run()
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // The consumer pipe waits for the promise pipe's output — it must not
-    // run early with undefined inputs.
+
     resolveA('a-value')
     await expect(outcome).resolves.toEqual({ first: 'a-value', second: undefined })
   })
 })
 
-// --- review round 10 on endAsync: duplicate late callbacks ---
 describe('endAsync contract (duplicate callbacks)', () => {
   it('routes duplicate late callbacks into the settlement', async () => {
     let retained
@@ -2444,19 +2314,18 @@ describe('endAsync contract (duplicate callbacks)', () => {
 
     const outcome = run()
     const assertion = expect(outcome).rejects.toThrow('more than once')
-    retained() // advances the run to completion
-    retained() // duplicate: rejected, not thrown onto the caller stack
+    retained()
+    retained()
     await assertion
   })
 })
 
-// --- review round 11 on endAsync: boolean deps with a next input ---
 describe('endAsync contract (boolean dependencies)', () => {
   it('evaluates a raw boolean dependency normally despite a next input', async () => {
     const sp = superpipe({ enabled: true })
     const run = sp('endasync-bool-with-next')
       .input(['user'])
-      .pipe('enabled', 'next') // degenerate declaration — boolean cannot call next
+      .pipe('enabled', 'next')
       .pipe(() => 'done', null, 'done')
       .endAsync('done')
 
@@ -2475,7 +2344,6 @@ describe('endAsync contract (boolean dependencies)', () => {
   })
 })
 
-// --- review round 12 on endAsync: object-form duplicate next keys ---
 describe('endAsync contract (object-form next keys)', () => {
   it('deduplicates a repeated next key in object-string inputs', async () => {
     const sp = superpipe({})
@@ -2486,12 +2354,10 @@ describe('endAsync contract (object-form next keys)', () => {
       .pipe(() => 'done', null, 'done')
       .endAsync('done')
 
-    // One wrapper exposed and counted — invoking it settles the run.
     await expect(run()).resolves.toEqual('done')
   })
 })
 
-// --- endAsync abort contract: AbortSignal cancellation (#50) ---
 describe('endAsync abort contract', () => {
   it('rejects with PipelineAbortedError when the signal aborts mid-run', async () => {
     const controller = new AbortController()
@@ -2537,10 +2403,7 @@ describe('endAsync abort contract', () => {
     expect(handlerRuns).to.equal(0)
   })
 
-  it('still routes a late pipeline error to the error handler after an abort', async () => {
-    // The abandoned run is not interrupted: a pipe failing after the abort
-    // still invokes the error handler, even though the returned promise
-    // already rejected with PipelineAbortedError.
+  it('discards a late pipeline error after an abort', async () => {
     let handled = null
     const controller = new AbortController()
     const sp = superpipe({})
@@ -2561,10 +2424,122 @@ describe('endAsync abort contract', () => {
     const promise = run()
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
-    // Wait for the abandoned run's late rejection to dispatch.
+
     await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(handled).toBeInstanceOf(Error)
-    expect(handled.message).to.equal('late failure')
+    expect(handled).to.equal(null)
+  })
+
+  it('skips pipes that have not started when the signal aborts mid-run', async () => {
+    const controller = new AbortController()
+    let resolveFourth
+    const ran = []
+    const sp = superpipe({})
+    const run = sp('abort-skips-rest')
+      .pipe(
+        () => {
+          ran.push(1)
+          return 'a'
+        },
+        null,
+        'a',
+      )
+      .pipe(
+        () => {
+          ran.push(2)
+          return 'b'
+        },
+        null,
+        'b',
+      )
+      .pipe(
+        () => {
+          ran.push(3)
+          return 'c'
+        },
+        null,
+        'c',
+      )
+      .pipe(
+        () =>
+          new Promise((resolve) => {
+            resolveFourth = resolve
+          }),
+        null,
+        'd',
+      )
+      .pipe(
+        () => {
+          ran.push(5)
+          return 'e'
+        },
+        null,
+        'e',
+      )
+      .endAsync('e', { signal: controller.signal })
+
+    const promise = run()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    controller.abort()
+    resolveFourth('too late')
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(ran).to.deep.equal([1, 2, 3])
+  })
+
+  it('skips remaining pipes when a pipe aborts during the initial cascade', async () => {
+    const controller = new AbortController()
+    let secondRan = false
+    const sp = superpipe({})
+    const run = sp('abort-cascade-skip')
+      .pipe(
+        () => {
+          controller.abort()
+          return 'a'
+        },
+        null,
+        'a',
+      )
+      .pipe(
+        () => {
+          secondRan = true
+          return 'b'
+        },
+        null,
+        'b',
+      )
+      .endAsync('b', { signal: controller.signal })
+
+    await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)
+    expect(secondRan).to.equal(false)
+  })
+
+  it('disables retained next callbacks when the signal aborts', async () => {
+    let retained
+    let handlerRuns = 0
+    const controller = new AbortController()
+    const sp = superpipe({})
+    const run = sp('abort-retained-freed')
+      .pipe(
+        (first, second) => {
+          retained = second
+          first(null, 'value')
+        },
+        ['next', 'next'],
+        'value',
+      )
+      .pipe(() => 'done', null, 'done')
+      .error(() => {
+        handlerRuns += 1
+      }, 'error')
+      .endAsync('done', { signal: controller.signal })
+
+    const promise = run()
+
+    controller.abort()
+    await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
+
+    expect(() => retained(null, 'late')).to.not.throw()
+    expect(handlerRuns).to.equal(0)
   })
 
   it('rejects without running pipes when addEventListener throws', async () => {
@@ -2656,15 +2631,11 @@ describe('endAsync abort contract', () => {
     const promise = run()
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
-    // The adoption is abandoned, not awaited; the slow resolve may not have
-    // landed by the time the run already rejected.
+
     expect(resolved).to.equal(false)
   })
 
   it('abort wins over a later promise rejection without an unhandled rejection', async () => {
-    // The race loser's late rejection is observed by the race itself and
-    // must never surface as an unhandled rejection — asserted explicitly,
-    // not left to vitest's implicit reporting.
     const seen = []
     const onUnhandled = (err) => seen.push(err)
     process.on('unhandledRejection', onUnhandled)
@@ -2685,16 +2656,13 @@ describe('endAsync abort contract', () => {
     const promise = run()
     controller.abort()
     await expect(promise).rejects.toBeInstanceOf(PipelineAbortedError)
-    // Wait past the losing rejection (20ms) so a leak would be recorded.
+
     await new Promise((resolve) => setTimeout(resolve, 40))
     process.off('unhandledRejection', onUnhandled)
     expect(seen).to.deep.equal([])
   })
 
   it('rejects a run aborted synchronously right after it completes', async () => {
-    // A successful run defers its settlement by one job while the abort
-    // listener stays attached, so an abort in the same synchronous tick —
-    // before any await — wins over a run whose pipes all finished.
     const controller = new AbortController()
     const sp = superpipe({})
     const run = sp('abort-same-tick')
@@ -2707,8 +2675,6 @@ describe('endAsync abort contract', () => {
   })
 
   it('proceeds normally when the aborted getter throws', async () => {
-    // signalAborted neutralizes a throwing `aborted` getter: it reads as
-    // not-aborted and the run proceeds.
     const signal = {
       get aborted() {
         throw new Error('getter exploded')
@@ -2745,7 +2711,7 @@ describe('endAsync abort contract', () => {
     listener()
     const err = await promise.catch((e) => e)
     expect(err).toBeInstanceOf(PipelineAbortedError)
-    // signalReason neutralizes the throwing getter to an undefined reason.
+
     expect(err.reason).to.equal(undefined)
   })
 
@@ -2828,8 +2794,6 @@ describe('endAsync abort contract', () => {
   })
 
   it('supports plain AbortSignal-shaped options without a reason', async () => {
-    // A minimal structural signal (no `reason`, `addEventListener` registering
-    // the listener) exercises the `AbortSignalLike` contract directly.
     let listener
     const signal = {
       aborted: false,
@@ -2849,25 +2813,22 @@ describe('endAsync abort contract', () => {
     listener()
     const err = await promise.catch((e) => e)
     expect(err).toBeInstanceOf(PipelineAbortedError)
-    // A signal with no `reason` yields an undefined reason, not a default.
+
     expect(err.reason).to.equal(undefined)
   })
 
   it('rejects when a pipe aborts synchronously during the initial cascade', async () => {
-    // Regression: the abort listener must be attached before `runPipeline`
-    // starts, else a one-shot abort event fired mid-cascade is missed and a
-    // never-settling run hangs forever.
     const controller = new AbortController()
     const sp = superpipe({})
     const run = sp('abort-sync-in-pipe')
       .pipe(
         () => {
-          controller.abort() // aborts while the listener would otherwise be unattached
+          controller.abort()
         },
         null,
         'a',
       )
-      .pipe(() => new Promise(() => {}), null, 'b') // pends forever
+      .pipe(() => new Promise(() => {}), null, 'b')
       .endAsync('b', { signal: controller.signal })
 
     await expect(run()).rejects.toBeInstanceOf(PipelineAbortedError)

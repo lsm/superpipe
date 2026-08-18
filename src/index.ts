@@ -13,8 +13,6 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
   functions?: T,
 ): SuperPipeFactory {
   return (name: string, defs?: PipeDefinition[]): PipelineAPI | ((...args: unknown[]) => void) => {
-    // Output spec from an explicit end tuple, applied only after every
-    // tuple has been processed so later definitions are not lost.
     let endOutput: PipeParameter | undefined
     const pipeline = new PipelineBuilder(name, functions)
 
@@ -36,9 +34,6 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
         }
       })
 
-      // Declarative definitions always finalize, with the end tuple's
-      // output when one was given, so `const run = sp('name', defs)`
-      // returns an executor.
       return pipeline.end(endOutput)
     }
 
@@ -46,9 +41,6 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
   }
 }
 
-// Exports for library consumers. `Dependencies`, `PipelineAPI` and
-// `PipelineDefinition` are aliases for the names master exported, kept for
-// backwards compatibility.
 export type {
   AbortSignalLike,
   AnyFunction,
@@ -62,11 +54,10 @@ export type {
   PipeRename,
   PipeResult,
 } from './common'
-// The cancellation error consumers catch on an aborted `endAsync` run.
+
 export { PipelineAbortedError } from './common'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
-// Compatibility type matching the shape master exported as `Pipeline`.
 export interface Pipeline {
   name: string
   pipes: Pipe[]
@@ -74,7 +65,6 @@ export interface Pipeline {
   deps: FunctionContainer
 }
 
-// Compatibility type matching the shape master exported as `Pipe`.
 export interface Pipe {
   fn: ((...args: unknown[]) => unknown) | null
   fnName: string | undefined
@@ -85,28 +75,19 @@ export interface Pipe {
 }
 export type { FunctionContainer as Dependencies } from './common'
 
-// Compatibility interface matching the fluent builder master exported as
-// `PipelineAPI`.
 export interface PipelineAPI {
   input: (input?: PipeParameter) => PipelineAPI
   pipe: (fn: PipeFunction, input?: PipeParameter, output?: PipeParameter) => PipelineAPI
   error: (fn: PipeFunction, input?: PipeParameter) => PipelineAPI
-  // Function (not AnyFunction) keeps the pre-1.0 compatibility surface:
-  // implementations and mocks typed against the old interface must remain
-  // assignable to PipelineAPI.
-  // biome-ignore lint/complexity/noBannedTypes: public API compatibility
+
   end: (output?: PipeParameter) => Function
-  // Promise-returning counterpart of end: the executor resolves with the
-  // requested output (or undefined) when the run settles, and rejects
-  // with the active error on a failed run. `options.signal` rejects with
-  // PipelineAbortedError when that signal aborts.
+
   endAsync: (
     output?: PipeParameter,
     options?: EndAsyncOptions,
   ) => (...args: unknown[]) => Promise<PipeOutput>
 }
 
-// Compatibility aliases for the remaining type names master exported.
 export type SuperPipeFactory = (
   name: string,
   defs?: PipeDefinition[],
@@ -116,7 +97,7 @@ export type Store = {
   error?: unknown
   [key: string]: unknown
 }
-// Compatibility type matching the shape master exported as `PipeState`.
+
 export interface PipeState {
   fn: ((...args: unknown[]) => unknown) | null
   not?: boolean
