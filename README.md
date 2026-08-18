@@ -1,6 +1,7 @@
 # SuperPipe
 
 [![CI status][ci-img]][ci-url]
+[![Coverage][coverage-img]][coverage-url]
 [![License MIT][license-img]][license-url]
 [![JavaScript Style Guide][standard-img]][standard-url]
 [![NPM version][npm-img]][npm-url]
@@ -389,5 +390,7 @@ const sp = superpipe<MyDeps>({
 [npm-url]: https://npmjs.org/package/superpipe
 [ci-img]: https://github.com/lsm/superpipe/actions/workflows/ci.yml/badge.svg
 [ci-url]: https://github.com/lsm/superpipe/actions/workflows/ci.yml
+[coverage-img]: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/lsm/superpipe/badges/coverage-badge.json
+[coverage-url]: https://github.com/lsm/superpipe/actions/workflows/ci.yml
 [standard-img]: https://img.shields.io/badge/code_style-standard-brightgreen.svg
 [standard-url]: https://standardjs.com
