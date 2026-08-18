@@ -359,44 +359,16 @@ function executePipe(
     }
 
     if (thenFn === Promise.prototype.then) {
-      let settled = false
-      const settleFulfilled = (value: PipeResult): void => {
-        if (settled) {
-          return
-        }
-        settled = true
-        onFulfilled(value)
-      }
-      const settleRejected = (reason: unknown): void => {
-        if (settled) {
-          return
-        }
-        settled = true
-        onRejected(reason)
-      }
       try {
-        Reflect.apply(thenFn as AnyFunction, result, [settleFulfilled, settleRejected])
+        Reflect.apply(thenFn as AnyFunction, result, [onFulfilled, onRejected])
       } catch (err) {
-        if (!settled) {
-          settled = true
-          Promise.reject(err).catch(onRejected)
-        }
+        Promise.reject(err).catch(onRejected)
         observeOriginalRejection(result)
       }
       return
     }
 
-    new Promise<PipeResult>((resolve, reject) => {
-      Promise.resolve().then(() => {
-        try {
-          Reflect.apply(thenFn as AnyFunction, result, [resolve, reject])
-        } catch (err) {
-          reject(err)
-        }
-
-        observeOriginalRejection(result)
-      })
-    }).then(onFulfilled, onRejected)
+    Promise.resolve(result).then(onFulfilled, onRejected)
     return
   }
 
