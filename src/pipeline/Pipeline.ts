@@ -1,6 +1,7 @@
 import {
+  type AbortSignalLike,
   type AnyFunction,
-  type EndAsyncOptions,
+  type AsyncPipelineRunner,
   type FunctionContainer,
   type PipeFunction,
   PipelineAbortedError,
@@ -95,12 +96,8 @@ export default class Pipeline implements PipelineBase {
     }
   }
 
-  endAsync(
-    output?: PipeParameter,
-    options?: EndAsyncOptions,
-  ): (...args: unknown[]) => Promise<PipeOutput> {
+  endAsync(output?: PipeParameter): AsyncPipelineRunner {
     const fetcher = output === undefined ? null : new Fetcher(output, 'raw')
-    const signal = options?.signal
 
     const pipeline: PipelineBase = {
       name: this.name,
@@ -138,51 +135,38 @@ export default class Pipeline implements PipelineBase {
         )
       })
 
-    return function (): Promise<PipeOutput> {
-      const args: PipeResult = Array.prototype.slice.apply(arguments)
+    const run = function (): Promise<PipeOutput> {
+      return runPipelinePromise(Array.prototype.slice.apply(arguments))
+    } as AsyncPipelineRunner
 
-      if (signal == null) {
-        return runPipelinePromise(args)
+    run.withSignal = (signal: AbortSignalLike, ...args: unknown[]): Promise<PipeOutput> => {
+      if (signalAborted(signal)) {
+        return Promise.reject(new PipelineAbortedError(signalReason(signal)))
       }
 
       let cancelRun: ((reason: unknown) => void) | undefined
-      let rejectAborted: (reason: unknown) => void = () => {}
       const onAbort = (): void => {
         cancelRun?.(signalReason(signal))
-        rejectAborted(new PipelineAbortedError(signalReason(signal)))
       }
-      let listenerAttached = false
-      const aborted = new Promise<PipeOutput>((_, reject) => {
-        rejectAborted = reject
-        try {
-          signal.addEventListener('abort', onAbort)
-          listenerAttached = true
-        } catch (err) {
-          reject(err)
-        }
-      })
 
-      const cleanup = (): void => {
+      try {
+        signal.addEventListener('abort', onAbort)
+      } catch (err) {
+        return Promise.reject(err)
+      }
+
+      return runPipelinePromise(args, (cancel) => {
+        cancelRun = cancel
+        if (signalAborted(signal)) {
+          onAbort()
+        }
+      }).finally(() => {
         try {
           signal.removeEventListener('abort', onAbort)
         } catch {}
-      }
-
-      if (!listenerAttached) {
-        return aborted.finally(cleanup)
-      }
-
-      if (signalAborted(signal)) {
-        onAbort()
-        return aborted.finally(cleanup)
-      }
-
-      return Promise.race([
-        runPipelinePromise(args, (cancel) => {
-          cancelRun = cancel
-        }),
-        aborted,
-      ]).finally(cleanup)
+      })
     }
+
+    return run
   }
 }

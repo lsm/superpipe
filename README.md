@@ -262,7 +262,9 @@ synchronous pipelines resolve immediately, so `await` works uniformly.
 Alternatively, deliver async results through a final pipe, `next`, or an
 error handler.
 
-`.endAsync(output, { signal })` accepts an `AbortSignal` for cancellation.
+The runner returned by `.endAsync` is reusable — call it as many times as
+you like. Cancellation is per run: pass an `AbortSignal` to the runner's
+`.withSignal(signal, ...args)` method for a single cancellable invocation.
 An aborted run rejects with `PipelineAbortedError` — its `name` is
 `AbortError`, and its `reason` carries the signal's abort reason — without
 invoking the error handler. A signal already aborted at call time rejects
@@ -271,12 +273,12 @@ before the first pipe runs:
 ```javascript
 import superpipe, { PipelineAbortedError } from 'superpipe'
 
-const controller = new AbortController()
 const run = sp('fetch-workflow')
   .pipe(() => repository.getWorkflow(), null, 'workflow')
-  .endAsync('workflow', { signal: controller.signal })
+  .endAsync('workflow')
 
-const promise = run()
+const controller = new AbortController()
+const promise = run.withSignal(controller.signal)   // one run, one signal
 controller.abort()   // elsewhere / on cancel: rejects the pending run
 
 try {
@@ -288,6 +290,10 @@ try {
   }
   // cancelled — nothing to do
 }
+
+// The runner itself is unaffected by the abort — keep using it:
+const again = await run.withSignal(new AbortController().signal)
+const plain = await run()   // no cancellation
 ```
 
 Cancellation stops the run, not just the caller's view of it: when the
@@ -307,8 +313,8 @@ downstream pipe runs. Pass the same signal into the underlying operations
 A run counts as completed only once the returned promise settles: a
 successful run defers its settlement by one job (so an error dispatched in
 the same unwind wins), which means an abort fired synchronously right
-after `run()` returns — before any `await` — still cancels a run whose
-pipes all finished in that tick.
+after `run.withSignal(...)` returns — before any `await` — still cancels a
+run whose pipes all finished in that tick.
 
 ### Object-String Syntax
 
