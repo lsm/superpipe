@@ -1,5 +1,5 @@
-Unreleased
-==========
+0.17.0 2026-08-19
+=================
 - **Output binding grammar:** a pipe's output spec now decides how its
   return value is stored, independent of the value's runtime type. A
   single name (`'out'`) binds the whole return value; `'{a, b}'` picks
