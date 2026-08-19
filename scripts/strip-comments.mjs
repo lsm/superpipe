@@ -240,7 +240,7 @@ function main() {
 
   let files
   if (filesIdx !== -1) {
-    files = args.slice(filesIdx + 1)
+    files = args.slice(filesIdx + 1).filter((a) => !a.startsWith('--'))
   } else {
     files = execSync("git ls-files '*.ts'", { encoding: 'utf8' })
       .split('\n')
