@@ -47,7 +47,16 @@ const REGEX_KEYWORDS = new Set([
   'throw',
 ])
 const CONTROL_PAREN_KEYWORDS = new Set(['if', 'while', 'for', 'with', 'switch', 'catch'])
-const ENDERS = new Set(['str-end', 'tpl-end', 're-end', 'paren-end', ']', 'prop-name', 'postfix!'])
+const ENDERS = new Set([
+  'str-end',
+  'tpl-end',
+  're-end',
+  'paren-end',
+  ']',
+  'prop-name',
+  'postfix!',
+  'postfix-op',
+])
 
 const isEnder = (token) =>
   ENDERS.has(token) ||
@@ -165,6 +174,13 @@ function collectCommentRanges(text, literalSpans) {
     if (ch === '!') {
       lastSignificant = isEnder(lastSignificant) ? 'postfix!' : '!'
       i++
+      continue
+    }
+    if ((ch === '+' || ch === '-') && next === ch) {
+      // Postfix ++/-- ends the expression and divides afterwards; prefix
+      // keeps regex eligible.
+      lastSignificant = isEnder(lastSignificant) ? 'postfix-op' : ch
+      i += 2
       continue
     }
     if (ch === '(') {

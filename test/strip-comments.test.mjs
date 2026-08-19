@@ -71,6 +71,16 @@ describe('strip-comments lexer', () => {
     expect(() => stripComments('const q = - /oops\n', 'x.ts')).to.throw('does not close a pattern')
   })
 
+  it('divides after a postfix increment or decrement', () => {
+    // Review repro: ++/-- were not modelled as expression enders, so
+    // 'i++ / 2' triggered the unterminated-pattern hard failure and
+    // 'count++ / 2 // gone' silently left the comment behind.
+    expect(stripComments('const x = i++ / 2\n', 'x.ts')).to.equal('const x = i++ / 2\n')
+    expect(stripComments('const x = i-- / 2\n', 'x.ts')).to.equal('const x = i-- / 2\n')
+    expect(stripComments('const half = count++ / 2 // gone\n', 'x.ts')).to.not.contain('// gone')
+    expect(stripComments('const half = count-- / 2 // gone\n', 'x.ts')).to.not.contain('// gone')
+  })
+
   it('still collapses blank runs left by comment removal in code', () => {
     const src = 'const a = 1\n// one\n// two\n// three\nconst b = 2\n'
     const out = stripComments(src, 'x.ts')
