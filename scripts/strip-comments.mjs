@@ -77,7 +77,9 @@ function collectLiteralSpans(text, fileName) {
     if (
       ts.isStringLiteral(node) ||
       ts.isNoSubstitutionTemplateLiteral(node) ||
-      ts.isTemplateExpression(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node) ||
       ts.isRegularExpressionLiteral(node)
     ) {
       spans.push({ start: node.getStart(sf), end: node.end })

@@ -160,4 +160,40 @@ describe('strip-comments lexer', () => {
     const out = stripComments(src, 'x.ts')
     expect(out).to.be.oneOf(['const a = 1\nconst b = 2\n', 'const a = 1\n\nconst b = 2\n'])
   })
+
+  it('never treats template-literal type text as a comment', () => {
+    // Review repro: TemplateLiteralTypeNode was not a protected span, so a
+    // `//` or `/*` inside a template-literal type was read as a comment and
+    // real code was deleted (or the script threw "never closed").
+    const t = `type T = \`//\${string}\`\nconst keep = 1\n`
+    expect(stripComments(t, 'x.ts')).to.equal(t)
+    const v = `type V = \`a\${string}// b\`\nkeep()\n`
+    expect(stripComments(v, 'x.ts')).to.equal(v)
+    const u = `type U = \`/*\${string}\`\nkeep()\n`
+    expect(stripComments(u, 'x.ts')).to.equal(u)
+  })
+
+  it('strips comments inside template placeholders', () => {
+    // Review repro: the whole TemplateExpression was recorded as one literal
+    // span, so `${...}` placeholder code was skipped and a comment inside it
+    // was neither stripped nor reported.
+    expect(stripComments(`const t = \`a\${ /*c*/ 1 }b\`\n`, 'x.ts')).to.equal(
+      `const t = \`a\${ 1 }b\`\n`,
+    )
+    expect(stripComments(`type T = \`a\${/*c*/ string}b\`\n`, 'x.ts')).to.equal(
+      `type T = \`a\${string}b\`\n`,
+    )
+    expect(stripComments(`const t = \`a\${1}b\${ /*c*/ 2 }c\`\n`, 'x.ts')).to.equal(
+      `const t = \`a\${1}b\${ 2 }c\`\n`,
+    )
+  })
+
+  it('still strips a comment after a template or template-literal type', () => {
+    expect(stripComments(`const t = \`a\${1}b\` // gone\n`, 'x.ts')).to.equal(
+      `const t = \`a\${1}b\`\n`,
+    )
+    expect(stripComments(`type U = \`a\${S}b\` // gone\n`, 'x.ts')).to.equal(
+      `type U = \`a\${S}b\`\n`,
+    )
+  })
 })
