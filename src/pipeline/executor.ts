@@ -476,7 +476,6 @@ function continuePipeline(
       pipes[producerIndex].producer.produce(value, error != null),
       false,
     )
-
   }
 
   if (error != null) {

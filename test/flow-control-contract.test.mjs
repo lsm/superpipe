@@ -929,49 +929,46 @@ describe('output binding contract (grammar)', () => {
     expect(() => run()).to.throw('"{...}" requires a plain-object return')
   })
 
-  it('routes a {...} shape violation to the error handler instead of escaping', () => {
-    // Review repro: the shape check threw inside continuePipeline, outside
-    // executePipe's try, so a declared error handler was bypassed and the
-    // error escaped run() (or crashed a timer's stack when delivered late).
-    let received
+  it('surfaces a {...} shape violation as a definition error', () => {
+    // A spec/return mismatch is a definition error (like OutputNameError),
+    // so it surfaces on the invoking stack — it never routes to the error
+    // handler, which is reserved for runtime failures.
+    let handlerRuns = 0
     const sp = superpipe({})
-    const run = sp('spread-shape-to-handler')
+    const run = sp('spread-shape-surfaces')
       .pipe(() => 'scalar', null, '{...}')
-      .error((error) => {
-        received = error
+      .error(() => {
+        handlerRuns += 1
       }, 'error')
       .end()
 
-    run()
-    expect(received).to.be.an.instanceof(Error)
-    expect(received.message).to.contain('requires a plain-object return')
+    expect(() => run()).to.throw('requires a plain-object return')
+    expect(handlerRuns).to.equal(0)
   })
 
   it('rejects a nullish return from a {...} spec instead of silently skipping', () => {
-    // Review repro: continuePipeline only called the producer for non-nullish
-    // values, so a forgot-to-return undefined/null produced nothing instead
-    // of failing fast like the scalar and array cases.
+    // A destructure spec demands a value from a bare return: a forgot-to-
+    // return undefined/null fails fast rather than silently producing nothing.
     const sp = superpipe({})
     const run = sp('spread-nullish')
       .pipe(() => undefined, null, '{...}')
       .end()
 
-    expect(() => run()).to.throw('"{...}" requires a plain-object return')
+    expect(() => run()).to.throw('"{...}" requires the pipe to return a value')
   })
 
-  it('routes a nullish return from a {...} spec to the error handler', () => {
-    let received
+  it('surfaces a nullish return from a {...} spec as a definition error', () => {
+    let handlerRuns = 0
     const sp = superpipe({})
-    const run = sp('spread-nullish-to-handler')
+    const run = sp('spread-nullish-surfaces')
       .pipe(() => null, null, '{...}')
-      .error((error) => {
-        received = error
+      .error(() => {
+        handlerRuns += 1
       }, 'error')
       .end()
 
-    run()
-    expect(received).to.be.an.instanceof(Error)
-    expect(received.message).to.contain('requires a plain-object return')
+    expect(() => run()).to.throw('requires the pipe to return a value')
+    expect(handlerRuns).to.equal(0)
   })
 
   it('preserves a thrown error from a {...} pipe instead of masking it as a shape violation', () => {
