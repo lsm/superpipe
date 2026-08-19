@@ -21,6 +21,14 @@ describe('strip-comments lexer', () => {
     expect(out).to.contain("typeof /'/.test('x')")
   })
 
+  it('treats a regex after the default keyword as a regex', () => {
+    // Review repro: 'default' was absent from REGEX_KEYWORDS, so
+    // `export default /[//]/` was read as division and the // inside the
+    // character class deleted the rest of the line in write mode.
+    const src = 'export default /[//]/\nkeep()\n'
+    expect(stripComments(src, 'x.ts')).to.equal(src)
+  })
+
   it('does not eat code after a regex containing slashes in a character class', () => {
     const src = 'const r = /[//]/.test(url) // gone\nkeep(r)\n'
     const out = stripComments(src, 'x.ts')
@@ -69,6 +77,12 @@ describe('strip-comments lexer', () => {
 
   it('refuses to lex an unterminated regex candidate instead of reinterpreting', () => {
     expect(() => stripComments('const q = - /oops\n', 'x.ts')).to.throw('does not close a pattern')
+  })
+
+  it('refuses to lex an unclosed block comment instead of erasing to EOF', () => {
+    // Review repro: a block comment with no terminator was treated as
+    // "runs to EOF" and the whole tail of the file was silently removed.
+    expect(() => stripComments('const a = 1 /* oops\nkeep()\n', 'x.ts')).to.throw('never closed')
   })
 
   it('divides after a postfix increment or decrement', () => {

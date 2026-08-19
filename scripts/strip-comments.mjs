@@ -37,6 +37,7 @@ const REGEX_KEYWORDS = new Set([
   'in',
   'of',
   'case',
+  'default',
   'delete',
   'void',
   'new',
@@ -104,7 +105,13 @@ function collectCommentRanges(text, literalSpans) {
     }
     if (ch === '/' && next === '*') {
       const j = text.indexOf('*/', i + 2)
-      const end = j === -1 ? n : j + 2
+      if (j === -1) {
+        const line = text.slice(0, i).split('\n').length
+        throw new Error(
+          `line ${line}: block comment is never closed — ambiguous lex, refusing to strip`,
+        )
+      }
+      const end = j + 2
       if (!KEEP_PATTERNS.some((p) => p.test(text.slice(i, end)))) ranges.push({ start: i, end })
       i = end
       continue
