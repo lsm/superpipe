@@ -129,7 +129,9 @@ spec always means the same thing, whatever the return's type:
 ```
 
 A pipe with no output spec discards its return value — declare an output
-(or `'{...}'`) when a pipe produces data.
+(or `'{...}'`) when a pipe produces data. The `...` marker only works as
+the entire spec — mixing it with names (`'{a, ...}'`) is rejected at
+construction.
 
 #### `.error(handler, input?)`
 

@@ -948,6 +948,23 @@ describe('output binding contract (grammar)', () => {
     expect(() => run()).to.throw('"{...}" requires a plain-object return')
   })
 
+  it('rejects near-miss spread spellings at construction', () => {
+    // Review repro: '{a, ...}' and '{...rest}' parsed as ordinary names
+    // and stored a literal '...' key, silently losing the values the
+    // author meant to merge.
+    const sp = superpipe({})
+    expect(() => sp('mixed-spread').pipe(() => ({ a: 1 }), null, '{ctx, ...}')).to.throw(
+      'the "..." marker only works as the entire spec',
+    )
+    expect(() => sp('rest-spread').pipe(() => ({ a: 1 }), null, '{...rest}')).to.throw(
+      'the "..." marker',
+    )
+    expect(() => sp('list-spread').pipe(() => ['a'], null, ['first', '...'])).to.throw(
+      'the "..." marker',
+    )
+    expect(() => sp('bare-spread').pipe(() => 'x', null, '...')).to.throw('the "..." marker')
+  })
+
   it('stores a returned __proto__ key as inert data, not prototype pollution', () => {
     // Review repro: JSON.parse keeps `__proto__` as an own key, and a
     // plain assignment merges through Object.prototype's setter — the

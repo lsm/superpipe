@@ -104,6 +104,19 @@ export default class Producer {
     } else {
       throw new Error('Pipe input/output parameter must be string or array of strings')
     }
+    // Near-miss spellings of the merge form — `'{a, ...}'`, `'{...rest}'`,
+    // a bare `'...'` — would otherwise parse as ordinary names and store
+    // a literal `...` key, losing the values the author meant to publish.
+    // The marker only means anything as the entire spec.
+    if (this.form !== 'spread') {
+      for (const key of this.keys) {
+        if (key === '...' || key.startsWith('...')) {
+          throw new Error(
+            `Output name "${key}" is not valid — the "..." marker only works as the entire spec: '{...}' (merge every key), or list names without it.`,
+          )
+        }
+      }
+    }
     this._produce = this.produceOutput
   }
 

@@ -14,7 +14,9 @@ Unreleased
   object into the store — declare `'{...}'` to keep the merge. Brace
   specs never switch to positional mapping for array returns, and a
   one-name list spec (`['first']`) stores nothing for a non-structural
-  return instead of the whole value.
+  return instead of the whole value. Near-miss spellings of the merge
+  form (`'{a, ...}'`, `'{...rest}'`, a bare `'...'`) are rejected at
+  construction instead of storing a literal `...` key.
 
 0.16.0 2026-08-18
 =================
