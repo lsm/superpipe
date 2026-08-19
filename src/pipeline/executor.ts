@@ -255,7 +255,7 @@ function executePipe(
 
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
     invalidateNextCallbacks(nextCallbacks)
-    advance(state, pipeline)
+    advance(state, pipeline, null, undefined, -1)
     return
   } else if (typeof fn === 'function') {
     holdNextCallbacks(nextCallbacks)
@@ -460,7 +460,9 @@ function continuePipeline(
         produced = pipe.producer.produce(value)
       } catch (err) {
         failed = true
-        error = err as Error
+        if (error == null) {
+          error = err as Error
+        }
       }
       if (!failed) {
         mergeIntoContainer(state, pipeline, producerIndex, pipe.fnName, produced, false)

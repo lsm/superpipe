@@ -993,6 +993,50 @@ describe('output binding contract (grammar)', () => {
     expect(received.message).to.contain('requires a plain-object return')
   })
 
+  it('preserves a thrown error from a {...} pipe instead of masking it as a shape violation', () => {
+    let received
+    const sp = superpipe({})
+    const run = sp('spread-throw-preserved')
+      .pipe(
+        () => {
+          throw new Error('boom')
+        },
+        null,
+        '{...}',
+      )
+      .error((error) => {
+        received = error
+      }, 'error')
+      .end()
+
+    run()
+    expect(received).to.be.an.instanceof(Error)
+    expect(received.message).to.equal('boom')
+  })
+
+  it('preserves a rejected promise from a {...} pipe instead of masking it as a shape violation', async () => {
+    const sp = superpipe({})
+    const run = sp('spread-reject-preserved')
+      .pipe(() => Promise.reject(new Error('async boom')), null, '{...}')
+      .endAsync()
+
+    await expect(run()).rejects.toThrow('async boom')
+  })
+
+  it('skips an optional {...} pipe instead of failing its shape check', () => {
+    let afterRan = false
+    const sp = superpipe({})
+    const run = sp('spread-optional-skip')
+      .pipe('?missing', 'arg', '{...}')
+      .pipe(() => {
+        afterRan = true
+      })
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(afterRan).to.equal(true)
+  })
+
   it('rejects near-miss spread spellings at construction', () => {
     // Review repro: '{a, ...}' and '{...rest}' parsed as ordinary names
     // and stored a literal '...' key, silently losing the values the
