@@ -49,7 +49,13 @@ export type {
   PipeResult,
 } from './common'
 
-export { PipelineAbortedError } from './common'
+export {
+  AmbiguousContinuationError,
+  NextCalledTwiceError,
+  OutputKeyError,
+  OutputNameError,
+  PipelineAbortedError,
+} from './common'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 
 export interface Pipeline {

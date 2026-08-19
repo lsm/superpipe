@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import superpipe from '../src'
+import superpipe, {
+  AmbiguousContinuationError,
+  NextCalledTwiceError,
+  OutputKeyError,
+  OutputNameError,
+  PipelineAbortedError,
+} from '../src'
 
 describe('Superpipe', () => {
   describe('superpipe()', () => {
@@ -82,6 +88,29 @@ describe('Superpipe', () => {
           ['error', '{arg}'],
         ])
       }).to.throw('Each pipeline could only have one error handler.')
+    })
+  })
+
+  describe('error class exports', () => {
+    it('exports every error the library can throw for instanceof discrimination', () => {
+      expect(AmbiguousContinuationError).to.be.a('function')
+      expect(NextCalledTwiceError).to.be.a('function')
+      expect(OutputKeyError).to.be.a('function')
+      expect(OutputNameError).to.be.a('function')
+      expect(PipelineAbortedError).to.be.a('function')
+
+      const run = superpipe()('missing-key', [
+        [() => ({ ok: true }), undefined, '{missing}'],
+      ])
+      let caught
+      try {
+        run()
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).to.be.instanceOf(OutputKeyError)
+      expect(caught).to.not.be.instanceOf(OutputNameError)
+      expect(caught).to.not.be.instanceOf(AmbiguousContinuationError)
     })
   })
 })
