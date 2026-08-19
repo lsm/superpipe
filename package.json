@@ -33,6 +33,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsdown && tsdown --config tsdown.iife.config.mts",
     "lint": "biome check src test",
+    "check:no-comments": "node scripts/strip-comments.mjs --check",
     "lint:fix": "biome check src test --write",
     "format": "biome format src test --write"
   },
