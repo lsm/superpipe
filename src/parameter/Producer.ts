@@ -169,9 +169,12 @@ export default class Producer {
       return output
     }
 
-    // A single name binds the whole primitive return; multiple names have
-    // nothing positional to map to.
-    if (keys.length === 1) {
+    // Only the single form binds the whole value. A list spec that reaches
+    // this point received a non-structural return (neither array nor
+    // object): one name and many names alike have nothing to map to —
+    // storing the whole value here would make `['first']` mean positional
+    // for arrays and whole-bind for everything else.
+    if (this.form === 'single') {
       applyKey(output, keys[0], result)
       return output
     }

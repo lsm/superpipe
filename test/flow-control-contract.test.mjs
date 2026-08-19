@@ -747,7 +747,7 @@ describe('output namespace contract (reserved names and shadowing)', () => {
   it('throws when an output rename maps onto next', () => {
     const sp = superpipe({})
     const run = sp('reserved-rename')
-      .pipe(() => 'x', null, ['a:next'])
+      .pipe(() => ['x'], null, ['a:next'])
       .end()
 
     expect(() => run()).to.throw('Output name "next" is reserved')
@@ -854,6 +854,27 @@ describe('output binding contract (grammar)', () => {
 
     run()
     expect(observed).to.equal('a')
+  })
+
+  it('stores nothing when a one-name array spec receives a primitive return', () => {
+    // Review repro: the list form must not fall through to whole-value
+    // binding for non-structural returns — `['first']` means positional
+    // for arrays, and nothing to map for everything else, exactly like a
+    // multi-name list. Whole-binding lives in the single-name form only.
+    let ran = false
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('array-spec-primitive')
+      .pipe(() => 'scalar', null, ['first'])
+      .pipe((first) => {
+        ran = true
+        observed = first
+      }, 'first')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(ran).to.equal(true)
+    expect(observed).to.equal(undefined)
   })
 
   it('binds a whole object delivered through next under a single output name', () =>

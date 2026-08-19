@@ -12,7 +12,9 @@ Unreleased
   property, `['name']` for positional). A pipe without an output spec now
   discards its return value instead of implicitly spreading a plain
   object into the store — declare `'{...}'` to keep the merge. Brace
-  specs never switch to positional mapping for array returns.
+  specs never switch to positional mapping for array returns, and a
+  one-name list spec (`['first']`) stores nothing for a non-structural
+  return instead of the whole value.
 
 0.16.0 2026-08-18
 =================
