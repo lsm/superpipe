@@ -108,6 +108,25 @@ export default class Producer {
     return this.produceOutput(result, true)
   }
 
+  expectValue(): void {
+    if (this.inputMode || this.form === 'single' || this.form === 'none') {
+      return
+    }
+    throw new OutputKeyError(
+      `Output spec ${this.specLabel()} requires the pipe to return a value, but it returned none.`,
+    )
+  }
+
+  private specLabel(): string {
+    if (this.form === 'spread') {
+      return '"{...}"'
+    }
+    if (this.form === 'array') {
+      return `[${this.keys.map((key) => `'${key}'`).join(', ')}]`
+    }
+    return `"{${this.keys.join(', ')}}"`
+  }
+
   produceOutput(result: PipeResult, errorPath?: boolean): PipeOutput {
     if (this.form === 'none') {
       return {}

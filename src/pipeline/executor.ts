@@ -352,6 +352,17 @@ function executePipe(
         }
         return
       }
+      if (resolved == null) {
+        try {
+          pipe.producer.expectValue()
+        } catch (err) {
+          if (state.onSettled && !state.settled) {
+            settle(state, err as Error)
+            return
+          }
+          throw err
+        }
+      }
       advance(state, pipeline, null, resolved, pipeIndex)
     }
     const onRejected = (reason: unknown): void => {
@@ -388,6 +399,9 @@ function executePipe(
 
   const ownsContinuation = pipe.fetcher.hasNext && typeof fn !== 'boolean'
   if (!ownsContinuation && !(isFlowControl && result === false)) {
+    if (result == null) {
+      pipe.producer.expectValue()
+    }
     advance(state, pipeline, null, result)
   } else if (!ownsContinuation) {
     state.halted = true
@@ -453,11 +467,6 @@ function continuePipeline(
   const { step } = state
 
   if (value != null) {
-    // Merge the output of the pipe the value belongs to — normally the
-    // previous step, but an adopted promise settling late names its own
-    // pipe: the step counter may have advanced past it. A value delivered
-    // alongside an error merges leniently: a failing pipe's partial result
-    // skips output-key validation on its way to the error handler.
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
     mergeIntoContainer(
       state,

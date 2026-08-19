@@ -1305,6 +1305,93 @@ describe('output validation contract (missing keys)', () => {
     expect(() => run()).to.throw('Output "reolvedTarget" is missing')
     expect(handlerRuns).to.equal(0)
   })
+
+  it('throws when a destructure spec receives no return value', () => {
+    // Review repro: the continuation skips merging a nullish value, so
+    // the shape guards never saw `undefined`/`null` — the forgot-to-
+    // return case passed silently while a scalar return threw.
+    const sp = superpipe({})
+    const spread = sp('nullish-spread')
+      .pipe(() => undefined, null, '{...}')
+      .end()
+    const pick = sp('nullish-pick')
+      .pipe(() => null, null, '{a}')
+      .end()
+    const list = sp('nullish-list')
+      .pipe(() => undefined, null, ['first'])
+      .end()
+
+    expect(() => spread()).to.throw('"{...}" requires the pipe to return a value')
+    expect(() => pick()).to.throw('"{a}" requires the pipe to return a value')
+    expect(() => list()).to.throw("['first'] requires the pipe to return a value")
+  })
+
+  it('still allows a single-name pipe to return nothing', () => {
+    // The single form binds whatever arrived, nothing included — no
+    // value was promised, so none is demanded.
+    let ran = false
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('nullish-single')
+      .pipe(() => undefined, null, 'out')
+      .pipe((out) => {
+        ran = true
+        observed = out
+      }, 'out')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(ran).to.equal(true)
+    expect(observed).to.equal(undefined)
+  })
+
+  it('still allows a next-based pipe to advance without a value', () => {
+    // Bare next() is the protocol's explicit nothing-to-merge — the
+    // nullish guard applies to returns, not to next deliveries.
+    let ran = false
+    const sp = superpipe({})
+    const run = sp('nullish-next')
+      .pipe(
+        (next) => {
+          next()
+        },
+        'next',
+        '{a}',
+      )
+      .pipe(() => {
+        ran = true
+      })
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(ran).to.equal(true)
+  })
+
+  it('still allows a skipped optional pipe with a destructure spec', () => {
+    // A skipped optional produces nothing by definition — the nullish
+    // guard must not fire on its bare advance.
+    let ran = false
+    const sp = superpipe({})
+    const run = sp('nullish-optional')
+      .input(['user'])
+      .pipe('?missing', ['next', 'missingValue'], '{a}')
+      .pipe(() => {
+        ran = true
+      })
+      .end()
+
+    expect(() => run({ user: 'x' })).to.not.throw()
+    expect(ran).to.equal(true)
+  })
+
+  it('rejects an endAsync run whose promise resolves to nothing', async () => {
+    const sp = superpipe({})
+    const run = sp('nullish-async')
+      .pipe(() => Promise.resolve(undefined), null, '{...}')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('"{...}" requires the pipe to return a value')
+  })
 })
 
 // --- promise continuation contract: thenable returns are next sugar (#41) ---

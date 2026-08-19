@@ -13,7 +13,10 @@ Unreleased
   return throws, and any destructure spec receiving a return it cannot
   destructure (a list or pick against a primitive — one output name or
   many) is a spec/return mismatch that throws instead of storing
-  nothing. Presence, not truthiness, is the contract — a
+  nothing, and a pipe that owns no `next` but returns nothing (a bare
+  return, or a promise resolving to nullish) fails the same way —
+  `next()` deliveries stay exempt as the protocol's explicit
+  nothing-to-merge. Presence, not truthiness, is the contract — a
   present-but-`undefined` key binds fine and prototype-inherited keys
   count. Partial values delivered with an error (`next(error,
   partialValue)`) merge leniently, shape mismatches included, so a

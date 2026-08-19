@@ -137,7 +137,8 @@ Destructure specs validate what they name: every key a `'{a, b}'` pick
 (or an array spec, or a `source:destination` rename) names must exist on
 the returned object, a positional spec must not exceed an array return,
 and a destructure spec receiving a return it cannot destructure (a
-primitive, `null`, a function) is a spec/return mismatch. Every one of
+primitive, `null`, a function) — or no return at all, including a
+promise that resolves to nothing — is a spec/return mismatch. Every one of
 these throws `OutputKeyError` — a typo like `{reolvedTarget}` fails at
 the pipe that produced it, not as a silent `undefined` three pipes
 later. A key that exists with value `undefined` is fine: presence, not

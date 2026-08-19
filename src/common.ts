@@ -17,12 +17,6 @@ export class OutputNameError extends Error {
   }
 }
 
-// Thrown when a destructure output spec asks for a key the returned value
-// does not have (or a shape it cannot provide) — the modernized form of
-// 0.14's `supplies` contract. Like OutputNameError it is a definition
-// error, surfaced as-is rather than routed to the error handler. The
-// error path (`next(error, partialValue)`) stays lenient: a failing
-// pipe's partial result merges without validation.
 export class OutputKeyError extends Error {
   constructor(message: string) {
     super(message)
@@ -30,9 +24,6 @@ export class OutputKeyError extends Error {
   }
 }
 
-// Thrown when a pipe declares `next` as an input and also returns a
-// thenable — both are continuation channels and the executor refuses to
-// guess which one advances the pipeline.
 export class AmbiguousContinuationError extends Error {
   constructor(message: string) {
     super(message)
