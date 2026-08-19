@@ -75,14 +75,49 @@ describe('strip-comments lexer', () => {
     expect(stripComments('const q = f(x) / 2 // c\n', 'x.ts')).to.not.contain('// c')
   })
 
-  it('refuses to lex an unterminated regex candidate instead of reinterpreting', () => {
-    expect(() => stripComments('const q = - /oops\n', 'x.ts')).to.throw('does not close a pattern')
+  it('leaves an unterminated regex untouched instead of misreading it as a comment', () => {
+    // The parser tokenizes `/oops` as an (unterminated) regex literal, not a
+    // comment, so stripping must leave the code intact rather than deleting
+    // from the slash to end of line.
+    expect(stripComments('const q = - /oops\n', 'x.ts')).to.equal('const q = - /oops\n')
+  })
+
+  it('still strips a real comment after an unterminated regex', () => {
+    const out = stripComments('const q = - /oops\n// gone\nkeep()\n', 'x.ts')
+    expect(out).to.not.contain('// gone')
+    expect(out).to.contain('- /oops')
+    expect(out).to.contain('keep()')
   })
 
   it('refuses to lex an unclosed block comment instead of erasing to EOF', () => {
     // Review repro: a block comment with no terminator was treated as
     // "runs to EOF" and the whole tail of the file was silently removed.
     expect(() => stripComments('const a = 1 /* oops\nkeep()\n', 'x.ts')).to.throw('never closed')
+  })
+
+  it('refuses a block comment whose closing slash overlaps the opener', () => {
+    // `/*/` has no real `*/` terminator — the slash is the one after the
+    // opening `/*` — so it must not be treated as a closed comment.
+    expect(() => stripComments('const a = 1 /*/\nkeep()\n', 'x.ts')).to.throw('never closed')
+  })
+
+  it('divides after an object-literal closing brace', () => {
+    // Review repro: `}` was not modelled as an expression ender, so
+    // `{a:1} / 2` was read as a regex and the trailing comment survived.
+    const out = stripComments('const x = {a:1} / 2 // c\n', 'x.ts')
+    expect(out).to.not.contain('// c')
+    expect(out).to.contain('{a:1} / 2')
+  })
+
+  it('does not treat template interpolation text as a comment', () => {
+    // `// not a comment` sits inside `${...}`-interpolated template text;
+    // the parser tokenizes it as a template tail, never a comment.
+    const src = `const t = \`a\${1}b // not a comment\`\n`
+    expect(stripComments(src, 'x.ts')).to.equal(src)
+  })
+
+  it('strips an inline block comment in the middle of an expression', () => {
+    expect(stripComments('const x = /* inline */ 1\n', 'x.ts')).to.equal('const x = 1\n')
   })
 
   it('divides after a postfix increment or decrement', () => {
