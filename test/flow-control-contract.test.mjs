@@ -948,6 +948,51 @@ describe('output binding contract (grammar)', () => {
     expect(() => run()).to.throw('"{...}" requires a plain-object return')
   })
 
+  it('routes a {...} shape violation to the error handler instead of escaping', () => {
+    // Review repro: the shape check threw inside continuePipeline, outside
+    // executePipe's try, so a declared error handler was bypassed and the
+    // error escaped run() (or crashed a timer's stack when delivered late).
+    let received
+    const sp = superpipe({})
+    const run = sp('spread-shape-to-handler')
+      .pipe(() => 'scalar', null, '{...}')
+      .error((error) => {
+        received = error
+      }, 'error')
+      .end()
+
+    run()
+    expect(received).to.be.an.instanceof(Error)
+    expect(received.message).to.contain('requires a plain-object return')
+  })
+
+  it('rejects a nullish return from a {...} spec instead of silently skipping', () => {
+    // Review repro: continuePipeline only called the producer for non-nullish
+    // values, so a forgot-to-return undefined/null produced nothing instead
+    // of failing fast like the scalar and array cases.
+    const sp = superpipe({})
+    const run = sp('spread-nullish')
+      .pipe(() => undefined, null, '{...}')
+      .end()
+
+    expect(() => run()).to.throw('"{...}" requires a plain-object return')
+  })
+
+  it('routes a nullish return from a {...} spec to the error handler', () => {
+    let received
+    const sp = superpipe({})
+    const run = sp('spread-nullish-to-handler')
+      .pipe(() => null, null, '{...}')
+      .error((error) => {
+        received = error
+      }, 'error')
+      .end()
+
+    run()
+    expect(received).to.be.an.instanceof(Error)
+    expect(received.message).to.contain('requires a plain-object return')
+  })
+
   it('rejects near-miss spread spellings at construction', () => {
     // Review repro: '{a, ...}' and '{...rest}' parsed as ordinary names
     // and stored a literal '...' key, silently losing the values the

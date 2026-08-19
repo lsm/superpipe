@@ -450,16 +450,22 @@ function continuePipeline(
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
-  if (value != null) {
-    const producerIndex = fromStep === undefined ? step - 1 : fromStep
-    mergeIntoContainer(
-      state,
-      pipeline,
-      producerIndex,
-      pipes[producerIndex].fnName,
-      pipes[producerIndex].producer.produce(value),
-      false,
-    )
+  const producerIndex = fromStep === undefined ? step - 1 : fromStep
+  if (producerIndex >= 0) {
+    const pipe = pipes[producerIndex]
+    if (value != null || pipe.producer.requiresObject) {
+      let produced: PipeOutput = {}
+      let failed = false
+      try {
+        produced = pipe.producer.produce(value)
+      } catch (err) {
+        failed = true
+        error = err as Error
+      }
+      if (!failed) {
+        mergeIntoContainer(state, pipeline, producerIndex, pipe.fnName, produced, false)
+      }
+    }
   }
 
   if (error != null) {

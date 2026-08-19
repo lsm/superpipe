@@ -104,6 +104,10 @@ export default class Producer {
     return this._produce(result)
   }
 
+  get requiresObject(): boolean {
+    return this.form === 'spread'
+  }
+
   produceOutput(result: PipeResult): PipeOutput {
     if (this.form === 'none') {
       return {}
