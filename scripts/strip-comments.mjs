@@ -23,33 +23,13 @@ const KEEP_PATTERNS = [
   /knip-ignore/,
 ]
 
-// Tokens after which a `/` opens a regex literal rather than dividing.
-const REGEX_PRECEDERS = new Set([
-  '(',
-  ',',
-  '=',
-  ':',
-  '[',
-  '!',
-  '&',
-  '|',
-  '?',
-  '{',
-  '}',
-  ';',
-  '+',
-  '-',
-  '*',
-  '%',
-  '~',
-  '^',
-  '<',
-  '>',
-  '=>',
-  '&&',
-  '||',
-  '??',
-])
+// A `/` divides only after a token that can end an expression; everywhere
+// else it opens a regex literal. Division after `)` is ambiguous (grouping
+// vs. an if/while condition), so parens track whether they were opened
+// after a control keyword: control parens leave regex eligible, others
+// end the expression. Any regex candidate that fails to close on the same
+// line is a lex failure — never silently reinterpreted, since the wrong
+// guess here deletes code.
 const REGEX_KEYWORDS = new Set([
   'return',
   'typeof',
@@ -66,6 +46,12 @@ const REGEX_KEYWORDS = new Set([
   'await',
   'throw',
 ])
+const CONTROL_PAREN_KEYWORDS = new Set(['if', 'while', 'for', 'with', 'switch', 'catch'])
+const ENDERS = new Set(['str-end', 'tpl-end', 're-end', 'paren-end', ']', 'prop-name', 'postfix!'])
+
+const isEnder = (token) =>
+  ENDERS.has(token) ||
+  (token !== '' && /^[A-Za-z_$0-9]+$/.test(token) && !REGEX_KEYWORDS.has(token))
 
 function collectCommentRanges(text, literalSpans) {
   const ranges = []
@@ -114,10 +100,7 @@ function collectCommentRanges(text, literalSpans) {
       i = end
       continue
     }
-    if (
-      ch === '/' &&
-      (REGEX_PRECEDERS.has(lastSignificant) || REGEX_KEYWORDS.has(lastSignificant))
-    ) {
+    if (ch === '/' && !isEnder(lastSignificant)) {
       // Regex literal: skip to its unescaped close, minding char classes.
       let j = i + 1
       let inClass = false
@@ -128,6 +111,12 @@ function collectCommentRanges(text, literalSpans) {
         else if (text[j] === '/' && !inClass) break
         else if (text[j] === '\n') break
         j++
+      }
+      if (text[j] !== '/') {
+        const line = text.slice(0, i).split('\n').length
+        throw new Error(
+          `line ${line}: '/' does not close a pattern on the same line — ambiguous lex, refusing to strip`,
+        )
       }
       i = j + 1
       lastSignificant = 're-end'
@@ -169,8 +158,30 @@ function collectCommentRanges(text, literalSpans) {
     if (/[A-Za-z_$0-9]/.test(ch)) {
       let j = i
       while (j < n && /[A-Za-z_$0-9]/.test(text[j])) j++
-      lastSignificant = text.slice(i, j)
+      lastSignificant = lastSignificant === '.' ? 'prop-name' : text.slice(i, j)
       i = j
+      continue
+    }
+    if (ch === '!') {
+      lastSignificant = isEnder(lastSignificant) ? 'postfix!' : '!'
+      i++
+      continue
+    }
+    if (ch === '(') {
+      stack.push({ type: 'paren', control: CONTROL_PAREN_KEYWORDS.has(lastSignificant) })
+      lastSignificant = '('
+      i++
+      continue
+    }
+    if (ch === ')') {
+      const top = stack[stack.length - 1]
+      if (top !== undefined && top.type === 'paren') {
+        stack.pop()
+        lastSignificant = top.control ? ')' : 'paren-end'
+      } else {
+        lastSignificant = 'paren-end'
+      }
+      i++
       continue
     }
     if (!/\s/.test(ch)) lastSignificant = ch
@@ -258,9 +269,17 @@ function main() {
 
   let dirty = 0
   let removed = 0
+  let failed = false
   for (const file of files) {
     const text = readFileSync(file, 'utf8')
-    const stripped = stripComments(text)
+    let stripped
+    try {
+      stripped = stripComments(text)
+    } catch (err) {
+      process.stdout.write(`cannot lex ${file}: ${err.message}\n`)
+      failed = true
+      break
+    }
     if (stripped === text) continue
     dirty++
     const count = collectCommentRanges(text).length
@@ -275,6 +294,7 @@ function main() {
   process.stdout.write(
     `${check ? 'files with comments' : 'files stripped'}: ${dirty}, comments removed: ${removed}\n`,
   )
+  if (failed) process.exit(2)
   if (check && dirty > 0) process.exit(1)
 }
 

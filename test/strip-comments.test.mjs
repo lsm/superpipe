@@ -46,6 +46,31 @@ describe('strip-comments lexer', () => {
     expect(out).to.not.contain('// c')
   })
 
+  it('never deletes code from a regex following a control-paren close', () => {
+    // Review repro: ')' was missing from the preceders, so the division
+    // reading walked into /[//]/ and deleted to end of line — silent code
+    // loss in write mode. Control parens (if/while/for) leave regex
+    // eligible after their close.
+    const src = 'if (x) /[//]/.test(y)\nkeep()\n'
+    expect(stripComments(src, 'x.ts')).to.equal(src)
+  })
+
+  it('strips comments after a non-null assertion and property-name keywords', () => {
+    // Review repro: postfix '!' and keywords used as property names
+    // started bogus regex scans that swallowed the trailing comment.
+    expect(stripComments('const x = a! / b // c\n', 'x.ts')).to.not.contain('// c')
+    expect(stripComments('const x = obj.in / 2 // c\n', 'x.ts')).to.not.contain('// c')
+  })
+
+  it('divides after grouping and call parens', () => {
+    expect(stripComments('const q = (a + b) / 2 // c\n', 'x.ts')).to.not.contain('// c')
+    expect(stripComments('const q = f(x) / 2 // c\n', 'x.ts')).to.not.contain('// c')
+  })
+
+  it('refuses to lex an unterminated regex candidate instead of reinterpreting', () => {
+    expect(() => stripComments('const q = - /oops\n', 'x.ts')).to.throw('does not close a pattern')
+  })
+
   it('still collapses blank runs left by comment removal in code', () => {
     const src = 'const a = 1\n// one\n// two\n// three\nconst b = 2\n'
     const out = stripComments(src, 'x.ts')
