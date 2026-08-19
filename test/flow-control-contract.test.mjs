@@ -1284,6 +1284,24 @@ describe('output validation contract (missing keys)', () => {
     expect(handlerRuns).to.equal(1)
   })
 
+  it('stores a picked __proto__ key as inert data, not a silent drop', () => {
+    // Review repro: the pick passed the presence check, then the plain
+    // assignment wrote through Object.prototype's __proto__ setter onto
+    // the fresh output object — no own key, nothing merged, no error.
+    const malicious = JSON.parse('{"__proto__": 42, "safe": 1}')
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('pick-proto')
+      .pipe(() => malicious, null, '{__proto__}')
+      .pipe((proto) => {
+        observed = proto
+      }, '__proto__')
+      .end()
+
+    run()
+    expect(observed).to.equal(42)
+  })
+
   it('surfaces a nested run missing-key error as a definition error', () => {
     // Review repro: a mistyped pick inside a nested pipeline run throws
     // within the outer pipe's fn.apply — like OutputNameError it must

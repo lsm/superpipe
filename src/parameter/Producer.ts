@@ -8,17 +8,26 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
+function setEntry(target: Record<string, PipeResult>, key: string, value: PipeResult): void {
+  if (key === '__proto__') {
+    Object.defineProperty(target, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+    return
+  }
+  target[key] = value
+}
+
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
 const SPREAD_ALL = '...'
 
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
   const rename = RE_RENAME.exec(key)
-  if (rename) {
-    output[rename[2]] = value
-  } else {
-    output[key] = value
-  }
+  setEntry(output, rename ? rename[2] : key, value)
 }
 
 type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'none'
@@ -166,7 +175,7 @@ export default class Producer {
         if (!errorPath && !(source in (result as object))) {
           throw new OutputKeyError(`Output "${source}" is missing from the pipe's returned object.`)
         }
-        output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[source]
+        setEntry(output, rename ? rename[2] : key, (result as Record<string, PipeResult>)[source])
       }
       return output
     }
@@ -191,7 +200,7 @@ export default class Producer {
         if (!errorPath && !(source in (result as object))) {
           throw new OutputKeyError(`Output "${source}" is missing from the pipe's returned object.`)
         }
-        output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[source]
+        setEntry(output, rename ? rename[2] : key, (result as Record<string, PipeResult>)[source])
       }
       return output
     }
@@ -222,7 +231,7 @@ export default class Producer {
 
     let i = 0
     for (const key of this.keys) {
-      output[key] = (result as PipeResult[])[i]
+      setEntry(output, key, (result as PipeResult[])[i])
       i += 1
     }
     return output
@@ -232,7 +241,7 @@ export default class Producer {
     const output: Record<string, PipeResult> = {}
     const source = this.inputSource(result) as Record<string, PipeResult> | null | undefined
     for (const key of this.keys) {
-      output[key] = source == null ? undefined : source[key]
+      setEntry(output, key, source == null ? undefined : source[key])
     }
     return output
   }
