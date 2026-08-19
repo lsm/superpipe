@@ -5,6 +5,7 @@ import {
   type PipeFunction,
   type PipeParameter,
   type PipeResult,
+  setEntry,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import Producer from '../parameter/Producer'
@@ -95,16 +96,7 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
   ): void {
     const source: Record<string, PipeResult> = {}
     for (const key of Object.keys(container as Record<string, PipeResult>)) {
-      if (key === '__proto__') {
-        Object.defineProperty(source, key, {
-          value: (container as Record<string, PipeResult>)[key],
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        })
-      } else {
-        source[key] = (container as Record<string, PipeResult>)[key]
-      }
+      setEntry(source, key, (container as Record<string, PipeResult>)[key])
     }
     source.error = error as PipeResult
     const inputArgs = fetcher.fetch(source, [], functions)

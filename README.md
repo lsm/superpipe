@@ -142,7 +142,9 @@ promise that resolves to nothing — is a spec/return mismatch. Every one of
 these throws `OutputKeyError` — a typo like `{reolvedTarget}` fails at
 the pipe that produced it, not as a silent `undefined` three pipes
 later. A key that exists with value `undefined` is fine: presence, not
-truthiness, is the contract, and prototype-inherited keys count. Values
+truthiness, is the contract. `{a, b}` picks by `in`, so prototype-
+inherited keys count; `'{...}'` merges only the returned object's own
+enumerable keys (`Object.keys`), so inherited keys are left out. Values
 delivered alongside an error (`next(error, partialValue)`) merge without
 validation — shape mismatches included — so a failing pipe's partial
 result never masks the real error on its way to the error handler.

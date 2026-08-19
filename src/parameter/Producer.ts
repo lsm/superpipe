@@ -6,20 +6,8 @@ import {
   type PipeParameter,
   type PipeResult,
   RE_IS_OBJ_STRING,
+  setEntry,
 } from '../common'
-
-function setEntry(target: Record<string, PipeResult>, key: string, value: PipeResult): void {
-  if (key === '__proto__') {
-    Object.defineProperty(target, key, {
-      value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    })
-    return
-  }
-  target[key] = value
-}
 
 const RE_RENAME = /^([^:]+):([^:]+)$/
 

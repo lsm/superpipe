@@ -124,3 +124,16 @@ export function throwNoErrorHandlerError(error: unknown): never {
   }
   throw new Error(`Pipeline error: ${String(error)}`)
 }
+
+export function setEntry(target: Record<string, PipeResult>, key: string, value: PipeResult): void {
+  if (key === '__proto__') {
+    Object.defineProperty(target, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+    return
+  }
+  target[key] = value
+}
