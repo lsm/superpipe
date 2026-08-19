@@ -93,10 +93,6 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
     functions: FunctionContainer,
     error?: Error,
   ): void {
-    // Copy the container without going through Object.prototype's setter:
-    // the run container may hold an inert own `__proto__` data key (see
-    // mergeIntoContainer), and an Object.assign copy would re-trigger the
-    // prototype swap on this fresh object.
     const source: Record<string, PipeResult> = {}
     for (const key of Object.keys(container as Record<string, PipeResult>)) {
       if (key === '__proto__') {
@@ -110,8 +106,6 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
         source[key] = (container as Record<string, PipeResult>)[key]
       }
     }
-    // Last, like the Object.assign it replaces: the active error wins
-    // over a data value named `error` in the container.
     source.error = error as PipeResult
     const inputArgs = fetcher.fetch(source, [], functions)
     const fn = getErrorFn(container, functions) as AnyFunction | undefined

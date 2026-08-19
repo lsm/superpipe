@@ -115,10 +115,6 @@ function mergeIntoContainer(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" shadows a configured dependency of the same name.`,
       )
     }
-    // Assigning a `__proto__` key goes through Object.prototype's setter
-    // instead of creating an own property — a plain assignment here would
-    // let a spread of untrusted input (`JSON.parse` keeps `__proto__` as
-    // an own key) swap the container's prototype. Define it as inert data.
     if (key === '__proto__') {
       Object.defineProperty(state.container, key, {
         value: (produced as Record<string, PipeResult>)[key],

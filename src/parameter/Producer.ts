@@ -9,7 +9,6 @@ import {
 
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
-// `'{...}'` — merge every key of the returned object into the store.
 const SPREAD_ALL = '...'
 
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
@@ -21,17 +20,6 @@ function applyKey(output: Record<string, PipeResult>, key: string, value: PipeRe
   }
 }
 
-// The output spec grammar. Each form means exactly one thing, independent
-// of the produced value's runtime type:
-//
-//   'name'       bind the whole return value under `name`
-//   '{a, b}'     pick the named properties
-//   ['a', 'b']   destructure — positional for array returns, by name for objects
-//   '{...}'      merge every key of the returned object
-//   (no spec)    effects only — the return value is discarded
-//
-// A single `'a:b'` rename spec is a one-key pick: it stores the returned
-// `a` under `b`, never the whole value.
 type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'none'
 
 export default class Producer {
@@ -41,7 +29,6 @@ export default class Producer {
 
   private inputMode: boolean = false
 
-  // Which grammar form the output spec took.
   private form: OutputForm = 'none'
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
@@ -69,8 +56,6 @@ export default class Producer {
       return
     }
 
-    // Output mode: the spec's grammar form — not the produced value's
-    // runtime type — decides how the return value maps to outputs.
     if (parameter === '') {
       throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
     }
@@ -84,8 +69,6 @@ export default class Producer {
           this.keys = keys
         }
       } else if (RE_RENAME.test(parameter)) {
-        // Rename syntax names a source property — a one-key destructure
-        // that stores `source` under `destination`.
         this.form = 'object-string'
         this.keys = [parameter]
       } else {
@@ -104,10 +87,6 @@ export default class Producer {
     } else {
       throw new Error('Pipe input/output parameter must be string or array of strings')
     }
-    // Near-miss spellings of the merge form — `'{a, ...}'`, `'{...rest}'`,
-    // a bare `'...'` — would otherwise parse as ordinary names and store
-    // a literal `...` key, losing the values the author meant to publish.
-    // The marker only means anything as the entire spec.
     if (this.form !== 'spread') {
       for (const key of this.keys) {
         if (key === '...' || key.startsWith('...')) {
@@ -124,19 +103,11 @@ export default class Producer {
     return this._produce(result)
   }
 
-  // The output grammar in action — see OutputForm above. Binding never
-  // depends on the runtime type of the return value to choose a form; the
-  // type only shapes what a destructure can find.
   produceOutput(result: PipeResult): PipeOutput {
-    // No spec: a side-effect pipe. Nothing it returns is stored — not even
-    // a plain object, which earlier releases spread implicitly.
     if (this.form === 'none') {
       return {}
     }
 
-    // '{...}': merge every key of the returned object. Asking to spread a
-    // value that has no keys to spread is a definition bug, not a silent
-    // no-op.
     if (this.form === 'spread') {
       if (Array.isArray(result) || result === null || typeof result !== 'object') {
         throw new Error(`Output spec "{...}" requires a plain-object return, got ${typeof result}.`)
@@ -149,8 +120,6 @@ export default class Producer {
     const isArray = Array.isArray(result)
     const isObject = !isArray && result !== null && typeof result === 'object'
 
-    // Braces select properties, from any return shape — a value without
-    // the property yields undefined, exactly like reading a missing key.
     if (this.form === 'object-string') {
       for (const key of keys) {
         const rename = RE_RENAME.exec(key)
@@ -161,9 +130,6 @@ export default class Producer {
       return output
     }
 
-    // An array spec destructures: array returns map positionally, object
-    // returns map by name. A single plain name never enters here — one
-    // name, one value, whatever its type.
     if (this.form === 'array' && (isArray || isObject)) {
       if (isArray) {
         let i = 0
@@ -182,11 +148,6 @@ export default class Producer {
       return output
     }
 
-    // Only the single form binds the whole value. A list spec that reaches
-    // this point received a non-structural return (neither array nor
-    // object): one name and many names alike have nothing to map to —
-    // storing the whole value here would make `['first']` mean positional
-    // for arrays and whole-bind for everything else.
     if (this.form === 'single') {
       applyKey(output, keys[0], result)
       return output
