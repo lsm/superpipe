@@ -412,23 +412,17 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
     expect(afterRan).to.equal(false)
   })
 
-  it('stores nothing when multiple outputs receive a primitive return value', () =>
-    new Promise((done) => {
-      const sp = superpipe({})
-      const run = sp('primitive-multi-output')
-        .pipe(() => 'ab', null, ['x', 'y'])
-        .pipe(
-          (x, y) => {
-            expect(x).to.equal(undefined)
-            expect(y).to.equal(undefined)
-            done()
-          },
-          ['x', 'y'],
-        )
-        .end()
+  it('throws when multiple output names receive a primitive return value', () => {
+    // A list spec with a non-structural return is a spec/return mismatch —
+    // the same contract braces follow. (Previously stored nothing
+    // silently; master stored the whole value for a single name.)
+    const sp = superpipe({})
+    const run = sp('primitive-multi-output')
+      .pipe(() => 'ab', null, ['x', 'y'])
+      .end()
 
-      expect(() => run()).to.not.throw()
-    }))
+    expect(() => run()).to.throw('destructures, but the pipe returned string')
+  })
 
   it('rejects empty input declarations at construction', () => {
     const sp = superpipe({})
@@ -853,25 +847,19 @@ describe('output binding contract (grammar)', () => {
     expect(observed).to.equal('a')
   })
 
-  it('stores nothing when a one-name array spec receives a primitive return', () => {
+  it('throws when a one-name array spec receives a primitive return', () => {
     // Review repro: the list form must not fall through to whole-value
     // binding for non-structural returns — `['first']` means positional
-    // for arrays, and nothing to map for everything else, exactly like a
-    // multi-name list. Whole-binding lives in the single-name form only.
-    let ran = false
-    let observed = 'unset'
+    // for arrays and a spec/return mismatch for everything else, exactly
+    // like a multi-name list. Whole-binding lives in the single-name form
+    // only; validation upgrades the mismatch from silent-nothing to a
+    // throw.
     const sp = superpipe({})
     const run = sp('array-spec-primitive')
       .pipe(() => 'scalar', null, ['first'])
-      .pipe((first) => {
-        ran = true
-        observed = first
-      }, 'first')
       .end()
 
-    expect(() => run()).to.not.throw()
-    expect(ran).to.equal(true)
-    expect(observed).to.equal(undefined)
+    expect(() => run()).to.throw("Output spec ['first'] destructures")
   })
 
   it('binds a whole object delivered through next under a single output name', () =>
@@ -1209,6 +1197,113 @@ describe('output validation contract (missing keys)', () => {
       .endAsync('{a}')
 
     await expect(run()).rejects.toThrow('Output "b" is missing')
+  })
+
+  it('never lets a scalar partial value mask the real error', () => {
+    // Review repro: the shape checks used to throw on the error path too,
+    // so the OutputKeyError escaped before the real failure was stored —
+    // the handler never ran and the caller saw the wrong error.
+    const failure = new Error('boom')
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('error-scalar-partial')
+      .pipe(
+        (next) => {
+          next(failure, 'partial') // a scalar cannot be picked from
+        },
+        'next',
+        '{key1}',
+      )
+      .error((error) => {
+        handlerRuns += 1
+        expect(error).to.equal(failure)
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('rejects with the real error when a partial value mismatches the spec', async () => {
+    const failure = new Error('real failure')
+    const sp = superpipe({})
+    const run = sp('endasync-error-shape-mismatch')
+      .pipe(
+        (next) => {
+          setTimeout(() => next(failure, 'partial'), 5)
+        },
+        'next',
+        '{key1, key2}',
+      )
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('real failure')
+  })
+
+  it('never lets a non-object spread partial mask the real error', () => {
+    const failure = new Error('boom')
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('error-spread-partial')
+      .pipe(
+        (next) => {
+          next(failure, 'scalar')
+        },
+        'next',
+        '{...}',
+      )
+      .error((error) => {
+        handlerRuns += 1
+        expect(error).to.equal(failure)
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('never lets a non-structural list partial mask the real error', () => {
+    const failure = new Error('boom')
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('error-list-partial')
+      .pipe(
+        (next) => {
+          next(failure, 'scalar')
+        },
+        'next',
+        ['key1'],
+      )
+      .error((error) => {
+        handlerRuns += 1
+        expect(error).to.equal(failure)
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('surfaces a nested run missing-key error as a definition error', () => {
+    // Review repro: a mistyped pick inside a nested pipeline run throws
+    // within the outer pipe's fn.apply — like OutputNameError it must
+    // surface to the caller, not route to the outer error handler.
+    const sp = superpipe({})
+    const inner = sp('nested-inner')
+      .pipe(() => ({ resolvedTarget: 'x' }), null, '{reolvedTarget}')
+      .end()
+    let handlerRuns = 0
+    const run = sp('nested-outer')
+      .pipe(() => {
+        inner()
+      })
+      .error(() => {
+        handlerRuns += 1
+      })
+      .end()
+
+    expect(() => run()).to.throw('Output "reolvedTarget" is missing')
+    expect(handlerRuns).to.equal(0)
   })
 })
 

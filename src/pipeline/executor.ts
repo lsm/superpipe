@@ -3,6 +3,7 @@ import {
   type AnyFunction,
   type FunctionContainer,
   NextCalledTwiceError,
+  OutputKeyError,
   OutputNameError,
   PipelineAbortedError,
   type PipelineBase,
@@ -267,6 +268,7 @@ function executePipe(
       if (
         err instanceof NextCalledTwiceError ||
         err instanceof OutputNameError ||
+        err instanceof OutputKeyError ||
         err instanceof AmbiguousContinuationError
       ) {
         throw err

@@ -135,14 +135,16 @@ construction.
 
 Destructure specs validate what they name: every key a `'{a, b}'` pick
 (or an array spec, or a `source:destination` rename) names must exist on
-the returned object, and a positional spec must not exceed an array
-return. A missing key throws `OutputKeyError` naming the key — a typo
-like `{reolvedTarget}` fails at the pipe that produced it, not as a
-silent `undefined` three pipes later. A key that exists with value
-`undefined` is fine: presence, not truthiness, is the contract, and
-prototype-inherited keys count. Values delivered alongside an error
-(`next(error, partialValue)`) merge without validation, so a failing
-pipe's partial result still reaches the error handler.
+the returned object, a positional spec must not exceed an array return,
+and a destructure spec receiving a return it cannot destructure (a
+primitive, `null`, a function) is a spec/return mismatch. Every one of
+these throws `OutputKeyError` — a typo like `{reolvedTarget}` fails at
+the pipe that produced it, not as a silent `undefined` three pipes
+later. A key that exists with value `undefined` is fine: presence, not
+truthiness, is the contract, and prototype-inherited keys count. Values
+delivered alongside an error (`next(error, partialValue)`) merge without
+validation — shape mismatches included — so a failing pipe's partial
+result never masks the real error on its way to the error handler.
 
 #### `.error(handler, input?)`
 

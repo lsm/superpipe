@@ -115,6 +115,9 @@ export default class Producer {
 
     if (this.form === 'spread') {
       if (Array.isArray(result) || result === null || typeof result !== 'object') {
+        if (errorPath) {
+          return {}
+        }
         throw new OutputKeyError(
           `Output spec "{...}" requires a plain-object return, got ${typeof result}.`,
         )
@@ -129,6 +132,9 @@ export default class Producer {
 
     if (this.form === 'object-string') {
       if (!isObject) {
+        if (errorPath) {
+          return {}
+        }
         throw new OutputKeyError(
           `Output spec "{${keys.join(', ')}}" picks properties, but the pipe returned ${
             isArray ? 'an array' : typeof result
@@ -169,6 +175,15 @@ export default class Producer {
         output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[source]
       }
       return output
+    }
+
+    if (this.form === 'array') {
+      if (errorPath) {
+        return {}
+      }
+      throw new OutputKeyError(
+        `Output spec [${keys.map((key) => `'${key}'`).join(', ')}] destructures, but the pipe returned ${typeof result}.`,
+      )
     }
 
     if (this.form === 'single') {
