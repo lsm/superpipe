@@ -99,9 +99,7 @@ describe('Superpipe', () => {
       expect(OutputNameError).to.be.a('function')
       expect(PipelineAbortedError).to.be.a('function')
 
-      const run = superpipe()('missing-key', [
-        [() => ({ ok: true }), undefined, '{missing}'],
-      ])
+      const run = superpipe()('missing-key', [[() => ({ ok: true }), undefined, '{missing}']])
       let caught
       try {
         run()
