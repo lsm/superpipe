@@ -377,7 +377,9 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
       run()
     }))
 
-  it('merges a plain-object return into the store when no output is declared', () => {
+  it('discards a plain-object return when no output is declared', () => {
+    // No output spec means effects only — the return value is not stored,
+    // not even a plain object (explicit '{...}' opts back into merging).
     let observed
     const sp = superpipe({})
     const run = sp('object-merge')
@@ -391,7 +393,7 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
       .end()
 
     run()
-    expect(observed).to.deep.equal(['alice', 'admin'])
+    expect(observed).to.deep.equal([undefined, undefined])
   })
 
   it('rethrows the original falsy thrown value as an error, not success', () => {
@@ -436,32 +438,36 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
 })
 
 describe('review-fix contract (round 3 parity behaviors)', () => {
-  it('selects the declared property for a single output over an object return', () => {
+  it('binds a whole object return under a single output name', () => {
+    // One name, one value: the declaration no longer means property-pick
+    // depending on the runtime type of the return.
+    const returned = { arg2: 'value', other: 1 }
     let observed
     const sp = superpipe({})
     const run = sp('object-single-output')
-      .pipe(() => ({ arg2: 'value', other: 1 }), null, 'arg2')
+      .pipe(() => returned, null, 'arg2')
       .pipe((arg2) => {
         observed = arg2
       }, 'arg2')
       .end()
 
     run()
-    expect(observed).to.equal('value')
+    expect(observed).to.equal(returned)
   })
 
-  it('maps arrays positionally even with a single output name', () => {
+  it('binds a whole array return under a single output name', () => {
+    const returned = ['a', 'b']
     let observed
     const sp = superpipe({})
     const run = sp('array-single-output')
-      .pipe(() => ['a', 'b'], null, 'first')
+      .pipe(() => returned, null, 'first')
       .pipe((first) => {
         observed = first
       }, 'first')
       .end()
 
     run()
-    expect(observed).to.equal('a')
+    expect(observed).to.equal(returned)
   })
 
   it('supports the reserved .pipe("input", [...]) form', () => {
@@ -729,10 +735,10 @@ describe('output namespace contract (reserved names and shadowing)', () => {
     expect(() => run()).to.throw('Output name "next" is reserved')
   })
 
-  it('throws when an undeclared plain-object return contains next', () => {
+  it('throws when a spread object return contains next', () => {
     const sp = superpipe({})
     const run = sp('reserved-undeclared')
-      .pipe(() => ({ a: 1, next: () => {} }))
+      .pipe(() => ({ a: 1, next: () => {} }), null, '{...}')
       .end()
 
     expect(() => run()).to.throw('Output name "next" is reserved')
@@ -834,6 +840,95 @@ describe('output namespace contract (delivery parity)', () => {
   })
 })
 
+// --- output binding grammar: each spec form means exactly one thing ---
+describe('output binding contract (grammar)', () => {
+  it('maps a one-name array spec positionally', () => {
+    let observed
+    const sp = superpipe({})
+    const run = sp('array-spec-positional')
+      .pipe(() => ['a', 'b'], null, ['first'])
+      .pipe((first) => {
+        observed = first
+      }, 'first')
+      .end()
+
+    run()
+    expect(observed).to.equal('a')
+  })
+
+  it('binds a whole object delivered through next under a single output name', () =>
+    new Promise((done) => {
+      const returned = { a: 1 }
+      const sp = superpipe({})
+      const run = sp('next-whole-object')
+        .pipe(
+          (next) => {
+            setTimeout(() => next(null, returned), 5)
+          },
+          'next',
+          'obj',
+        )
+        .pipe((obj) => {
+          expect(obj).to.equal(returned)
+          done()
+        }, 'obj')
+        .end()
+
+      run()
+    }))
+
+  it('yields undefined when braces pick from an array return', () => {
+    // Braces select properties; they never switch to positional mapping.
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('braces-array')
+      .pipe(() => ['a', 'b'], null, '{first}')
+      .pipe((first) => {
+        observed = first
+      }, 'first')
+      .end()
+
+    run()
+    expect(observed).to.equal(undefined)
+  })
+
+  it('merges every key of an object return with the {...} spec', () => {
+    let observed
+    const sp = superpipe({})
+    const run = sp('spread-all')
+      .pipe(() => ({ user: 'alice', role: 'admin' }), null, '{...}')
+      .pipe(
+        (user, role) => {
+          observed = [user, role]
+        },
+        ['user', 'role'],
+      )
+      .end()
+
+    run()
+    expect(observed).to.deep.equal(['alice', 'admin'])
+  })
+
+  it('throws when the {...} spec receives a scalar return', () => {
+    const sp = superpipe({})
+    const run = sp('spread-scalar')
+      .pipe(() => 'scalar', null, '{...}')
+      .end()
+
+    expect(() => run()).to.throw('"{...}" requires a plain-object return')
+  })
+
+  it('throws when the {...} spec receives an array return', () => {
+    const sp = superpipe({})
+    const run = sp('spread-array')
+      .pipe(() => ['a', 'b'], null, '{...}')
+      .end()
+
+    expect(() => run()).to.throw('"{...}" requires a plain-object return')
+  })
+})
+
+// --- promise continuation contract: thenable returns are next sugar (#41) ---
 describe('promise continuation contract', () => {
   it('continues the pipeline with the resolved value', () =>
     new Promise((done) => {
@@ -1878,8 +1973,8 @@ describe('endAsync contract (settlement edge cases)', () => {
   it('rejects when an async continuation raises a namespace error', async () => {
     const sp = superpipe({})
     const run = sp('endasync-async-namespace')
-
-      .pipe(() => Promise.resolve({ next: () => {} }), null)
+      // Spread object return merges a reserved name from a microtask.
+      .pipe(() => Promise.resolve({ next: () => {} }), null, '{...}')
       .endAsync('out')
 
     await expect(run()).rejects.toThrow('reserved')
@@ -1904,9 +1999,15 @@ describe('endAsync contract (foreign-stack exceptions)', () => {
   it('rejects when a retained next raises from a foreign callback stack', async () => {
     const sp = superpipe({})
     const run = sp('endasync-late-next-throw')
-      .pipe((next) => {
-        setTimeout(() => next(null, { next: () => {} }), 5)
-      }, 'next')
+      .pipe(
+        (next) => {
+          // The reserved-name merge throws after runPipeline returned, on
+          // the timer's stack.
+          setTimeout(() => next(null, { next: () => {} }), 5)
+        },
+        'next',
+        '{...}',
+      )
       .endAsync('out')
 
     await expect(run()).rejects.toThrow('reserved')
@@ -2048,8 +2149,8 @@ describe('endAsync contract (sibling continuations)', () => {
         },
         ['next', 'next'],
       )
-
-      .pipe(() => Promise.resolve({ next: () => {} }), null)
+      // Resolves with a reserved name — its spread merge raises OutputNameError.
+      .pipe(() => Promise.resolve({ next: () => {} }), null, '{...}')
       .pipe(() => {
         sideEffect = true
       })
@@ -2187,7 +2288,8 @@ describe('endAsync contract (wrapper lifecycle)', () => {
     const outcome = run()
     const assertion = expect(outcome).rejects.toThrow('pipe error')
     await new Promise((resolve) => setTimeout(resolve, 10))
-
+    // A late callback after the terminal error is discarded — no merge, no
+    // throw onto the test's stack.
     retained(null, { next: () => {} })
     await new Promise((resolve) => setTimeout(resolve, 10))
     await assertion

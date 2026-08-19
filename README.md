@@ -107,6 +107,30 @@ Adds a pipe to the pipeline.
 }, ['next', 'value'], 'key')
 ```
 
+#### Output binding
+
+The output spec decides how a pipe's return value is stored — the same
+spec always means the same thing, whatever the return's type:
+
+| Spec | Meaning |
+| --- | --- |
+| `'out'` | bind the whole return value under `out` |
+| `'{a, b}'` | pick the named properties |
+| `['a', 'b']` | destructure — positional for array returns, by name for objects |
+| `'{...}'` | merge every key of the returned object |
+| *(none)* | effects only — the return value is discarded |
+
+```javascript
+.pipe(() => ({ id: 1, name: 'ada' }), null, 'user')   // user === the whole object
+.pipe(() => ({ id: 1, name: 'ada' }), null, '{name}')  // name === 'ada'
+.pipe(() => ['a', 'b'], null, ['first', 'second'])     // positional
+.pipe(() => ({ ok: true }), null, '{...}')             // merges ok into the store
+.pipe(save)                                            // side effects only
+```
+
+A pipe with no output spec discards its return value — declare an output
+(or `'{...}'`) when a pipe produces data.
+
 #### `.error(handler, input?)`
 
 Sets an error handler for the pipeline. Only one error handler is allowed per pipeline.
@@ -205,7 +229,8 @@ Prefix function name with `?` to skip if the dependency is undefined:
 
 ### Output Renaming (`source:destination`)
 
-Rename an output as it is stored, using `source:destination` syntax:
+A `source:destination` spec picks the returned object's `source` property
+and stores it as `destination` — a one-key form of brace picking:
 
 ```javascript
 .pipe(getData, 'id', 'result:userProfile')  // Stores the returned `result` as `userProfile`
@@ -331,6 +356,9 @@ sp('my-pipeline')
 
 // Output: pick keys from the returned object
 .pipe(getProfile, 'id', '{name, email}')
+
+// Output: merge every key of the returned object into the store
+.pipe(getProfile, 'id', '{...}')
 ```
 
 ## Error Handling
