@@ -67,28 +67,12 @@ const REGEX_KEYWORDS = new Set([
   'throw',
 ])
 
-function collectCommentRanges(text) {
+function collectCommentRanges(text, literalSpans) {
   const ranges = []
   let lastSignificant = ''
   const stack = []
   let i = 0
   const n = text.length
-
-  const updateLast = (start, end) => {
-    let j = end - 1
-    while (j >= start && /\s/.test(text[j])) j--
-    if (j < start) return
-    const ch = text[j]
-    if (/[A-Za-z_$0-9]/.test(ch)) {
-      let k = j
-      while (k >= start && /[A-Za-z_$0-9]/.test(text[k])) k--
-      lastSignificant = text.slice(k + 1, j + 1)
-    } else if (ch === '>' && text[j - 1] === '=') {
-      lastSignificant = '=>'
-    } else {
-      lastSignificant = ch
-    }
-  }
 
   while (i < n) {
     const top = stack[stack.length - 1]
@@ -101,7 +85,8 @@ function collectCommentRanges(text) {
       if (ch === '\\') {
         i += 2
       } else if (ch === '`') {
-        stack.pop()
+        const frame = stack.pop()
+        literalSpans?.push({ start: frame.start, end: i + 1 })
         lastSignificant = 'tpl-end'
         i++
       } else if (ch === '$' && next === '{') {
@@ -155,12 +140,13 @@ function collectCommentRanges(text) {
         else if (text[j] === ch || text[j] === '\n') break
         j++
       }
-      updateLast(i, Math.min(j + 1, n))
+      literalSpans?.push({ start: i, end: Math.min(j + 1, n) })
+      lastSignificant = 'str-end'
       i = j + 1
       continue
     }
     if (ch === '`') {
-      stack.push({ type: 'tpl' })
+      stack.push({ type: 'tpl', start: i })
       i++
       continue
     }
@@ -178,6 +164,13 @@ function collectCommentRanges(text) {
         lastSignificant = '}'
       }
       i++
+      continue
+    }
+    if (/[A-Za-z_$0-9]/.test(ch)) {
+      let j = i
+      while (j < n && /[A-Za-z_$0-9]/.test(text[j])) j++
+      lastSignificant = text.slice(i, j)
+      i = j
       continue
     }
     if (!/\s/.test(ch)) lastSignificant = ch
@@ -218,6 +211,21 @@ function mergeRanges(ranges) {
   return merged
 }
 
+const tidy = (segment) => segment.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n')
+
+function normalizeOutsideLiterals(text) {
+  const spans = []
+  collectCommentRanges(text, spans)
+  let out = ''
+  let cursor = 0
+  for (const { start, end } of mergeRanges(spans)) {
+    out += tidy(text.slice(cursor, start))
+    out += text.slice(start, end)
+    cursor = end
+  }
+  return out + tidy(text.slice(cursor))
+}
+
 export function stripComments(text) {
   const comments = collectCommentRanges(text)
   if (comments.length === 0) return text
@@ -229,7 +237,7 @@ export function stripComments(text) {
     cursor = end
   }
   out += text.slice(cursor)
-  return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n')
+  return normalizeOutsideLiterals(out)
 }
 
 function main() {
