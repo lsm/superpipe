@@ -6,6 +6,22 @@ Unreleased
   named properties; `['a', 'b']` destructures (positional for array
   returns, by name for objects); `'{...}'` (new) merges every key of a
   returned object; a missing spec means effects only.
+- **Output validation:** destructure output specs check what they name —
+  a pick naming a key the returned object does not have throws
+  `OutputKeyError` at the producing pipe (deliberate break: previously
+  stored `undefined` silently), a positional spec exceeding an array
+  return throws, and any destructure spec receiving a return it cannot
+  destructure (a list or pick against a primitive — one output name or
+  many) is a spec/return mismatch that throws instead of storing
+  nothing, and a pipe that owns no `next` but returns nothing (a bare
+  return, or a promise resolving to nullish) fails the same way —
+  `next()` deliveries stay exempt as the protocol's explicit
+  nothing-to-merge. Presence, not truthiness, is the contract — a
+  present-but-`undefined` key binds fine and prototype-inherited keys
+  count. Partial values delivered with an error (`next(error,
+  partialValue)`) merge leniently, shape mismatches included, so a
+  partial can never mask the real error. The modernized form of 0.14's
+  `supplies` contract.
 - **Behavior of output mapping (deliberate break):** a single output name
   no longer property-picks object returns or takes only the first element
   of array returns — it binds the whole value (use `'{name}'` to pick a
