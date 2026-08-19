@@ -89,7 +89,8 @@ export default class Producer {
     }
     if (this.form !== 'spread') {
       for (const key of this.keys) {
-        if (key === '...' || key.startsWith('...')) {
+        const destination = RE_RENAME.exec(key)?.[2] ?? key
+        if (destination === '...' || destination.startsWith('...')) {
           throw new Error(
             `Output name "${key}" is not valid — the "..." marker only works as the entire spec: '{...}' (merge every key), or list names without it.`,
           )

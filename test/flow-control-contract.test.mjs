@@ -963,6 +963,12 @@ describe('output binding contract (grammar)', () => {
       'the "..." marker',
     )
     expect(() => sp('bare-spread').pipe(() => 'x', null, '...')).to.throw('the "..." marker')
+    // Review follow-up: the raw-spec check missed the rename destination —
+    // 'value:...' starts with the source name, so the picked value was
+    // stored under a literal '...' key.
+    expect(() => sp('rename-spread').pipe(() => ({ value: 1 }), null, 'value:...')).to.throw(
+      'the "..." marker',
+    )
   })
 
   it('stores a returned __proto__ key as inert data, not prototype pollution', () => {
