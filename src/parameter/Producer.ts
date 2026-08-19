@@ -9,6 +9,8 @@ import {
 
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
+const SPREAD_ALL = '...'
+
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
   const rename = RE_RENAME.exec(key)
   if (rename) {
@@ -18,6 +20,8 @@ function applyKey(output: Record<string, PipeResult>, key: string, value: PipeRe
   }
 }
 
+type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'none'
+
 export default class Producer {
   private keys: string[] = []
 
@@ -25,7 +29,7 @@ export default class Producer {
 
   private inputMode: boolean = false
 
-  private objString: boolean = false
+  private form: OutputForm = 'none'
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'input') {
@@ -57,20 +61,41 @@ export default class Producer {
     }
     if (typeof parameter === 'string') {
       if (RE_IS_OBJ_STRING.test(parameter)) {
-        this.objString = true
-        this.keys = objectStringToArray(parameter)
+        const keys = objectStringToArray(parameter)
+        if (keys.length === 1 && keys[0] === SPREAD_ALL) {
+          this.form = 'spread'
+        } else {
+          this.form = 'object-string'
+          this.keys = keys
+        }
+      } else if (RE_RENAME.test(parameter)) {
+        this.form = 'object-string'
+        this.keys = [parameter]
       } else {
+        this.form = 'single'
         this.keys = [parameter]
       }
     } else if (Array.isArray(parameter)) {
       if (parameter.length > 0 && !isValidArrayParameters(parameter)) {
         throw new Error('Pipe input/output parameter must be string or array of strings')
       }
+      this.form = parameter.length > 0 ? 'array' : 'none'
       this.keys = parameter
     } else if (typeof parameter === 'undefined') {
+      this.form = 'none'
       this.keys = []
     } else {
       throw new Error('Pipe input/output parameter must be string or array of strings')
+    }
+    if (this.form !== 'spread') {
+      for (const key of this.keys) {
+        const destination = RE_RENAME.exec(key)?.[2] ?? key
+        if (destination === '...' || destination.startsWith('...')) {
+          throw new Error(
+            `Output name "${key}" is not valid — the "..." marker only works as the entire spec: '{...}' (merge every key), or list names without it.`,
+          )
+        }
+      }
     }
     this._produce = this.produceOutput
   }
@@ -79,26 +104,46 @@ export default class Producer {
     return this._produce(result)
   }
 
+  get requiresObject(): boolean {
+    return this.form === 'spread'
+  }
+
   produceOutput(result: PipeResult): PipeOutput {
+    if (this.form === 'none') {
+      return {}
+    }
+
+    if (this.form === 'spread') {
+      if (Array.isArray(result) || result === null || typeof result !== 'object') {
+        throw new Error(`Output spec "{...}" requires a plain-object return, got ${typeof result}.`)
+      }
+      return result
+    }
+
     const output: Record<string, PipeResult> = {}
     const keys = this.keys
     const isArray = Array.isArray(result)
     const isObject = !isArray && result !== null && typeof result === 'object'
 
-    if (keys.length === 0) {
-      return isObject ? result : {}
-    }
-
-    if (isArray) {
-      let i = 0
+    if (this.form === 'object-string') {
       for (const key of keys) {
-        applyKey(output, key, result[i])
-        i += 1
+        const rename = RE_RENAME.exec(key)
+        output[rename ? rename[2] : key] = isObject
+          ? (result as Record<string, PipeResult>)[rename ? rename[1] : key]
+          : undefined
       }
       return output
     }
 
-    if (isObject) {
+    if (this.form === 'array' && (isArray || isObject)) {
+      if (isArray) {
+        let i = 0
+        for (const key of keys) {
+          applyKey(output, key, result[i])
+          i += 1
+        }
+        return output
+      }
       for (const key of keys) {
         const rename = RE_RENAME.exec(key)
         output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[
@@ -108,8 +153,8 @@ export default class Producer {
       return output
     }
 
-    if (keys.length === 1) {
-      applyKey(output, keys[0], this.objString ? undefined : result)
+    if (this.form === 'single') {
+      applyKey(output, keys[0], result)
       return output
     }
 

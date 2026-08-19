@@ -93,7 +93,20 @@ export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): A
     functions: FunctionContainer,
     error?: Error,
   ): void {
-    const source = Object.assign({}, container, { error })
+    const source: Record<string, PipeResult> = {}
+    for (const key of Object.keys(container as Record<string, PipeResult>)) {
+      if (key === '__proto__') {
+        Object.defineProperty(source, key, {
+          value: (container as Record<string, PipeResult>)[key],
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        })
+      } else {
+        source[key] = (container as Record<string, PipeResult>)[key]
+      }
+    }
+    source.error = error as PipeResult
     const inputArgs = fetcher.fetch(source, [], functions)
     const fn = getErrorFn(container, functions) as AnyFunction | undefined
     if (typeof fn === 'function') {

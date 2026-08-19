@@ -1,3 +1,23 @@
+Unreleased
+==========
+- **Output binding grammar:** a pipe's output spec now decides how its
+  return value is stored, independent of the value's runtime type. A
+  single name (`'out'`) binds the whole return value; `'{a, b}'` picks
+  named properties; `['a', 'b']` destructures (positional for array
+  returns, by name for objects); `'{...}'` (new) merges every key of a
+  returned object; a missing spec means effects only.
+- **Behavior of output mapping (deliberate break):** a single output name
+  no longer property-picks object returns or takes only the first element
+  of array returns — it binds the whole value (use `'{name}'` to pick a
+  property, `['name']` for positional). A pipe without an output spec now
+  discards its return value instead of implicitly spreading a plain
+  object into the store — declare `'{...}'` to keep the merge. Brace
+  specs never switch to positional mapping for array returns, and a
+  one-name list spec (`['first']`) stores nothing for a non-structural
+  return instead of the whole value. Near-miss spellings of the merge
+  form (`'{a, ...}'`, `'{...rest}'`, a bare `'...'`) are rejected at
+  construction instead of storing a literal `...` key.
+
 0.16.0 2026-08-18
 =================
 - `.endAsync(output)` — a promise-returning `.end()` for async pipelines.

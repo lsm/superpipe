@@ -124,7 +124,7 @@ describe('Executor', () => {
           .input('{arg1, arg2}')
           .pipe(asyncFunc1, ['arg1', 'next'], '{key1}')
           .pipe(asyncFunc2, '{arg2, next}', ['key2', 'key4'])
-          .pipe(asyncFunc3, 'next', 'key3')
+          .pipe(asyncFunc3, 'next', ['key3'])
           .pipe(verifyResult, ['key2', 'key1', 'key5', 'key3', 'key4'])
           .end(['key2', 'key1', 'key5', 'key3', 'key4'])
 

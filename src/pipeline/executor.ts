@@ -115,8 +115,17 @@ function mergeIntoContainer(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" shadows a configured dependency of the same name.`,
       )
     }
+    if (key === '__proto__') {
+      Object.defineProperty(state.container, key, {
+        value: (produced as Record<string, PipeResult>)[key],
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      })
+    } else {
+      state.container[key] = (produced as Record<string, PipeResult>)[key]
+    }
   }
-  Object.assign(state.container, produced)
 }
 
 interface QueuedContinuation {
@@ -246,7 +255,7 @@ function executePipe(
 
   if (pipe.optional && (fn === undefined || pipe.fetcher.hasUnresolved(container, functions))) {
     invalidateNextCallbacks(nextCallbacks)
-    advance(state, pipeline)
+    advance(state, pipeline, null, undefined, -1)
     return
   } else if (typeof fn === 'function') {
     holdNextCallbacks(nextCallbacks)
@@ -441,16 +450,24 @@ function continuePipeline(
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
-  if (value != null) {
-    const producerIndex = fromStep === undefined ? step - 1 : fromStep
-    mergeIntoContainer(
-      state,
-      pipeline,
-      producerIndex,
-      pipes[producerIndex].fnName,
-      pipes[producerIndex].producer.produce(value),
-      false,
-    )
+  const producerIndex = fromStep === undefined ? step - 1 : fromStep
+  if (producerIndex >= 0) {
+    const pipe = pipes[producerIndex]
+    if (value != null || pipe.producer.requiresObject) {
+      let produced: PipeOutput = {}
+      let failed = false
+      try {
+        produced = pipe.producer.produce(value)
+      } catch (err) {
+        failed = true
+        if (error == null) {
+          error = err as Error
+        }
+      }
+      if (!failed) {
+        mergeIntoContainer(state, pipeline, producerIndex, pipe.fnName, produced, false)
+      }
+    }
   }
 
   if (error != null) {
