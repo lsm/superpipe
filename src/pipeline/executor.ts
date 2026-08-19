@@ -9,6 +9,7 @@ import {
   type PipelineBase,
   type PipeOutput,
   type PipeResult,
+  setEntry,
   throwNoErrorHandlerError,
 } from '../common'
 import type { NextCallbacks } from '../parameter/Fetcher'
@@ -116,16 +117,7 @@ function mergeIntoContainer(
         `Pipeline [${pipeline.name}] step [${step}|${fnName}] : Output name "${key}" shadows a configured dependency of the same name.`,
       )
     }
-    if (key === '__proto__') {
-      Object.defineProperty(state.container, key, {
-        value: (produced as Record<string, PipeResult>)[key],
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      })
-    } else {
-      state.container[key] = (produced as Record<string, PipeResult>)[key]
-    }
+    setEntry(state.container, key, (produced as Record<string, PipeResult>)[key])
   }
 }
 
