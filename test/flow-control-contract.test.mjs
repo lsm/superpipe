@@ -947,6 +947,33 @@ describe('output binding contract (grammar)', () => {
 
     expect(() => run()).to.throw('"{...}" requires a plain-object return')
   })
+
+  it('stores a returned __proto__ key as inert data, not prototype pollution', () => {
+    // Review repro: JSON.parse keeps `__proto__` as an own key, and a
+    // plain assignment merges through Object.prototype's setter — the
+    // container's prototype would be swapped and later lookups would
+    // inherit the attacker's keys.
+    const malicious = JSON.parse('{"__proto__": {"polluted": "yes"}, "safe": 1}')
+    let safe
+    let polluted = 'unset'
+    const sp = superpipe({})
+    const run = sp('proto-pollution')
+      .pipe(() => malicious, null, '{...}')
+      .pipe(
+        (safeValue, pollutedValue) => {
+          safe = safeValue
+          polluted = pollutedValue
+        },
+        ['safe', 'polluted'],
+      )
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(safe).to.equal(1)
+    // 'polluted' exists only on the object assigned AS the prototype —
+    // storing `__proto__` as own data must not expose it.
+    expect(polluted).to.equal(undefined)
+  })
 })
 
 // --- promise continuation contract: thenable returns are next sugar (#41) ---
