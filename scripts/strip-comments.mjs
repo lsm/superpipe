@@ -3,9 +3,10 @@
 // block, and JSDoc comment from tracked .ts sources; --check exits
 // non-zero when any remain (CI). Functional directives are exempt:
 // shebangs, /// <reference>, @ts-*, lint pragmas, coverage ignores.
-// Comment detection is delegated to the TypeScript parser (typescript 6,
-// the JS compiler): division, regex, string, and template literals are
-// tokenized by the compiler, so nothing inside a literal is ever touched.
+// Comment detection skips string, template, and regex literals as identified
+// by the TypeScript parser (typescript 6, the JS compiler); every `//` or `/*`
+// outside a literal is unambiguously a comment, so nothing inside a literal is
+// ever touched and a comment is found regardless of which token it precedes.
 
 import { execSync } from 'node:child_process'
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
@@ -29,27 +30,43 @@ function parse(text, fileName) {
 }
 
 function collectCommentRanges(text, fileName) {
-  const sf = parse(text, fileName)
+  const spans = mergeRanges(collectLiteralSpans(text, fileName))
   const ranges = []
-  const seen = new Set()
-  const add = (range) => {
-    if (seen.has(range.pos)) return
-    seen.add(range.pos)
-    const comment = text.slice(range.pos, range.end)
-    if (comment.startsWith('/*') && comment.indexOf('*/', 2) === -1) {
-      const line = text.slice(0, range.pos).split('\n').length
-      throw new Error(
-        `line ${line}: block comment is never closed — ambiguous lex, refusing to strip`,
-      )
+  let spanIdx = 0
+  let i = 0
+  const n = text.length
+  while (i < n) {
+    const span = spans[spanIdx]
+    if (span && i >= span.end) {
+      spanIdx++
+      continue
     }
-    if (!KEEP_PATTERNS.some((p) => p.test(comment))) ranges.push({ start: range.pos, end: range.end })
+    if (span && i >= span.start) {
+      i = span.end
+      continue
+    }
+    if (text[i] === '/' && text[i + 1] === '/') {
+      let j = i + 2
+      while (j < n && text[j] !== '\n') j++
+      if (!KEEP_PATTERNS.some((p) => p.test(text.slice(i, j)))) ranges.push({ start: i, end: j })
+      i = j
+      continue
+    }
+    if (text[i] === '/' && text[i + 1] === '*') {
+      const close = text.indexOf('*/', i + 2)
+      if (close === -1) {
+        const line = text.slice(0, i).split('\n').length
+        throw new Error(
+          `line ${line}: block comment is never closed — ambiguous lex, refusing to strip`,
+        )
+      }
+      const end = close + 2
+      if (!KEEP_PATTERNS.some((p) => p.test(text.slice(i, end)))) ranges.push({ start: i, end })
+      i = end
+      continue
+    }
+    i++
   }
-  const visit = (node) => {
-    for (const r of ts.getLeadingCommentRanges(text, node.pos) ?? []) add(r)
-    for (const r of ts.getTrailingCommentRanges(text, node.pos) ?? []) add(r)
-    ts.forEachChild(node, visit)
-  }
-  visit(sf)
   return ranges
 }
 

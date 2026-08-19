@@ -130,6 +130,31 @@ describe('strip-comments lexer', () => {
     expect(stripComments('const half = count-- / 2 // gone\n', 'x.ts')).to.not.contain('// gone')
   })
 
+  it('strips a comment that precedes a closing brace, bracket, or paren', () => {
+    // Review repro: a comment that is the last thing inside a block, object,
+    // array, class, or parameter list is trivia of the closing token, which
+    // has no AST node — so an AST walk that only queries node positions never
+    // sees it and the file false-passes the zero-comment gate.
+    expect(stripComments('function f(){\n  a()\n  // trailing in block\n}\n', 'x.ts')).to.equal(
+      'function f(){\n  a()\n}\n',
+    )
+    expect(stripComments('function f(){\n  a() // t\n}\n', 'x.ts')).to.equal(
+      'function f(){\n  a()\n}\n',
+    )
+    expect(stripComments('const o = {\n a: 1,\n // last\n}\n', 'x.ts')).to.equal(
+      'const o = {\n a: 1,\n}\n',
+    )
+    expect(stripComments('class C {\n m(){}\n // last\n}\n', 'x.ts')).to.equal(
+      'class C {\n m(){}\n}\n',
+    )
+    expect(stripComments('const a = [\n 1,\n // last\n]\n', 'x.ts')).to.equal(
+      'const a = [\n 1,\n]\n',
+    )
+    expect(stripComments('function f(\n a,\n // last\n){}\n', 'x.ts')).to.equal(
+      'function f(\n a,\n){}\n',
+    )
+  })
+
   it('still collapses blank runs left by comment removal in code', () => {
     const src = 'const a = 1\n// one\n// two\n// three\nconst b = 2\n'
     const out = stripComments(src, 'x.ts')
