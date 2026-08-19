@@ -450,24 +450,22 @@ function continuePipeline(
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
-  const producerIndex = fromStep === undefined ? step - 1 : fromStep
-  if (producerIndex >= 0) {
-    const pipe = pipes[producerIndex]
-    if (value != null || pipe.producer.requiresObject) {
-      let produced: PipeOutput = {}
-      let failed = false
-      try {
-        produced = pipe.producer.produce(value)
-      } catch (err) {
-        failed = true
-        if (error == null) {
-          error = err as Error
-        }
-      }
-      if (!failed) {
-        mergeIntoContainer(state, pipeline, producerIndex, pipe.fnName, produced, false)
-      }
-    }
+  if (value != null) {
+    // Merge the output of the pipe the value belongs to — normally the
+    // previous step, but an adopted promise settling late names its own
+    // pipe: the step counter may have advanced past it. A value delivered
+    // alongside an error merges leniently: a failing pipe's partial result
+    // skips output-key validation on its way to the error handler.
+    const producerIndex = fromStep === undefined ? step - 1 : fromStep
+    mergeIntoContainer(
+      state,
+      pipeline,
+      producerIndex,
+      pipes[producerIndex].fnName,
+      pipes[producerIndex].producer.produce(value, error != null),
+      false,
+    )
+
   }
 
   if (error != null) {

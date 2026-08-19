@@ -1,5 +1,6 @@
 import {
   isValidArrayParameters,
+  OutputKeyError,
   objectStringToArray,
   type PipeOutput,
   type PipeParameter,
@@ -100,22 +101,23 @@ export default class Producer {
     this._produce = this.produceOutput
   }
 
-  produce(result: PipeResult): PipeOutput {
-    return this._produce(result)
+  produce(result: PipeResult, errorPath?: boolean): PipeOutput {
+    if (this.inputMode || !errorPath) {
+      return this._produce(result)
+    }
+    return this.produceOutput(result, true)
   }
 
-  get requiresObject(): boolean {
-    return this.form === 'spread'
-  }
-
-  produceOutput(result: PipeResult): PipeOutput {
+  produceOutput(result: PipeResult, errorPath?: boolean): PipeOutput {
     if (this.form === 'none') {
       return {}
     }
 
     if (this.form === 'spread') {
       if (Array.isArray(result) || result === null || typeof result !== 'object') {
-        throw new Error(`Output spec "{...}" requires a plain-object return, got ${typeof result}.`)
+        throw new OutputKeyError(
+          `Output spec "{...}" requires a plain-object return, got ${typeof result}.`,
+        )
       }
       return result
     }
@@ -126,11 +128,20 @@ export default class Producer {
     const isObject = !isArray && result !== null && typeof result === 'object'
 
     if (this.form === 'object-string') {
+      if (!isObject) {
+        throw new OutputKeyError(
+          `Output spec "{${keys.join(', ')}}" picks properties, but the pipe returned ${
+            isArray ? 'an array' : typeof result
+          }.`,
+        )
+      }
       for (const key of keys) {
         const rename = RE_RENAME.exec(key)
-        output[rename ? rename[2] : key] = isObject
-          ? (result as Record<string, PipeResult>)[rename ? rename[1] : key]
-          : undefined
+        const source = rename ? rename[1] : key
+        if (!errorPath && !(source in (result as object))) {
+          throw new OutputKeyError(`Output "${source}" is missing from the pipe's returned object.`)
+        }
+        output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[source]
       }
       return output
     }
@@ -139,6 +150,11 @@ export default class Producer {
       if (isArray) {
         let i = 0
         for (const key of keys) {
+          if (!errorPath && i >= result.length) {
+            throw new OutputKeyError(
+              `Output "${key}" maps position ${i}, but the pipe's array return has ${result.length} element(s).`,
+            )
+          }
           applyKey(output, key, result[i])
           i += 1
         }
@@ -146,9 +162,11 @@ export default class Producer {
       }
       for (const key of keys) {
         const rename = RE_RENAME.exec(key)
-        output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[
-          rename ? rename[1] : key
-        ]
+        const source = rename ? rename[1] : key
+        if (!errorPath && !(source in (result as object))) {
+          throw new OutputKeyError(`Output "${source}" is missing from the pipe's returned object.`)
+        }
+        output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[source]
       }
       return output
     }

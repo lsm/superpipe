@@ -655,18 +655,15 @@ describe('review-fix contract (round 7 parity behaviors)', () => {
       run()
     }))
 
-  it('treats object-string outputs as property selection over any return', () => {
-    let observed = 'unset'
+  it('throws when object-string outputs pick from a scalar return', () => {
+    // Braces select properties; a scalar return cannot be picked from —
+    // a spec/return mismatch fails loudly instead of storing undefined.
     const sp = superpipe({})
     const run = sp('objstring-scalar')
       .pipe(() => 'scalar', null, '{a}')
-      .pipe((a) => {
-        observed = a
-      }, 'a')
       .end()
 
-    run()
-    expect(observed).to.equal(undefined)
+    expect(() => run()).to.throw('picks properties')
   })
 })
 
@@ -898,19 +895,15 @@ describe('output binding contract (grammar)', () => {
       run()
     }))
 
-  it('yields undefined when braces pick from an array return', () => {
-    // Braces select properties; they never switch to positional mapping.
-    let observed = 'unset'
+  it('throws when braces pick from an array return', () => {
+    // Braces select properties and never switch to positional mapping —
+    // picking from an array is a spec/return mismatch.
     const sp = superpipe({})
     const run = sp('braces-array')
       .pipe(() => ['a', 'b'], null, '{first}')
-      .pipe((first) => {
-        observed = first
-      }, 'first')
       .end()
 
-    run()
-    expect(observed).to.equal(undefined)
+    expect(() => run()).to.throw('picks properties')
   })
 
   it('merges every key of an object return with the {...} spec', () => {
@@ -1085,6 +1078,137 @@ describe('output binding contract (grammar)', () => {
     // 'polluted' exists only on the object assigned AS the prototype —
     // storing `__proto__` as own data must not expose it.
     expect(polluted).to.equal(undefined)
+  })
+})
+
+// --- output validation: destructure specs check what they name ---
+describe('output validation contract (missing keys)', () => {
+  it('throws when a pick names a key the return does not have', () => {
+    // The typo case: reolvedTarget vs resolvedTarget fails at the pipe
+    // that produced it, not as a silent undefined three pipes later.
+    const sp = superpipe({})
+    const run = sp('typo-key')
+      .pipe(() => ({ resolvedTarget: 'x' }), null, '{reolvedTarget}')
+      .end()
+
+    expect(() => run()).to.throw('Output "reolvedTarget" is missing')
+  })
+
+  it('throws when a renamed source is missing', () => {
+    const sp = superpipe({})
+    const run = sp('typo-rename')
+      .pipe(() => ({ result: 'x' }), null, 'reolved:userProfile')
+      .end()
+
+    expect(() => run()).to.throw('Output "reolved" is missing')
+  })
+
+  it('throws when an array spec names a key the object return lacks', () => {
+    const sp = superpipe({})
+    const run = sp('array-spec-missing')
+      .pipe(() => ({ abc: 1 }), null, ['abc', 'xyz'])
+      .end()
+
+    expect(() => run()).to.throw('Output "xyz" is missing')
+  })
+
+  it('throws when a positional spec exceeds the array return', () => {
+    const sp = superpipe({})
+    const run = sp('positional-short')
+      .pipe(() => ['a'], null, ['first', 'second'])
+      .end()
+
+    expect(() => run()).to.throw('maps position 1')
+  })
+
+  it('accepts a present-but-undefined value', () => {
+    // Presence, not truthiness: an own key holding undefined binds fine.
+    let ran = false
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('present-undefined')
+      .pipe(() => ({ a: undefined }), null, '{a}')
+      .pipe((a) => {
+        ran = true
+        observed = a
+      }, 'a')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(ran).to.equal(true)
+    expect(observed).to.equal(undefined)
+  })
+
+  it('accepts an inherited key', () => {
+    // The existence test matches what the pick reads — prototype
+    // properties count, so class-shaped returns pick normally.
+    let observed
+    const sp = superpipe({})
+    const run = sp('inherited-key')
+      .pipe(() => Object.create({ shared: 'inherited' }), null, '{shared}')
+      .pipe((shared) => {
+        observed = shared
+      }, 'shared')
+      .end()
+
+    run()
+    expect(observed).to.equal('inherited')
+  })
+
+  it('keeps a partial value delivered with an error lenient', () =>
+    new Promise((done) => {
+      // The error path skips validation: a failing pipe's best-effort
+      // result reaches the error handler even with keys missing.
+      const failure = new Error('boom')
+      const sp = superpipe({})
+      const run = sp('error-partial')
+        .pipe(
+          (next) => {
+            next(failure, { key1: 'value1' }) // key2 missing from the partial
+          },
+          'next',
+          '{key1, key2}',
+        )
+        .error(({ error, key1, key2 }) => {
+          expect(error).to.equal(failure)
+          expect(key1).to.equal('value1')
+          expect(key2).to.equal(undefined)
+          done()
+        }, '{error, key1, key2}')
+        .end()
+
+      run()
+    }))
+
+  it('surfaces a missing-key error raised through a synchronous next', () => {
+    // A definition error, not a runtime failure: it throws onto the
+    // caller's stack and never reaches the error handler.
+    let handlerRan = false
+    const sp = superpipe({})
+    const run = sp('sync-next-missing-key')
+      .pipe(
+        (next) => {
+          next(null, { a: 1 })
+        },
+        'next',
+        '{b}',
+      )
+      .error(() => {
+        handlerRan = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('Output "b" is missing')
+    expect(handlerRan).to.equal(false)
+  })
+
+  it('rejects an endAsync run whose async return misses a key', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-missing-key')
+      .pipe(() => Promise.resolve({ a: 1 }), null, '{a, b}')
+      .endAsync('{a}')
+
+    await expect(run()).rejects.toThrow('Output "b" is missing')
   })
 })
 
