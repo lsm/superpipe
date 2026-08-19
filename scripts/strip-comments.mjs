@@ -8,7 +8,7 @@
 // string/template/regex-aware, so nothing inside a literal is touched.
 
 import { execSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const KEEP_PATTERNS = [
@@ -270,6 +270,6 @@ function main() {
   if (check && dirty > 0) process.exit(1)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main()
 }
