@@ -33,6 +33,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsdown && tsdown --config tsdown.iife.config.mts",
     "lint": "biome check src test",
+    "check:no-comments": "node scripts/strip-comments.mjs --check",
     "lint:fix": "biome check src test --write",
     "format": "biome format src test --write"
   },
@@ -43,6 +44,7 @@
     "publint": "0.3.23",
     "tsdown": "0.22.14",
     "typescript": "7.0.2",
+    "typescript6": "npm:typescript@^6.0.3",
     "unrun": "0.3.1",
     "vitest": "4.1.10"
   },

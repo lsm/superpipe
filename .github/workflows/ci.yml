@@ -35,6 +35,9 @@ jobs:
       - name: Run lint
         run: npm run lint
 
+      - name: Check zero comments
+        run: npm run check:no-comments
+
       - name: Run tests
         run: npm test
 

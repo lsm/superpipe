@@ -117,9 +117,9 @@ Understanding auto-next is critical when working with pipes (src/pipeline.js:160
 
 ## Code Style
 
-- ESLint config: Airbnb base with single quotes, no semicolons
-- Prettier for formatting (Unix line endings)
-- ES6 modules in src/, transpiled to CJS (lib/) and ES modules (es/)
+- Biome for linting and formatting: single quotes, no semicolons (`npm run lint`, `npm run lint:fix`)
+- Zero comments in `.ts` sources: no line, block, or JSDoc comments — enforced by `npm run check:no-comments` (CI). Exempt functional directives only: shebangs, `/// <reference>`, `@ts-*`, `biome-ignore`, coverage ignores (`v8`/`istanbul`/`c8`)
+- TypeScript sources in `src/`, built to CJS/ESM/UMD by tsdown
 
 ## Test Organization
 
