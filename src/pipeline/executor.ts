@@ -3,6 +3,7 @@ import {
   type AnyFunction,
   type FunctionContainer,
   NextCalledTwiceError,
+  OutputKeyError,
   OutputNameError,
   PipelineAbortedError,
   type PipelineBase,
@@ -267,6 +268,7 @@ function executePipe(
       if (
         err instanceof NextCalledTwiceError ||
         err instanceof OutputNameError ||
+        err instanceof OutputKeyError ||
         err instanceof AmbiguousContinuationError
       ) {
         throw err
@@ -350,6 +352,17 @@ function executePipe(
         }
         return
       }
+      if (resolved == null) {
+        try {
+          pipe.producer.expectValue()
+        } catch (err) {
+          if (state.onSettled && !state.settled) {
+            settle(state, err as Error)
+            return
+          }
+          throw err
+        }
+      }
       advance(state, pipeline, null, resolved, pipeIndex)
     }
     const onRejected = (reason: unknown): void => {
@@ -386,6 +399,9 @@ function executePipe(
 
   const ownsContinuation = pipe.fetcher.hasNext && typeof fn !== 'boolean'
   if (!ownsContinuation && !(isFlowControl && result === false)) {
+    if (result == null) {
+      pipe.producer.expectValue()
+    }
     advance(state, pipeline, null, result)
   } else if (!ownsContinuation) {
     state.halted = true
@@ -450,24 +466,16 @@ function continuePipeline(
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
-  const producerIndex = fromStep === undefined ? step - 1 : fromStep
-  if (producerIndex >= 0) {
-    const pipe = pipes[producerIndex]
-    if (value != null || pipe.producer.requiresObject) {
-      let produced: PipeOutput = {}
-      let failed = false
-      try {
-        produced = pipe.producer.produce(value)
-      } catch (err) {
-        failed = true
-        if (error == null) {
-          error = err as Error
-        }
-      }
-      if (!failed) {
-        mergeIntoContainer(state, pipeline, producerIndex, pipe.fnName, produced, false)
-      }
-    }
+  if (value != null) {
+    const producerIndex = fromStep === undefined ? step - 1 : fromStep
+    mergeIntoContainer(
+      state,
+      pipeline,
+      producerIndex,
+      pipes[producerIndex].fnName,
+      pipes[producerIndex].producer.produce(value, error != null),
+      false,
+    )
   }
 
   if (error != null) {

@@ -1,5 +1,6 @@
 import {
   isValidArrayParameters,
+  OutputKeyError,
   objectStringToArray,
   type PipeOutput,
   type PipeParameter,
@@ -7,17 +8,26 @@ import {
   RE_IS_OBJ_STRING,
 } from '../common'
 
+function setEntry(target: Record<string, PipeResult>, key: string, value: PipeResult): void {
+  if (key === '__proto__') {
+    Object.defineProperty(target, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+    return
+  }
+  target[key] = value
+}
+
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
 const SPREAD_ALL = '...'
 
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
   const rename = RE_RENAME.exec(key)
-  if (rename) {
-    output[rename[2]] = value
-  } else {
-    output[key] = value
-  }
+  setEntry(output, rename ? rename[2] : key, value)
 }
 
 type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'none'
@@ -100,22 +110,45 @@ export default class Producer {
     this._produce = this.produceOutput
   }
 
-  produce(result: PipeResult): PipeOutput {
-    return this._produce(result)
+  produce(result: PipeResult, errorPath?: boolean): PipeOutput {
+    if (this.inputMode || !errorPath) {
+      return this._produce(result)
+    }
+    return this.produceOutput(result, true)
   }
 
-  get requiresObject(): boolean {
-    return this.form === 'spread'
+  expectValue(): void {
+    if (this.inputMode || this.form === 'single' || this.form === 'none') {
+      return
+    }
+    throw new OutputKeyError(
+      `Output spec ${this.specLabel()} requires the pipe to return a value, but it returned none.`,
+    )
   }
 
-  produceOutput(result: PipeResult): PipeOutput {
+  private specLabel(): string {
+    if (this.form === 'spread') {
+      return '"{...}"'
+    }
+    if (this.form === 'array') {
+      return `[${this.keys.map((key) => `'${key}'`).join(', ')}]`
+    }
+    return `"{${this.keys.join(', ')}}"`
+  }
+
+  produceOutput(result: PipeResult, errorPath?: boolean): PipeOutput {
     if (this.form === 'none') {
       return {}
     }
 
     if (this.form === 'spread') {
       if (Array.isArray(result) || result === null || typeof result !== 'object') {
-        throw new Error(`Output spec "{...}" requires a plain-object return, got ${typeof result}.`)
+        if (errorPath) {
+          return {}
+        }
+        throw new OutputKeyError(
+          `Output spec "{...}" requires a plain-object return, got ${typeof result}.`,
+        )
       }
       return result
     }
@@ -126,11 +159,23 @@ export default class Producer {
     const isObject = !isArray && result !== null && typeof result === 'object'
 
     if (this.form === 'object-string') {
+      if (!isObject) {
+        if (errorPath) {
+          return {}
+        }
+        throw new OutputKeyError(
+          `Output spec "{${keys.join(', ')}}" picks properties, but the pipe returned ${
+            isArray ? 'an array' : typeof result
+          }.`,
+        )
+      }
       for (const key of keys) {
         const rename = RE_RENAME.exec(key)
-        output[rename ? rename[2] : key] = isObject
-          ? (result as Record<string, PipeResult>)[rename ? rename[1] : key]
-          : undefined
+        const source = rename ? rename[1] : key
+        if (!errorPath && !(source in (result as object))) {
+          throw new OutputKeyError(`Output "${source}" is missing from the pipe's returned object.`)
+        }
+        setEntry(output, rename ? rename[2] : key, (result as Record<string, PipeResult>)[source])
       }
       return output
     }
@@ -139,6 +184,11 @@ export default class Producer {
       if (isArray) {
         let i = 0
         for (const key of keys) {
+          if (!errorPath && i >= result.length) {
+            throw new OutputKeyError(
+              `Output "${key}" maps position ${i}, but the pipe's array return has ${result.length} element(s).`,
+            )
+          }
           applyKey(output, key, result[i])
           i += 1
         }
@@ -146,11 +196,22 @@ export default class Producer {
       }
       for (const key of keys) {
         const rename = RE_RENAME.exec(key)
-        output[rename ? rename[2] : key] = (result as Record<string, PipeResult>)[
-          rename ? rename[1] : key
-        ]
+        const source = rename ? rename[1] : key
+        if (!errorPath && !(source in (result as object))) {
+          throw new OutputKeyError(`Output "${source}" is missing from the pipe's returned object.`)
+        }
+        setEntry(output, rename ? rename[2] : key, (result as Record<string, PipeResult>)[source])
       }
       return output
+    }
+
+    if (this.form === 'array') {
+      if (errorPath) {
+        return {}
+      }
+      throw new OutputKeyError(
+        `Output spec [${keys.map((key) => `'${key}'`).join(', ')}] destructures, but the pipe returned ${typeof result}.`,
+      )
     }
 
     if (this.form === 'single') {
@@ -170,7 +231,7 @@ export default class Producer {
 
     let i = 0
     for (const key of this.keys) {
-      output[key] = (result as PipeResult[])[i]
+      setEntry(output, key, (result as PipeResult[])[i])
       i += 1
     }
     return output
@@ -180,7 +241,7 @@ export default class Producer {
     const output: Record<string, PipeResult> = {}
     const source = this.inputSource(result) as Record<string, PipeResult> | null | undefined
     for (const key of this.keys) {
-      output[key] = source == null ? undefined : source[key]
+      setEntry(output, key, source == null ? undefined : source[key])
     }
     return output
   }

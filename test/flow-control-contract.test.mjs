@@ -412,23 +412,17 @@ describe('review-fix contract (round 2 parity behaviors)', () => {
     expect(afterRan).to.equal(false)
   })
 
-  it('stores nothing when multiple outputs receive a primitive return value', () =>
-    new Promise((done) => {
-      const sp = superpipe({})
-      const run = sp('primitive-multi-output')
-        .pipe(() => 'ab', null, ['x', 'y'])
-        .pipe(
-          (x, y) => {
-            expect(x).to.equal(undefined)
-            expect(y).to.equal(undefined)
-            done()
-          },
-          ['x', 'y'],
-        )
-        .end()
+  it('throws when multiple output names receive a primitive return value', () => {
+    // A list spec with a non-structural return is a spec/return mismatch —
+    // the same contract braces follow. (Previously stored nothing
+    // silently; master stored the whole value for a single name.)
+    const sp = superpipe({})
+    const run = sp('primitive-multi-output')
+      .pipe(() => 'ab', null, ['x', 'y'])
+      .end()
 
-      expect(() => run()).to.not.throw()
-    }))
+    expect(() => run()).to.throw('destructures, but the pipe returned string')
+  })
 
   it('rejects empty input declarations at construction', () => {
     const sp = superpipe({})
@@ -655,18 +649,15 @@ describe('review-fix contract (round 7 parity behaviors)', () => {
       run()
     }))
 
-  it('treats object-string outputs as property selection over any return', () => {
-    let observed = 'unset'
+  it('throws when object-string outputs pick from a scalar return', () => {
+    // Braces select properties; a scalar return cannot be picked from —
+    // a spec/return mismatch fails loudly instead of storing undefined.
     const sp = superpipe({})
     const run = sp('objstring-scalar')
       .pipe(() => 'scalar', null, '{a}')
-      .pipe((a) => {
-        observed = a
-      }, 'a')
       .end()
 
-    run()
-    expect(observed).to.equal(undefined)
+    expect(() => run()).to.throw('picks properties')
   })
 })
 
@@ -856,25 +847,19 @@ describe('output binding contract (grammar)', () => {
     expect(observed).to.equal('a')
   })
 
-  it('stores nothing when a one-name array spec receives a primitive return', () => {
+  it('throws when a one-name array spec receives a primitive return', () => {
     // Review repro: the list form must not fall through to whole-value
     // binding for non-structural returns — `['first']` means positional
-    // for arrays, and nothing to map for everything else, exactly like a
-    // multi-name list. Whole-binding lives in the single-name form only.
-    let ran = false
-    let observed = 'unset'
+    // for arrays and a spec/return mismatch for everything else, exactly
+    // like a multi-name list. Whole-binding lives in the single-name form
+    // only; validation upgrades the mismatch from silent-nothing to a
+    // throw.
     const sp = superpipe({})
     const run = sp('array-spec-primitive')
       .pipe(() => 'scalar', null, ['first'])
-      .pipe((first) => {
-        ran = true
-        observed = first
-      }, 'first')
       .end()
 
-    expect(() => run()).to.not.throw()
-    expect(ran).to.equal(true)
-    expect(observed).to.equal(undefined)
+    expect(() => run()).to.throw("Output spec ['first'] destructures")
   })
 
   it('binds a whole object delivered through next under a single output name', () =>
@@ -898,19 +883,15 @@ describe('output binding contract (grammar)', () => {
       run()
     }))
 
-  it('yields undefined when braces pick from an array return', () => {
-    // Braces select properties; they never switch to positional mapping.
-    let observed = 'unset'
+  it('throws when braces pick from an array return', () => {
+    // Braces select properties and never switch to positional mapping —
+    // picking from an array is a spec/return mismatch.
     const sp = superpipe({})
     const run = sp('braces-array')
       .pipe(() => ['a', 'b'], null, '{first}')
-      .pipe((first) => {
-        observed = first
-      }, 'first')
       .end()
 
-    run()
-    expect(observed).to.equal(undefined)
+    expect(() => run()).to.throw('picks properties')
   })
 
   it('merges every key of an object return with the {...} spec', () => {
@@ -948,49 +929,46 @@ describe('output binding contract (grammar)', () => {
     expect(() => run()).to.throw('"{...}" requires a plain-object return')
   })
 
-  it('routes a {...} shape violation to the error handler instead of escaping', () => {
-    // Review repro: the shape check threw inside continuePipeline, outside
-    // executePipe's try, so a declared error handler was bypassed and the
-    // error escaped run() (or crashed a timer's stack when delivered late).
-    let received
+  it('surfaces a {...} shape violation as a definition error', () => {
+    // A spec/return mismatch is a definition error (like OutputNameError),
+    // so it surfaces on the invoking stack — it never routes to the error
+    // handler, which is reserved for runtime failures.
+    let handlerRuns = 0
     const sp = superpipe({})
-    const run = sp('spread-shape-to-handler')
+    const run = sp('spread-shape-surfaces')
       .pipe(() => 'scalar', null, '{...}')
-      .error((error) => {
-        received = error
+      .error(() => {
+        handlerRuns += 1
       }, 'error')
       .end()
 
-    run()
-    expect(received).to.be.an.instanceof(Error)
-    expect(received.message).to.contain('requires a plain-object return')
+    expect(() => run()).to.throw('requires a plain-object return')
+    expect(handlerRuns).to.equal(0)
   })
 
   it('rejects a nullish return from a {...} spec instead of silently skipping', () => {
-    // Review repro: continuePipeline only called the producer for non-nullish
-    // values, so a forgot-to-return undefined/null produced nothing instead
-    // of failing fast like the scalar and array cases.
+    // A destructure spec demands a value from a bare return: a forgot-to-
+    // return undefined/null fails fast rather than silently producing nothing.
     const sp = superpipe({})
     const run = sp('spread-nullish')
       .pipe(() => undefined, null, '{...}')
       .end()
 
-    expect(() => run()).to.throw('"{...}" requires a plain-object return')
+    expect(() => run()).to.throw('"{...}" requires the pipe to return a value')
   })
 
-  it('routes a nullish return from a {...} spec to the error handler', () => {
-    let received
+  it('surfaces a nullish return from a {...} spec as a definition error', () => {
+    let handlerRuns = 0
     const sp = superpipe({})
-    const run = sp('spread-nullish-to-handler')
+    const run = sp('spread-nullish-surfaces')
       .pipe(() => null, null, '{...}')
-      .error((error) => {
-        received = error
+      .error(() => {
+        handlerRuns += 1
       }, 'error')
       .end()
 
-    run()
-    expect(received).to.be.an.instanceof(Error)
-    expect(received.message).to.contain('requires a plain-object return')
+    expect(() => run()).to.throw('requires the pipe to return a value')
+    expect(handlerRuns).to.equal(0)
   })
 
   it('preserves a thrown error from a {...} pipe instead of masking it as a shape violation', () => {
@@ -1085,6 +1063,349 @@ describe('output binding contract (grammar)', () => {
     // 'polluted' exists only on the object assigned AS the prototype —
     // storing `__proto__` as own data must not expose it.
     expect(polluted).to.equal(undefined)
+  })
+})
+
+// --- output validation: destructure specs check what they name ---
+describe('output validation contract (missing keys)', () => {
+  it('throws when a pick names a key the return does not have', () => {
+    // The typo case: reolvedTarget vs resolvedTarget fails at the pipe
+    // that produced it, not as a silent undefined three pipes later.
+    const sp = superpipe({})
+    const run = sp('typo-key')
+      .pipe(() => ({ resolvedTarget: 'x' }), null, '{reolvedTarget}')
+      .end()
+
+    expect(() => run()).to.throw('Output "reolvedTarget" is missing')
+  })
+
+  it('throws when a renamed source is missing', () => {
+    const sp = superpipe({})
+    const run = sp('typo-rename')
+      .pipe(() => ({ result: 'x' }), null, 'reolved:userProfile')
+      .end()
+
+    expect(() => run()).to.throw('Output "reolved" is missing')
+  })
+
+  it('throws when an array spec names a key the object return lacks', () => {
+    const sp = superpipe({})
+    const run = sp('array-spec-missing')
+      .pipe(() => ({ abc: 1 }), null, ['abc', 'xyz'])
+      .end()
+
+    expect(() => run()).to.throw('Output "xyz" is missing')
+  })
+
+  it('throws when a positional spec exceeds the array return', () => {
+    const sp = superpipe({})
+    const run = sp('positional-short')
+      .pipe(() => ['a'], null, ['first', 'second'])
+      .end()
+
+    expect(() => run()).to.throw('maps position 1')
+  })
+
+  it('accepts a present-but-undefined value', () => {
+    // Presence, not truthiness: an own key holding undefined binds fine.
+    let ran = false
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('present-undefined')
+      .pipe(() => ({ a: undefined }), null, '{a}')
+      .pipe((a) => {
+        ran = true
+        observed = a
+      }, 'a')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(ran).to.equal(true)
+    expect(observed).to.equal(undefined)
+  })
+
+  it('accepts an inherited key', () => {
+    // The existence test matches what the pick reads — prototype
+    // properties count, so class-shaped returns pick normally.
+    let observed
+    const sp = superpipe({})
+    const run = sp('inherited-key')
+      .pipe(() => Object.create({ shared: 'inherited' }), null, '{shared}')
+      .pipe((shared) => {
+        observed = shared
+      }, 'shared')
+      .end()
+
+    run()
+    expect(observed).to.equal('inherited')
+  })
+
+  it('keeps a partial value delivered with an error lenient', () =>
+    new Promise((done) => {
+      // The error path skips validation: a failing pipe's best-effort
+      // result reaches the error handler even with keys missing.
+      const failure = new Error('boom')
+      const sp = superpipe({})
+      const run = sp('error-partial')
+        .pipe(
+          (next) => {
+            next(failure, { key1: 'value1' }) // key2 missing from the partial
+          },
+          'next',
+          '{key1, key2}',
+        )
+        .error(({ error, key1, key2 }) => {
+          expect(error).to.equal(failure)
+          expect(key1).to.equal('value1')
+          expect(key2).to.equal(undefined)
+          done()
+        }, '{error, key1, key2}')
+        .end()
+
+      run()
+    }))
+
+  it('surfaces a missing-key error raised through a synchronous next', () => {
+    // A definition error, not a runtime failure: it throws onto the
+    // caller's stack and never reaches the error handler.
+    let handlerRan = false
+    const sp = superpipe({})
+    const run = sp('sync-next-missing-key')
+      .pipe(
+        (next) => {
+          next(null, { a: 1 })
+        },
+        'next',
+        '{b}',
+      )
+      .error(() => {
+        handlerRan = true
+      })
+      .end()
+
+    expect(() => run()).to.throw('Output "b" is missing')
+    expect(handlerRan).to.equal(false)
+  })
+
+  it('rejects an endAsync run whose async return misses a key', async () => {
+    const sp = superpipe({})
+    const run = sp('endasync-missing-key')
+      .pipe(() => Promise.resolve({ a: 1 }), null, '{a, b}')
+      .endAsync('{a}')
+
+    await expect(run()).rejects.toThrow('Output "b" is missing')
+  })
+
+  it('never lets a scalar partial value mask the real error', () => {
+    // Review repro: the shape checks used to throw on the error path too,
+    // so the OutputKeyError escaped before the real failure was stored —
+    // the handler never ran and the caller saw the wrong error.
+    const failure = new Error('boom')
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('error-scalar-partial')
+      .pipe(
+        (next) => {
+          next(failure, 'partial') // a scalar cannot be picked from
+        },
+        'next',
+        '{key1}',
+      )
+      .error((error) => {
+        handlerRuns += 1
+        expect(error).to.equal(failure)
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('rejects with the real error when a partial value mismatches the spec', async () => {
+    const failure = new Error('real failure')
+    const sp = superpipe({})
+    const run = sp('endasync-error-shape-mismatch')
+      .pipe(
+        (next) => {
+          setTimeout(() => next(failure, 'partial'), 5)
+        },
+        'next',
+        '{key1, key2}',
+      )
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('real failure')
+  })
+
+  it('never lets a non-object spread partial mask the real error', () => {
+    const failure = new Error('boom')
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('error-spread-partial')
+      .pipe(
+        (next) => {
+          next(failure, 'scalar')
+        },
+        'next',
+        '{...}',
+      )
+      .error((error) => {
+        handlerRuns += 1
+        expect(error).to.equal(failure)
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('never lets a non-structural list partial mask the real error', () => {
+    const failure = new Error('boom')
+    let handlerRuns = 0
+    const sp = superpipe({})
+    const run = sp('error-list-partial')
+      .pipe(
+        (next) => {
+          next(failure, 'scalar')
+        },
+        'next',
+        ['key1'],
+      )
+      .error((error) => {
+        handlerRuns += 1
+        expect(error).to.equal(failure)
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(handlerRuns).to.equal(1)
+  })
+
+  it('stores a picked __proto__ key as inert data, not a silent drop', () => {
+    // Review repro: the pick passed the presence check, then the plain
+    // assignment wrote through Object.prototype's __proto__ setter onto
+    // the fresh output object — no own key, nothing merged, no error.
+    const malicious = JSON.parse('{"__proto__": 42, "safe": 1}')
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('pick-proto')
+      .pipe(() => malicious, null, '{__proto__}')
+      .pipe((proto) => {
+        observed = proto
+      }, '__proto__')
+      .end()
+
+    run()
+    expect(observed).to.equal(42)
+  })
+
+  it('surfaces a nested run missing-key error as a definition error', () => {
+    // Review repro: a mistyped pick inside a nested pipeline run throws
+    // within the outer pipe's fn.apply — like OutputNameError it must
+    // surface to the caller, not route to the outer error handler.
+    const sp = superpipe({})
+    const inner = sp('nested-inner')
+      .pipe(() => ({ resolvedTarget: 'x' }), null, '{reolvedTarget}')
+      .end()
+    let handlerRuns = 0
+    const run = sp('nested-outer')
+      .pipe(() => {
+        inner()
+      })
+      .error(() => {
+        handlerRuns += 1
+      })
+      .end()
+
+    expect(() => run()).to.throw('Output "reolvedTarget" is missing')
+    expect(handlerRuns).to.equal(0)
+  })
+
+  it('throws when a destructure spec receives no return value', () => {
+    // Review repro: the continuation skips merging a nullish value, so
+    // the shape guards never saw `undefined`/`null` — the forgot-to-
+    // return case passed silently while a scalar return threw.
+    const sp = superpipe({})
+    const spread = sp('nullish-spread')
+      .pipe(() => undefined, null, '{...}')
+      .end()
+    const pick = sp('nullish-pick')
+      .pipe(() => null, null, '{a}')
+      .end()
+    const list = sp('nullish-list')
+      .pipe(() => undefined, null, ['first'])
+      .end()
+
+    expect(() => spread()).to.throw('"{...}" requires the pipe to return a value')
+    expect(() => pick()).to.throw('"{a}" requires the pipe to return a value')
+    expect(() => list()).to.throw("['first'] requires the pipe to return a value")
+  })
+
+  it('still allows a single-name pipe to return nothing', () => {
+    // The single form binds whatever arrived, nothing included — no
+    // value was promised, so none is demanded.
+    let ran = false
+    let observed = 'unset'
+    const sp = superpipe({})
+    const run = sp('nullish-single')
+      .pipe(() => undefined, null, 'out')
+      .pipe((out) => {
+        ran = true
+        observed = out
+      }, 'out')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(ran).to.equal(true)
+    expect(observed).to.equal(undefined)
+  })
+
+  it('still allows a next-based pipe to advance without a value', () => {
+    // Bare next() is the protocol's explicit nothing-to-merge — the
+    // nullish guard applies to returns, not to next deliveries.
+    let ran = false
+    const sp = superpipe({})
+    const run = sp('nullish-next')
+      .pipe(
+        (next) => {
+          next()
+        },
+        'next',
+        '{a}',
+      )
+      .pipe(() => {
+        ran = true
+      })
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(ran).to.equal(true)
+  })
+
+  it('still allows a skipped optional pipe with a destructure spec', () => {
+    // A skipped optional produces nothing by definition — the nullish
+    // guard must not fire on its bare advance.
+    let ran = false
+    const sp = superpipe({})
+    const run = sp('nullish-optional')
+      .input(['user'])
+      .pipe('?missing', ['next', 'missingValue'], '{a}')
+      .pipe(() => {
+        ran = true
+      })
+      .end()
+
+    expect(() => run({ user: 'x' })).to.not.throw()
+    expect(ran).to.equal(true)
+  })
+
+  it('rejects an endAsync run whose promise resolves to nothing', async () => {
+    const sp = superpipe({})
+    const run = sp('nullish-async')
+      .pipe(() => Promise.resolve(undefined), null, '{...}')
+      .endAsync('out')
+
+    await expect(run()).rejects.toThrow('"{...}" requires the pipe to return a value')
   })
 })
 
