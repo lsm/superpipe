@@ -17,6 +17,13 @@ export class OutputNameError extends Error {
   }
 }
 
+export class OutputKeyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'OutputKeyError'
+  }
+}
+
 export class AmbiguousContinuationError extends Error {
   constructor(message: string) {
     super(message)
