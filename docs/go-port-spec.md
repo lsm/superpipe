@@ -71,8 +71,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 (`Step(...).In(...).Out(...)`), everything validated once at `Build`.
 
 - `Step(name string, fn StepFunc)` — the only step type: `StepFunc func(ctx context.Context, args []any) (any, error)`.
-  `args` arrives positionally in declared `In` order. The step blocks until it has its
-  result; its return is the single continuation channel.
+  `args` arrives positionally in declared `In` order. A step with **no** `.In` receives
+  the invocation args verbatim (TS `fetchNothing` — test *passes the invocation arguments
+  to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}`.
+  The step blocks until it has its result; its return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, no reserved output
   names, no shadowing of configured deps (for specs whose keys are static).
@@ -172,7 +174,10 @@ safe under the §5 `Deps` rule; every run gets fresh state.
 container first, then the configured deps, else absent. Absent key delivers `nil`. This
 order lets a run output override a dep of the same name *for reads*; writing such a key is
 C4's shadow error. Injected-name steps (`Call`, `Not`, `Optional`) resolve their function
-the same way at execution time.
+the same way at execution time. A non-`Optional` injected step that resolves to an absent
+value — or to anything that is not a func or bool — fails the run **before invocation**
+with a `Dependency "<name>" is not a function or boolean` error: framework-error class
+(C8), unwrapped, never routed to the error handler.
 
 **C3 — Invocation inputs.** Input pipes map invocation args into the container per §3.2
 input rules. These merges are exempt from the shadow check (they are the invocation's own
@@ -221,7 +226,9 @@ container and deps (value-based, matching TS `hasUnresolved`).
   on the invoking stack with the handler unrun).
 - **One error handler**, invoked once, with the container snapshot (copy) plus the active
   error available under the key `error` (its declared inputs resolve against that
-  snapshot). A non-nil handler return — or a recovered panic — joins the settlement
+  snapshot). An `Error(...)` def with **no** `.In` defaults to a single input: the active
+  error (builder.ts:68-70; test *should trigger error when calling next with error*).
+  A non-nil handler return — or a recovered panic — joins the settlement
   error (below); it is never ignored. A failing handler does not re-enter error handling.
 - Settlement error behavior is **uniform — one `Run`, one behavior** (a deliberate
   divergence: TS `end()` swallows the error when a handler exists — an artifact of sync
