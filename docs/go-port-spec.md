@@ -160,8 +160,8 @@ Each contract is the acceptance bar. §7 maps them to tests.
 **C1 — Definition shape.** Optional input def first, then steps, at most one error
 handler last, then the optional output def. Steps after the error handler: construction
 error. A second error handler: construction error. Input pipe after any step:
-construction error. The built `*Runner` is immutable and safe for unlimited concurrent
-runs; every run gets fresh state.
+construction error. The built `*Runner`'s definition is immutable; concurrent runs are
+safe under the §5 `Deps` rule; every run gets fresh state.
 
 **C2 — Dependency resolution.** For each declared input key (in order): look up the run
 container first, then the configured deps, else absent. Absent key delivers `nil`. This
@@ -221,8 +221,8 @@ container and deps (value-based, matching TS `hasUnresolved`).
 - Settlement error behavior is **uniform — one `Run`, one behavior** (a deliberate
   divergence: TS `end()` swallows the error when a handler exists — an artifact of sync
   JS having no other channel, not a designed contract):
-  - the handler runs, then the caller receives the active error, wrapped with pipeline
-    name and step index;
+  - with or without a handler, the caller receives the active error, wrapped with
+    pipeline name and step index (with a handler, the handler runs first);
   - the handler is an observer of a failed run, not a resolver;
   - a handler's non-nil return — or a recovered panic — joins the settlement error:
     `errors.Join(activeErr, handlerErr)`; the active error stays primary;
@@ -270,7 +270,15 @@ the run loop is iterative; step calls are not nested through continuations.
 
 - **The definition is immutable; the run is not shared.** Every `Run` call executes on
   the caller's goroutine with its own state. No locks, no executor goroutine, no shared
-  mutable state — safe for unlimited concurrent runs.
+  mutable state between runs — safe for unlimited concurrent runs (under the `Deps`
+  rule below).
+- **`Deps` is retained live, not copied.** The runner holds the caller's map by
+  reference; mutations between runs are observed by subsequent runs (TS parity: the
+  build copies the step arrays but not `functions` — Pipeline.ts:77-83; the contract
+  test *sees dependency updates made after the executor was built*). Mutating the map
+  concurrently with an active run is a data race and forbidden — synchronize mutations
+  between runs, as with any shared Go map. "Immutable runner" covers the definition
+  (steps, specs, handler), never the deps map.
 - Steps run **sequentially** on the run's goroutine. A step body may do anything — spawn
   goroutines, fan out I/O — but the *pipeline* advances one step at a time, exactly as
   SuperPipe does. Concurrent step execution is a non-goal (§8).
@@ -281,14 +289,18 @@ the run loop is iterative; step calls are not nested through continuations.
 
 ```go
 var (
-    ErrOutputName     = errors.New("superpipe: invalid output name")
-    ErrOutputKey      = errors.New("superpipe: output spec mismatch")
-    ErrAborted        = errors.New("superpipe: pipeline aborted")
-    ErrNoErrorHandler = errors.New("superpipe: pipeline failed with no error handler")
+    ErrOutputName = errors.New("superpipe: invalid output name")
+    ErrOutputKey  = errors.New("superpipe: output spec mismatch")
+    ErrAborted    = errors.New("superpipe: pipeline aborted")
 )
 
 type AbortedError struct{ Reason any }   // Unwrap() → ErrAborted; Reason from context.Cause
 ```
+
+There is deliberately **no** `ErrNoErrorHandler`: settlement is uniform (C8), so a failed
+run returns the active error whether or not a handler ran — there is no separate
+no-handler outcome to name. The TS `Pipeline error: ...` wrapper exists only to convert
+non-`Error` throwables, which Go cannot have.
 
 All engine-produced errors wrap a sentinel, so `errors.Is(err, superpipe.ErrAborted)` is
 the consumer-side check (the TS-side reason consumers catch exported classes).
