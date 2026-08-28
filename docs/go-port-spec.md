@@ -107,7 +107,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - Invocation-input specs (the `Input` **def** — not a step's `.In`, which declares
   container inputs): `Input("userId")` binds the first invocation arg;
   `Input("a", "b")` binds invocation args positionally; `InputFromObject("a", "b")`
-  picks keys from the first arg.
+  picks keys from the first arg. Every requested name is **always bound** — a missing
+  positional arg, or a nil/absent object source, binds present-with-nil, never a panic
+  or an error (test *maps an absent object-string input argument to undefined values*).
 
 ### 3.3 Running
 
@@ -301,13 +303,20 @@ the run loop is iterative; step calls are not nested through continuations.
 
 ```go
 var (
-    ErrOutputName = errors.New("superpipe: invalid output name")
-    ErrOutputKey  = errors.New("superpipe: output spec mismatch")
-    ErrAborted    = errors.New("superpipe: pipeline aborted")
+    ErrOutputName        = errors.New("superpipe: invalid output name")
+    ErrOutputKey         = errors.New("superpipe: output spec mismatch")
+    ErrAborted           = errors.New("superpipe: pipeline aborted")
+    ErrDependency        = errors.New("superpipe: dependency is not a function or boolean")
+    ErrInvalidDefinition = errors.New("superpipe: invalid pipeline definition")
 )
 
 type AbortedError struct{ Reason any }   // Unwrap() → ErrAborted; Reason from context.Cause
 ```
+
+Sentinel coverage: reserved/shadowed output names wrap `ErrOutputName`; spec/return
+shape failures wrap `ErrOutputKey`; cancellation is `AbortedError` → `ErrAborted`; the
+C2 dependency-resolution failure wraps `ErrDependency`; every construction violation
+returned by `Build` wraps `ErrInvalidDefinition`.
 
 There is deliberately **no** `ErrNoErrorHandler`: settlement is uniform (C8), so a failed
 run returns the active error whether or not a handler ran — there is no separate
