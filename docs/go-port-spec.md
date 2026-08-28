@@ -36,9 +36,9 @@ Principles that govern every design decision below:
 | `next` callback, retained continuations, `NextCallbacks` wrapper registry | **No `next`** — a step is `func(ctx, args []any) (any, error)` and blocks until it has its result | `next` existed to return control to JS's single-threaded event loop. TS advancement already pauses on a live `next` (`pending > 0` blocks the next step), so a blocked step reproduces the identical observable timeline — and the dual-channel misuse class becomes unrepresentable. |
 | Returned `Promise` desugars to `next` (thenable adoption) | A step just blocks and returns; no adoption machinery | Thenable desugar existed to unify callback and promise styles; Go has one style. |
 | Microtask-deferred success settlement + trampoline (#57) | Neither exists: completions are in-band and totally ordered, and the run loop is a plain `for` loop | Out-of-band completions were the JS condition; with in-band returns the ordering race and the recursion hazard are unrepresentable. |
-| JS single-threaded run-to-completion | **Single-goroutine executor per run** (§5). `Next.Call` is a channel send; all settlement happens on the run's loop goroutine | The 0.16 cancellation design leans on single-threaded settlement. The loop goroutine preserves that reasoning; without it, settlement races. |
+| JS single-threaded run-to-completion | Every `Run` executes inline on the caller's goroutine; completions are in-band step returns, so settlement needs no concurrency control at all | The 0.16 cancellation design leaned on single-threaded settlement; in-band returns make the concern vanish rather than needing an equivalent |
 | `end()` / `endAsync()` — two entry points; a blocking `end()` is impossible in JS (single-threaded event loop; async is contagious) | One blocking `Run(ctx, ...) (any, error)`, always inline on the caller's goroutine | Go blocks cheaply and has no sync/async function coloring — a promise is JS's only spelling of "wait", and `go` + channel is Go's, owned by the caller |
-| `undefined`/`null` dual | Single `nil` = "no value". A map key's absence (comma-ok) is the only "missing" | Go has one zero value for interfaces. "Present but nil" is not representable — documented, not silently approximated. |
+| `undefined`/`null` dual | `nil` is the one no-value, and **presence is representable**: comma-ok distinguishes present-with-nil from absent | Container membership and output merging are presence-based in TS (own keys; a present-`undefined` value binds); Go carries that with comma-ok. Input lookup returns the value either way; the optional-step skip check stays value-based (nil or absent both count unresolved), matching TS `hasUnresolved`. |
 | `__proto__` inert setter | Plain `map[string]any` assignment | Go maps have no prototype chain; the attack surface does not exist. |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
@@ -60,6 +60,8 @@ run, err := superpipe.Build("checkout",
     superpipe.Optional("enrich").In("user").Out("extra"),       // skipped when "enrich" is missing
 
     superpipe.Error("logFailure", onFailure).In("error"),       // exactly one
+
+    superpipe.Output("receipt"),                                 // runner output spec
 )
 // run is an immutable *Runner; err carries every construction violation
 ```
@@ -71,16 +73,18 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Step(name string, fn StepFunc)` — the only step type: `StepFunc func(ctx context.Context, args []any) (any, error)`.
   `args` arrives positionally in declared `In` order. The step blocks until it has its
   result; its return is the single continuation channel.
-- `End(outputSpec...)` returns an immutable `*Runner` after validating: single error
-  handler, no steps after it, input pipe first, all spec forms well-formed, no reserved
-  output names, no shadowing of configured deps (for specs whose keys are static).
+- `Build` returns an immutable `*Runner` after validating: single error handler, no
+  steps after it, input pipe first, all spec forms well-formed, no reserved output
+  names, no shadowing of configured deps (for specs whose keys are static).
+- The runner's **output spec is a definition** — `superpipe.Output(...)` among the defs
+  (conventionally last). Without one, `Run` returns nil (TS `end()` with no spec).
 
 ### 3.2 Spec constructors (one form, one meaning — mirrors Producer.ts)
 
 | Constructor | TS form | Runtime behavior |
 | --- | --- | --- |
 | `Out("user")` | `'user'` | Binds the **whole** return value to `user`. |
-| `Rename("src", "dst")` | `'src:dst'` | Binds whole return, stored as `dst`. |
+| `Rename("src", "dst")` | `'src:dst'` (bare) | **A one-key pick, not a whole-value bind**: return must be a map; picks key `src`, binds it as `dst`; missing `src` throws `OutputKeyError` (Producer.ts:69-71 classifies a bare rename as the pick form). |
 | `Pick("a", "b")` | `'{a, b}'` | Return must be a map; picks named keys. A missing key throws `OutputKeyError`. |
 | `Destructure("a", "b")` | `['a', 'b']` | Array return → positional binding (short array throws `OutputKeyError`); map return → picks by name (missing key throws). |
 | `Merge()` | `'{...}'` | Return must be a non-array map; merges every key into the container. Other return types throw `OutputKeyError`. |
@@ -88,9 +92,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - Keys inside `Pick`/`Destructure` accept `"dst"` or `"src:dst"` spellings (rename applies).
 - `...` is valid **only** as the entire `Merge()` spec. Any key spelling that targets `...`
   (`"..."`, `"...x"`, `"x:..."`) is a construction error.
-- **Error-path leniency (identical to TS):** when a continuation delivers `(err, value)`
-  together, the value is produced with shape checks relaxed — a malformed partial yields no
-  bindings instead of throwing, so the real error surfaces. The success path never relaxes.
+- **Error-path leniency (identical to TS):** when a step returns `(value, err)` together,
+  the value is produced with shape checks relaxed — a *structurally compatible* partial
+  binds its available entries and binds missing entries as present-with-nil (TS binds
+  them as present-with-`undefined`); only a structurally incompatible return (a scalar
+  against a pick spec, an object against a destructure array) yields no bindings. The
+  success path never relaxes.
 - **Value requirement:** `Pick`, `Destructure`, `Merge` require a non-nil return. A nil
   return on the success path throws `OutputKeyError` ("requires the pipe to return a
   value"). `Out`/`Rename`/no-spec accept nil.
@@ -109,8 +116,9 @@ every run). A step that blocks simply blocks the run, which is correct: the pipe
 advances one step at a time regardless. Callers who want concurrency own it: `go` plus a
 channel is the Go spelling of a future, so the library ships exactly one entry point.
 
-- `End("receipt")` → `out` is the single value. `End("a", "b")` → `out` is `[]any`.
-  `EndFields("a", "b")` → `out` is `map[string]any`. `End()` → `out` is nil.
+- `Output("receipt")` → `out` is the single value. `Output("a", "b")` → `out` is
+  `[]any`. `OutputFields("a", "b")` → `out` is `map[string]any`. No `Output` def → `out`
+  is nil.
 - Unknown-name fetch in the final fetcher returns the zero value (`nil`), as TS does.
 
 ### 3.4 Typed boundaries (generics policy)
@@ -146,10 +154,11 @@ Generics are used exactly where Go's type system permits them to help, and nowhe
 
 Each contract is the acceptance bar. §7 maps them to tests.
 
-**C1 — Definition shape.** Fluent construction: optional input pipe first, steps, at most
-one error handler last. Steps after the error handler: construction error. A second error
-handler: construction error. Input pipe after any step: construction error. The built
-`*Runner` is immutable and safe for unlimited concurrent runs; every run gets fresh state.
+**C1 — Definition shape.** Optional input def first, then steps, at most one error
+handler last, then the optional output def. Steps after the error handler: construction
+error. A second error handler: construction error. Input pipe after any step:
+construction error. The built `*Runner` is immutable and safe for unlimited concurrent
+runs; every run gets fresh state.
 
 **C2 — Dependency resolution.** For each declared input key (in order): look up the run
 container first, then the configured deps, else absent. Absent key delivers `nil`. This
@@ -186,20 +195,22 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
 
 **C6 — Flow control.** A boolean-resolved step (`Not(...)`, or an injected boolean dep)
 controls flow: `true` continues, `false` **halts** — no later step executes; the run
-settles successfully with the partial snapshot once `pending` drains. `Not` inverts the
-boolean **before** the decision. Booleans are ordinary data everywhere else: a `false`
-returned by a normal step binds as the value `false`, sync and async alike.
+settles successfully with the partial snapshot immediately (in-band returns leave
+nothing in flight). `Not` inverts the boolean **before** the decision. Booleans are
+ordinary data everywhere else: a `false` returned by a normal step binds as the value
+`false`.
 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
-when the resolved fn is absent or any declared non-`next` input is missing from both
-container and deps.
+when the resolved fn is absent or any declared input resolves to nil-or-absent in both
+container and deps (value-based, matching TS `hasUnresolved`).
 
 **C8 — Errors.**
-- Errors reach the engine via thrown step errors (sync), rejected `Async`, or
-  `next(err, ...)`.
+- Errors reach the engine as a step's non-nil error return, including recovered panics.
 - **First error wins** and is sticky: later errors are discarded; the run does not
-  un-error. Framework errors (`OutputName`, `OutputKey`) propagate as themselves, never
-  wrapped.
+  un-error. Framework errors (`OutputName`, `OutputKey`) are **definition errors**: they
+  propagate as themselves, never wrapped, and **never route to the error handler** — the
+  handler is reserved for runtime (step) failures (TS: a `{...}` shape violation throws
+  on the invoking stack with the handler unrun).
 - **One error handler**, invoked once, with the container snapshot (copy) plus the active
   error available under the key `error` (its declared inputs resolve against that
   snapshot). `next` may not appear in its inputs — construction error. Its return value
@@ -239,6 +250,15 @@ container and deps.
   returns — settlement is decided at step boundaries, like any ctx-aware blocking call.
   A caller needing immediate observation runs `Run` on its own goroutine; that pattern is
   the TS `endAsync` promise-rejects-at-abort behavior.
+- **Porting note** (TS contract: *rejects with `PipelineAbortedError` while a pipe's
+  promise never settles*): a step that ignores ctx and never returns keeps a blocking
+  `Run` blocked indefinitely — the same as any Go call that blocks without ctx, and
+  untestable by construction in blocking form. The contract ports as: the step is
+  ctx-aware, returns after the abort, and its result is discarded; `Run` then settles
+  with `AbortedError`. Serving the literal never-settling case would require `Run` to
+  abandon the caller, contradicting the blocking design (decision 2) — a caller who
+  needs that behavior wraps `Run` in a goroutine and abandons it, stranding the goroutine
+  exactly as TS strands the abandoned run.
 
 **C11 — Stack safety.** A pipeline of 100,000 synchronous steps runs in constant stack:
 the run loop is iterative; step calls are not nested through continuations.
