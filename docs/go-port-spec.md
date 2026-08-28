@@ -122,15 +122,19 @@ channel is the Go spelling of a future, so the library ships exactly one entry p
 - `Output("receipt")` → `out` is the single value. `Output("a", "b")` → `out` is
   `[]any`. `OutputFields("a", "b")` → `out` is `map[string]any`. No `Output` def → `out`
   is nil.
-- Unknown-name fetch in the final fetcher returns the zero value (`nil`), as TS does.
+- Final-output resolution uses the same lookup as C2 — the run container first, then
+  `Deps`: `Output("config")` with no step producing `config` returns the configured
+  dependency (test `resolves .end(output) from configured dependencies`). A name absent
+  from both returns `nil`.
 
 ### 3.4 Typed boundaries (generics policy)
 
 Generics are used exactly where Go's type system permits them to help, and nowhere else:
 
 - `Get[T any](args []any, i int) (T, error)` — the typed accessor for step bodies. A type
-  mismatch fails with the step name, argument position, and both types; no naked
-  assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
+  mismatch fails with the argument position and both types; the step and pipeline context
+  arrive via the engine's error wrapping (C8), since a `Get` failure is an ordinary error
+  returned from the step. No naked assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
   interface methods still cannot declare type parameters); `Get` and the spec
   constructors (`Pick`, `Destructure`, `Merge`) stay package-level **by choice** — they
   are values passed into `Build(defs...)`, not methods on a receiver, and package-level
@@ -157,10 +161,11 @@ Generics are used exactly where Go's type system permits them to help, and nowhe
 
 Each contract is the acceptance bar. §7 maps them to tests.
 
-**C1 — Definition shape.** Optional input def first, then steps, at most one error
-handler last, then the optional output def. Steps after the error handler: construction
-error. A second error handler: construction error. Input pipe after any step:
-construction error. The built `*Runner`'s definition is immutable; concurrent runs are
+**C1 — Definition shape.** Zero or more input defs first — all before the first step,
+accumulating (test `accumulates multiple input declarations` maps the same invocation
+args through two input defs) — then steps, at most one error handler last, then the
+optional output def. Steps after the error handler: construction error. A second error
+handler: construction error. An input def after any step: construction error. The built `*Runner`'s definition is immutable; concurrent runs are
 safe under the §5 `Deps` rule; every run gets fresh state.
 
 **C2 — Dependency resolution.** For each declared input key (in order): look up the run
