@@ -96,13 +96,16 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   the value is produced with shape checks relaxed — a *structurally compatible* partial
   binds its available entries and binds missing entries as present-with-nil (TS binds
   them as present-with-`undefined`); only a structurally incompatible return (a scalar
-  against a pick spec, an object against a destructure array) yields no bindings. The
-  success path never relaxes.
-- **Value requirement:** `Pick`, `Destructure`, `Merge` require a non-nil return. A nil
-  return on the success path throws `OutputKeyError` ("requires the pipe to return a
-  value"). `Out`/`Rename`/no-spec accept nil.
-- Input specs: `In("userId")` binds the first invocation arg; `In("a", "b")` binds
-  invocation args positionally; `InFromObject("a", "b")` picks keys from the first arg.
+  against `Rename`/`Pick`/`Destructure`; an array or scalar against `Merge`) yields no
+  bindings. The success path never relaxes.
+- **Value requirement:** `Rename`, `Pick`, `Destructure`, `Merge` all require a non-nil
+  return — every one is a picking/merging form, and `expectValue` exempts only the single
+  and none forms. A nil return on the success path throws `OutputKeyError` ("requires
+  the pipe to return a value"). `Out`/no-spec accept nil.
+- Invocation-input specs (the `Input` **def** — not a step's `.In`, which declares
+  container inputs): `Input("userId")` binds the first invocation arg;
+  `Input("a", "b")` binds invocation args positionally; `InputFromObject("a", "b")`
+  picks keys from the first arg.
 
 ### 3.3 Running
 
@@ -213,8 +216,8 @@ container and deps (value-based, matching TS `hasUnresolved`).
   on the invoking stack with the handler unrun).
 - **One error handler**, invoked once, with the container snapshot (copy) plus the active
   error available under the key `error` (its declared inputs resolve against that
-  snapshot). `next` may not appear in its inputs — construction error. Its return value
-  is ignored. A throwing/panicking handler does not re-enter error handling.
+  snapshot). A non-nil handler return — or a recovered panic — joins the settlement
+  error (below); it is never ignored. A failing handler does not re-enter error handling.
 - Settlement error behavior is **uniform — one `Run`, one behavior** (a deliberate
   divergence: TS `end()` swallows the error when a handler exists — an artifact of sync
   JS having no other channel, not a designed contract):
