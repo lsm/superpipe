@@ -80,9 +80,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, every `Input` def
   declaring **at least one** name (TS rejects the empty input array — Pipeline.ts:42-43),
-  every named-list constructor — `Pick`, `Destructure`, `InputFromObject`, `.InFields` —
-  declaring **at least one** key (TS's empty array collapses to the no-spec form, which
-  Go callers express by omitting the spec; a zero-key pick is a caller error), every
+  every named-list constructor — `Pick`, `Destructure`, `InputFromObject`, `.In`,
+  `.InFields` — declaring **at least one** key (TS's empty array collapses to the
+  no-spec form, which Go callers express by omitting the spec; a zero-key pick is a
+  caller error; the reference `Fetcher` rejects an empty input array outright,
+  Fetcher.ts:108-119 — and `.In()` must not be confusable with omitted `.In`, which
+  forwards the invocation args), every
   declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
   `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
