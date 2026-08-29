@@ -43,6 +43,7 @@ Principles that govern every design decision below:
 | Object-string members may be empty (`'{a,}'` binds an empty key — a comma-syntax artifact) | Empty members rejected in **every** spec form (`ErrInvalidDefinition`) | Go's constructors are typed, so an empty member is always a caller error, never a parse accident. |
 | JS strings index UTF-16 code units (`length` counts code units) | Go string positions and `length` are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing and the `length` key. |
 | JS property access on non-map sources exposes inherited prototype members (`source['toString']`, array `map`/`filter`) | Only canonical numeric indexes and `length` are honored on non-map sources; every other named property binds nil | Prototype members are unportable by construction and never useful data; honoring them would import JS's object model into Go. |
+| `Pick`/`Destructure` accept inherited properties (TS `source in result` walks the prototype chain — class-shaped returns pass; test at 1127-1140) | Output picking reads **map keys only** — own keys, no inheritance; structs and class-shaped values are shape errors | Go has no prototype chain; a step returning a typed shape converts it to a map (or binds the whole value with `Out`) |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
@@ -329,7 +330,10 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
   bound to the step's output names persists (the `value != null` merge guard,
   executor.ts:461-471); for `Rename`/`Pick`/`Destructure`/`Merge`, the §3.2 value
   requirement applies and a nil return throws `OutputKeyError` (`expectValue`,
-  executor.ts:394-397). `(nil, err)` → error path. `(value, err)` → the value is
+  executor.ts:394-397). `(nil, err)` → error path — and a **typed-nil** value returned
+  with an error follows this branch too: it is no value by the test above, so nothing
+  is produced and the error routes alone (a typed-nil map under `Pick` binds nothing,
+  never present-with-nil keys). `(value, err)` with a genuinely non-nil value → the value is
   produced and merged **first** (shape leniency per §3.2, reserved/shadow checks still
   enforced), then the error is recorded and routed — so an output-name violation in a
   partial escapes as a framework error and beats the returned error
