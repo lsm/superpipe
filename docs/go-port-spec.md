@@ -383,7 +383,11 @@ precedence over flow control**: a boolean-resolved step returning `(bool, err)`
 follows C5's `(value, err)` branch (lenient produce, then the error routes); it never
 halts, so a failing check cannot be mistaken for a successful halt. No later step executes on halt; the run
 settles successfully with the partial snapshot immediately (in-band returns leave
-nothing in flight). A halting `false` **creates no output bindings**: the producer
+nothing in flight). A **truthy** boolean-resolved step is not control-only: the
+boolean **is** the result — it is produced and merged before advancing, so
+`Call("enabled").Out("flag")` with `Deps{"enabled": true}` binds `flag = true`
+(executor.ts:277-279 assigns the boolean to `result`, and 393-397 advances with it).
+A halting `false` **creates no output bindings**: the producer
 never runs (executor.ts:392-402 branches before advancing), so prior bindings for the
 step's output names persist. `Not` inverts the boolean **before** the decision — and
 inverts **only** booleans: any other value passes through unchanged and is produced
