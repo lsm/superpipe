@@ -45,6 +45,7 @@ Principles that govern every design decision below:
 | JS property access on non-map sources exposes inherited prototype members (`source['toString']`, array `map`/`filter`) | Only canonical numeric indexes and `length` are honored on non-map sources; every other named property binds nil | Prototype members are unportable by construction and never useful data; honoring them would import JS's object model into Go. |
 | `Pick`/`Destructure` accept inherited properties (TS `source in result` walks the prototype chain — class-shaped returns pass; test at 1127-1140) | Output picking reads **map keys only** — own keys, no inheritance; structs and class-shaped values are shape errors | Go has no prototype chain; a step returning a typed shape converts it to a map (or binds the whole value with `Out`) |
 | Configured deps can be inherited through the object's prototype (shadow check sees them — test at 815-822); a present-`undefined` container value is "unresolved" for `Optional` | Shadow checks consider only the `Deps` map's own keys; present-with-nil is **resolved** (comma-ok presence is the unresolved test — C7) | Go maps have no prototype; and Go's single `nil` cannot split TS's `undefined`-vs-`null`, so the `null` semantics win |
+| TS `end()` returns its fetched outputs alongside a handled error | **Nil result on any non-nil error** (§3.3); partials are observable via the handler snapshot only | Go convention: a value paired with an error is not to be trusted |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
@@ -103,11 +104,14 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   `ErrorCall("next")` — **is** a construction error: in the reference the container
   owns `next` (executor.ts:518-521) and container-first resolution means a configured
   dep of that name is never selected; the callback-free port would silently resolve
-  it instead, changing behavior. `Output`/
-  `OutputFields` naming `next` **is** a construction error: the reference's final
-  fetch of `next` returns the continuation callback itself (executor.ts:518-521,
-  Pipeline.ts:74-95), which the callback-free port cannot represent — resolving
-  nil-or-dep instead would silently diverge, so `Build` rejects it, every
+  it instead, changing behavior. The **effective** (last, per C1) `Output`/
+  `OutputFields` definition naming `next` **is** a construction error: the
+  reference's final fetch of `next` returns the continuation callback itself
+  (executor.ts:518-521, Pipeline.ts:74-95), which the callback-free port cannot
+  represent — resolving nil-or-dep instead would silently diverge. A superseded
+  earlier `Output` is never interpreted (the reference builds its fetcher from the
+  last assignment only, index.ts:23-24), so an invalid superseded def is **not** an
+  error, every
   declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
   `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
