@@ -88,7 +88,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   no-spec form, which Go callers express by omitting the spec; a zero-key pick is a
   caller error; the reference `Fetcher` rejects an empty input array outright,
   Fetcher.ts:108-119 — and `.In()` must not be confusable with omitted `.In`, which
-  forwards the invocation args), every
+  forwards the invocation args; `OutputFields` likewise requires a field), and every
+  input declaration — `Input`, `.In`, `.InFields` members — rejecting the reserved
+  name `next` (decision 4 removed the callback; a declared `next` would silently
+  degrade into an ordinary lookup of nil-or-dep instead of failing), every
   declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
   `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
@@ -130,6 +133,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - Keys inside `Pick`/`Destructure` accept `"dst"` or `"src:dst"` spellings (rename applies).
 - `...` is valid **only** as the entire `Merge()` spec. Any key spelling that targets `...`
   (`"..."`, `"...x"`, `"x:..."`) is a construction error.
+- Destinations bind in **declaration order**; a duplicate destination is not rejected —
+  the last write wins (`Pick("a:x", "b:x")` binds `x` to the `b` entry, matching
+  Producer.ts:160-192's repeated `setEntry`).
 - **Error-path leniency (identical to TS):** when a step returns `(value, err)` together,
   the value is produced with shape checks relaxed — a *structurally compatible* partial
   binds its available entries and binds missing entries as present-with-nil (TS binds
