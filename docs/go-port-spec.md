@@ -190,8 +190,11 @@ Each contract is the acceptance bar. §7 maps them to tests.
 
 **C1 — Definition shape.** Zero or more input defs first — all before the first step,
 accumulating (test `accumulates multiple input declarations` maps the same invocation
-args through two input defs) — then steps, at most one error handler last, then the
-optional output def. Steps after the error handler: construction error. A second error
+args through two input defs) — then steps, at most one error handler last. The `Output`
+def may appear **anywhere** among the definitions (conventionally last); definitions
+after it are still collected and execute — TS tuples after an `end` tuple still process
+(test `processes tuples that follow an explicit end tuple`). Steps after the error
+handler: construction error. A second error
 handler: construction error. An input def after any step: construction error. The built `*Runner`'s definition is immutable; concurrent runs are
 safe under the §5 `Deps` rule; every run gets fresh state.
 
@@ -204,16 +207,17 @@ signature** — `func(context.Context, []any) (any, error)`; a named type with t
 underlying signature is accepted and converted (Go function types are not
 interchangeable, so no reflection/adaptation of arbitrary signatures exists). A bool
 remains a valid injected value — it is the C6 flow-control case, never invoked. An
-injected step — **`Optional` included** — that resolves to a **present** invalid value
-(a non-callable non-bool, or a callable of any other signature) fails the run **before
-invocation** with a `Dependency "<name>" is not a valid step function` error:
-framework-error class (C8), unwrapped, never routed to the error handler; `Optional`
-skips only absence (executor.ts:249 skips when the fn is undefined, and a present
-invalid value still throws). A **typed-nil callable** — a func value that is nil after
-conversion, non-nil as an interface but uninvocable — counts as unresolved: `Optional`
-skips it, a non-`Optional` step fails with the same `ErrDependency` error before
-invocation. (JS cannot express typed nils; the port defines the case rather than let
-invocation panic.)
+injected step that resolves to a present **non-nil** invalid value (a non-callable
+non-bool, or a callable of any other signature) fails the run **before invocation**
+with a `Dependency "<name>" is not a valid step function` error: framework-error class
+(C8), unwrapped, never routed to the error handler — **`Optional` included**
+(executor.ts:249: the optional skip tests `fn === undefined`; a present invalid value
+still throws). Absent, **plain nil**, and **typed nil** all count as unresolved — a Go
+nil interface is TS `undefined`, and an invocation input can write a present nil over a
+configured callable (§3.2): `Optional` skips; a non-`Optional` step fails with the same
+`ErrDependency` error before invocation. (A typed-nil callable — a func value that is
+nil after conversion, non-nil as an interface but uninvocable — would otherwise panic;
+JS cannot express it, so the port defines the case.)
 
 **C3 — Invocation inputs.** Input pipes map invocation args into the container per §3.2
 input rules. These merges are exempt from the shadow check (they are the invocation's own
