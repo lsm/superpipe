@@ -78,6 +78,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, no reserved output
   names, no shadowing of configured deps (for specs whose keys are static).
+- `Not` and `Optional` **compose** on injected boolean control:
+  `Optional(Not("check"))` is the optional inverted-boolean step (TS `!?check` /
+  `?!check`, whose prefixes strip independently in either order) — skipped when
+  unresolved, inverted when present. `Optional` accepts a name or a `Not(...)` def.
 - `ErrorCall(name string)` — the injected form of `Error`: the handler is resolved by
   name **at error time**, run container first then `Deps` (TS string-named error
   handlers, builder.ts:77-85); the resolved callable must match `ErrorHandlerFunc`'s
@@ -197,15 +201,17 @@ the same way at execution time. A resolved callable must have **exactly `StepFun
 signature** — `func(context.Context, []any) (any, error)`; a named type with that
 underlying signature is accepted and converted (Go function types are not
 interchangeable, so no reflection/adaptation of arbitrary signatures exists). A bool
-remains a valid injected value — it is the C6 flow-control case, never invoked. A
-non-`Optional` injected step that resolves to an absent value, to a non-callable
-non-bool, or to a callable of any other signature fails the run **before invocation**
-with a `Dependency "<name>" is not a valid step function` error: framework-error class
-(C8), unwrapped, never routed to the error handler. A **typed-nil callable** — a func
-value that is nil after conversion, non-nil as an interface but uninvocable — counts as
-unresolved: `Optional` skips it, a non-`Optional` step fails with the same
-`ErrDependency` error before invocation. (JS cannot express typed nils; the port defines
-the case rather than let invocation panic.)
+remains a valid injected value — it is the C6 flow-control case, never invoked. An
+injected step — **`Optional` included** — that resolves to a **present** invalid value
+(a non-callable non-bool, or a callable of any other signature) fails the run **before
+invocation** with a `Dependency "<name>" is not a valid step function` error:
+framework-error class (C8), unwrapped, never routed to the error handler; `Optional`
+skips only absence (executor.ts:249 skips when the fn is undefined, and a present
+invalid value still throws). A **typed-nil callable** — a func value that is nil after
+conversion, non-nil as an interface but uninvocable — counts as unresolved: `Optional`
+skips it, a non-`Optional` step fails with the same `ErrDependency` error before
+invocation. (JS cannot express typed nils; the port defines the case rather than let
+invocation panic.)
 
 **C3 — Invocation inputs.** Input pipes map invocation args into the container per §3.2
 input rules. These merges are exempt from the shadow check (they are the invocation's own
