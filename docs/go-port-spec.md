@@ -95,7 +95,11 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   name `next` (decision 4 removed the callback; declaring it would silently degrade
   into an ordinary lookup of nil-or-dep instead of failing). An `Input` def naming
   `next` is **not** a construction error — the reserved-name violation surfaces at
-  merge time when the invocation input lands, like the reference (C3/C4), every
+  merge time when the invocation input lands, like the reference (C3/C4). `Output`/
+  `OutputFields` naming `next` **is** a construction error: the reference's final
+  fetch of `next` returns the continuation callback itself (executor.ts:518-521,
+  Pipeline.ts:74-95), which the callback-free port cannot represent — resolving
+  nil-or-dep instead would silently diverge, so `Build` rejects it, every
   declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
   `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
