@@ -79,9 +79,11 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   steps after it, input pipe first, all spec forms well-formed, no reserved output
   names, no shadowing of configured deps (for specs whose keys are static).
 - `Not` and `Optional` **compose** on injected boolean control:
-  `Optional(Not("check"))` is the optional inverted-boolean step (TS `!?check` /
-  `?!check`, whose prefixes strip independently in either order) — skipped when
-  unresolved, inverted when present. `Optional` accepts a name or a `Not(...)` def.
+  `Optional(Not("check"))` is the optional inverted-boolean step (TS `!?check`) —
+  skipped when unresolved, inverted when present. `Optional` accepts a name or a
+  `Not(...)` def. (TS strips `!` then `?`, so only the `!?` order composes; `?!check`
+  strips the `?` and leaves a dep literally named `!check` — a quirk the sigil-free Go
+  spelling cannot reproduce by accident and does not port.)
 - `ErrorCall(name string)` — the injected form of `Error`: the handler is resolved by
   name **at error time**, run container first then `Deps` (TS string-named error
   handlers, builder.ts:77-85); the resolved callable must match `ErrorHandlerFunc`'s
