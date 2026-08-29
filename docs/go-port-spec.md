@@ -364,7 +364,10 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
   dual-channel misuse they guarded against cannot be written.
 
 **C6 — Flow control.** A boolean-resolved step (`Not(...)`, or an injected boolean dep)
-controls flow: `true` continues, `false` **halts** — no later step executes; the run
+controls flow: `true` continues, `false` **halts** — and an **error return takes
+precedence over flow control**: a boolean-resolved step returning `(bool, err)`
+follows C5's `(value, err)` branch (lenient produce, then the error routes); it never
+halts, so a failing check cannot be mistaken for a successful halt. No later step executes on halt; the run
 settles successfully with the partial snapshot immediately (in-band returns leave
 nothing in flight). A halting `false` **creates no output bindings**: the producer
 never runs (executor.ts:392-402 branches before advancing), so prior bindings for the
@@ -417,7 +420,10 @@ combined guard at executor.ts:249-252 runs before callable validation.
     `errors.Join(activeErr, handlerErr)`; the active error stays primary;
   - the handler never runs on an aborted run (C10).
 - A step that panics is recovered by the executor and routed like any thrown step error.
-  A recovered value that is an `error` routes as itself; any other value is converted
+  A recovered value that is an `error` routes as itself — **except**
+  `*runtime.PanicNilError` (Go ≥1.21's recovery of `panic(nil)`), which is classified
+  as the nil-panic case and wraps `ErrPanicked` like any other converted value, so
+  `errors.Is` finds it; any other value is converted
   to an error wrapping `ErrPanicked`, carrying the step name and the panic value —
   `panic("boom")` becomes a step error carrying `"boom"` — mirroring TS's falsey-throw
   wrap (`err || new Error('Pipe threw a falsey value')`). The same conversion applies
