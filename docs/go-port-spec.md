@@ -78,6 +78,11 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, no reserved output
   names, no shadowing of configured deps (for specs whose keys are static).
+- `ErrorCall(name string)` — the injected form of `Error`: the handler is resolved by
+  name **at error time**, run container first then `Deps` (TS string-named error
+  handlers, builder.ts:77-85); the resolved callable must match `ErrorHandlerFunc`'s
+  signature exactly, under the same C2 policy and `ErrDependency` failure. It still
+  counts as the pipeline's single error handler.
 - The runner's **output spec is a definition** — `superpipe.Output(...)` among the defs
   (conventionally last). Without one, `Run` returns nil (TS `end()` with no spec).
 
@@ -184,7 +189,11 @@ remains a valid injected value — it is the C6 flow-control case, never invoked
 non-`Optional` injected step that resolves to an absent value, to a non-callable
 non-bool, or to a callable of any other signature fails the run **before invocation**
 with a `Dependency "<name>" is not a valid step function` error: framework-error class
-(C8), unwrapped, never routed to the error handler.
+(C8), unwrapped, never routed to the error handler. A **typed-nil callable** — a func
+value that is nil after conversion, non-nil as an interface but uninvocable — counts as
+unresolved: `Optional` skips it, a non-`Optional` step fails with the same
+`ErrDependency` error before invocation. (JS cannot express typed nils; the port defines
+the case rather than let invocation panic.)
 
 **C3 — Invocation inputs.** Input pipes map invocation args into the container per §3.2
 input rules. These merges are exempt from the shadow check (they are the invocation's own
@@ -221,8 +230,8 @@ ordinary data everywhere else: a `false` returned by a normal step binds as the 
 `false`.
 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
-when the resolved fn is absent or any declared input resolves to nil-or-absent in both
-container and deps (value-based, matching TS `hasUnresolved`).
+when the resolved fn is absent or a typed nil (C2), or when any declared input resolves
+to nil-or-absent in both container and deps (value-based, matching TS `hasUnresolved`).
 
 **C8 — Errors.**
 - Errors reach the engine as a step's non-nil error return, including recovered panics.
@@ -235,6 +244,9 @@ container and deps (value-based, matching TS `hasUnresolved`).
   error available under the key `error` (its declared inputs resolve against that
   snapshot). An `Error(...)` def with **no** `.In` defaults to a single input: the active
   error (builder.ts:68-70; test *should trigger error when calling next with error*).
+  The handler itself may be injected — `ErrorCall("<name>")` resolves it by name at
+  error time, container first then `Deps`; a resolution failure or signature mismatch is
+  the C2 framework-error class.
   A non-nil handler return — or a recovered panic — joins the settlement
   error (below); it is never ignored. A failing handler does not re-enter error handling.
 - Settlement error behavior is **uniform — one `Run`, one behavior** (a deliberate
