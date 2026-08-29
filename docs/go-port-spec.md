@@ -607,7 +607,8 @@ current release (1.27) so no newer-Go idiom silently raises the requirement.
    uniform (C8).
 3. **Error handler returns an error.** `func(ctx context.Context, args []any) error`;
    a non-nil return — or a recovered panic — is joined onto the settlement error with
-   `errors.Join(activeErr, handlerErr)`. TS surfaces a *throwing* handler; Go surfaces
+   `errors.Join(settlementErr, handlerErr)` — the context-wrapped settlement error per
+   C8. TS surfaces a *throwing* handler; Go surfaces
    both panics and returned errors — swallowing either would be un-Go.
 4. **No `next` callback — steps block.** `next` is the callback-era artifact: it existed
    to hand control back to a single-threaded event loop, and the CLAUDE.md describes the
