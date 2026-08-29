@@ -76,10 +76,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}`.
   The step blocks until it has its result; its return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
-  steps after it, input pipe first, all spec forms well-formed, no reserved output
-  names. **Shadowing of configured deps is not a construction check** — it is enforced
-  at merge time against the live `Deps` map (C4), because `Deps` mutations between runs
-  are observed (§5).
+  steps after it, input pipe first, all spec forms well-formed. **Reserved output names
+  and dependency shadowing are not construction checks** — both are enforced at merge
+  time, when the produced output lands against that run's live `Deps` map (C4): the
+  reference builds a runner with a reserved output name and raises `OutputNameError`
+  only at run (tests *throws when a declared output writes the reserved name next* and
+  *throws when an invocation input writes the reserved name next*).
 - `Not` and `Optional` **compose** on injected boolean control:
   `Optional(Not("check"))` is the optional inverted-boolean step (TS `!?check`) —
   skipped when unresolved, inverted when present. `Optional` accepts a name or a
@@ -229,9 +231,9 @@ input rules. These merges are exempt from the shadow check (they are the invocat
 names), but not from the reserved-name check.
 
 **C4 — Output binding.** Merging produced keys into the container enforces:
-- key `next` → `OutputNameError` ("reserved"). Statically declared destinations are
-  checked at construction, and **every produced key is checked again as it lands** — a
-  `Merge()` map containing `next` at runtime is rejected (executor.ts:109-113).
+- key `next` → `OutputNameError` ("reserved") — a **merge-time** check on every produced
+  key, statically declared or `Merge()`-dynamic alike; construction does not reject
+  reserved destinations (executor.ts:109-113).
 - key equal to a **live** configured dep name → `OutputNameError` ("shadows a configured
   dependency"). All shadow checks — static and merge-form keys alike — run when the
   produced output **lands**, against that run's `Deps` map: a name added to `Deps` after
@@ -306,6 +308,10 @@ combined guard at executor.ts:249-252 runs before callable validation.
     `errors.Join(activeErr, handlerErr)`; the active error stays primary;
   - the handler never runs on an aborted run (C10).
 - A step that panics is recovered by the executor and routed like any thrown step error.
+  A recovered value that is an `error` routes as itself; any other value is converted
+  with the step name and the panic value — `panic("boom")` becomes a step error carrying
+  `"boom"` — mirroring TS's falsey-throw wrap (`err || new Error('Pipe threw a falsey
+  value')`). The same conversion applies to handler panics before `errors.Join`.
 
 **C9 — Settlement.**
 - The run settles when: all steps complete, a boolean halt fires, any error, or abort.
