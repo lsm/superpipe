@@ -420,9 +420,9 @@ combined guard at executor.ts:249-252 runs before callable validation.
   error when calling next with error*).
   The handler itself may be injected — `ErrorCall("<name>")` resolves it by name at
   error time, container first then `Deps`; a resolution failure or signature mismatch
-  **joins** the settlement error — `errors.Join(activeErr, lookupErr)`, exactly like a
-  handler's own failure — so the active error stays primary and `errors.Is` finds
-  either.
+  **joins** the settlement error — `errors.Join(settlementErr, lookupErr)`, with the
+  pipeline/step context already applied exactly like a handler's own failure — so the
+  active error stays primary and `errors.Is` finds either.
   A non-nil handler return — or a recovered panic — joins the settlement
   error (below); it is never ignored. A failing handler does not re-enter error handling.
 - Settlement error behavior is **uniform — one `Run`, one behavior** (a deliberate
