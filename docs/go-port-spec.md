@@ -41,7 +41,7 @@ Principles that govern every design decision below:
 | `undefined`/`null` dual | `nil` is the one no-value, and **presence is representable**: comma-ok distinguishes present-with-nil from absent | Container membership and output merging are presence-based in TS (own keys; a present-`undefined` value binds); Go carries that with comma-ok. Input lookup returns the value either way; the optional-step skip check stays value-based (nil or absent both count unresolved), matching TS `hasUnresolved`. |
 | `__proto__` inert setter | Plain `map[string]any` assignment | Go maps have no prototype chain; the attack surface does not exist. |
 | Object-string members may be empty (`'{a,}'` binds an empty key — a comma-syntax artifact) | Empty members rejected in **every** spec form (`ErrInvalidDefinition`) | Go's constructors are typed, so an empty member is always a caller error, never a parse accident. |
-| JS strings index UTF-16 code units | Go string positions are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing. |
+| JS strings index UTF-16 code units (`length` counts code units) | Go string positions and `length` are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing and the `length` key. |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
@@ -78,7 +78,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}`.
   The step blocks until it has its result; its return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
-  steps after it, input pipe first, all spec forms well-formed, every declared name —
+  steps after it, input pipe first, all spec forms well-formed, every `Input` def
+  declaring **at least one** name (TS rejects the empty input array — Pipeline.ts:42-43),
+  every declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
   `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
   functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc` value
@@ -146,9 +148,11 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   sources at that position (out-of-range binds present-with-nil); non-canonical
   spellings such as `"01"` are ordinary keys and bind nil on non-map sources, exactly
   like JS property access (`produceFromObject`'s `source[key]`, Producer.ts:230-232).
-  The key `length` binds the source's length (the JS array/string property). String
-  positions are **runes** (code points); JS indexes UTF-16 code units — the two differ
-  only for astral-plane characters (§2).
+  The key `length` binds the source's length — slices/arrays by element count,
+  strings by **rune count**, consistent with the rune position model.
+  String positions and lengths are runes (code points); JS uses UTF-16 code units —
+  the two differ only for astral-plane characters, for both indexing and `length`
+  (§2).
 - Step inputs have an object form: `.InFields("error", "key1")` resolves each name per
   C2 and delivers **one** `map[string]any` argument containing them (TS object-string
   inputs — test *delivers a result value alongside an error to the handler inputs*),
@@ -298,7 +302,10 @@ controls flow: `true` continues, `false` **halts** — no later step executes; t
 settles successfully with the partial snapshot immediately (in-band returns leave
 nothing in flight). A halting `false` **creates no output bindings**: the producer
 never runs (executor.ts:392-402 branches before advancing), so prior bindings for the
-step's output names persist. `Not` inverts the boolean **before** the decision. Booleans are
+step's output names persist. `Not` inverts the boolean **before** the decision — and
+inverts **only** booleans: any other value passes through unchanged and is produced
+normally (executor.ts:288-292 — a `Not` step's `StepFunc` returning a string binds
+that string and the run continues). Booleans are
 ordinary data everywhere else: a `false` returned by a normal step binds as the value
 `false`.
 
