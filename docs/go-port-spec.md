@@ -114,7 +114,8 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - **Value requirement:** `Rename`, `Pick`, `Destructure`, `Merge` all require a non-nil
   return — every one is a picking/merging form, and `expectValue` exempts only the single
   and none forms. A nil return on the success path throws `OutputKeyError` ("requires
-  the pipe to return a value"). `Out`/no-spec accept nil.
+  the pipe to return a value"). `Out`/no-spec accept nil — and a nil return creates **no
+  bindings**: the step advances and any prior value for its output names persists.
 - Invocation-input specs (the `Input` **def** — not a step's `.In`, which declares
   container inputs): `Input("userId")` binds the first invocation arg;
   `Input("a", "b")` binds invocation args positionally; `InputFromObject("a", "b")`
@@ -237,9 +238,14 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
   chooses. The pipeline advances one step at a time; no step starts while its predecessor
   is in flight.
 - The return is the single continuation channel:
-  `(value, nil)` → produce → merge → advance; `(nil, err)` → error path;
-  `(value, err)` → error path, with the value produced under error-path leniency (§3.2).
-  Returning `(nil, nil)` is legal data unless the spec requires a value (§3.2).
+  `(value, nil)` with non-nil value → produce → merge → advance. `(nil, nil)` → advance
+  **without producing bindings**: a nil return creates no bindings, and any prior value
+  bound to the step's output names persists (TS: the `value != null` merge guard,
+  executor.ts:461-471). `(nil, err)` → error path. `(value, err)` → the value is
+  produced and merged **first** (shape leniency per §3.2, reserved/shadow checks still
+  enforced), then the error is recorded and routed — so an output-name violation in a
+  partial escapes as a framework error and beats the returned error
+  (executor.ts:461-475).
 - TS's `next` callback, retained continuations, and thenable adoption have no Go spelling
   because they have no Go need: each existed to return control to a single-threaded event
   loop. The observable timeline is identical — TS's engine already pauses advancement on
