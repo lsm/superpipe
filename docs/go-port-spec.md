@@ -254,8 +254,9 @@ ordinary data everywhere else: a `false` returned by a normal step binds as the 
 `false`.
 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
-when the resolved fn is absent or a typed nil (C2), or when any declared input resolves
-to nil-or-absent in both container and deps (value-based, matching TS `hasUnresolved`).
+when the resolved fn is absent, plain nil, or a typed nil (C2), or when any declared
+input resolves to nil-or-absent in both container and deps (value-based, matching TS
+`hasUnresolved`).
 
 **C8 — Errors.**
 - Errors reach the engine as a step's non-nil error return, including recovered panics.
