@@ -190,9 +190,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   included), or a nil map (a nil source, per the collection rule above) — binds every
   requested name present-with-nil, mirroring JS property access on primitives; no
   source kind is an error. A key spelled as a **canonical JavaScript array index** —
-  `"0"` or decimal digits without leading zeros — indexes slice, array, and string
+  `"0"` or decimal digits without leading zeros, with value at most **2^32−2**
+  (ECMAScript's array-index bound; `"4294967295"` and larger are ordinary
+  properties) — indexes slice, array, and string
   sources at that position (out-of-range binds present-with-nil); non-canonical
-  spellings such as `"01"` are ordinary keys and bind nil on non-map sources, exactly
+  spellings such as `"01"` or over-cap values are ordinary keys and bind nil on
+  non-map sources, exactly
   like JS property access (`produceFromObject`'s `source[key]`, Producer.ts:230-232).
   The key `length` binds the source's length — slices/arrays by element count,
   strings by **rune count**, consistent with the rune position model.
