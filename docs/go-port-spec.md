@@ -89,7 +89,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   caller error; the reference `Fetcher` rejects an empty input array outright,
   Fetcher.ts:108-119 — and `.In()` must not be confusable with omitted `.In`, which
   forwards the invocation args; `OutputFields` likewise requires a field), every
-  **step** input declaration — `.In`/`.InFields` members — rejecting the reserved
+  **step** input declaration — `.In`/`.InFields` members, and `Error`/`ErrorCall`
+  handler inputs alike (the reference's `createErrorPipe` rejects a handler fetcher
+  with `hasNext`) — rejecting the reserved
   name `next` (decision 4 removed the callback; declaring it would silently degrade
   into an ordinary lookup of nil-or-dep instead of failing). An `Input` def naming
   `next` is **not** a construction error — the reserved-name violation surfaces at
@@ -280,8 +282,10 @@ nil after conversion, non-nil as an interface but uninvocable — would otherwis
 JS cannot express it, so the port defines the case.)
 
 **C3 — Invocation inputs.** Input pipes map invocation args into the container per §3.2
-input rules. These merges are exempt from the shadow check (they are the invocation's own
-names), but not from the reserved-name check.
+input rules, **in declaration order** — multiple input defs binding the same name are not
+rejected; the later definition's value wins (executor.ts runs `inputPipes` in order,
+each writing into the same container). These merges are exempt from the shadow check
+(they are the invocation's own names), but not from the reserved-name check.
 
 **C4 — Output binding.** Merging produced keys into the container enforces:
 - key `next` → `OutputNameError` ("reserved") — a **merge-time** check on every produced
