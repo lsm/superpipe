@@ -309,9 +309,10 @@ combined guard at executor.ts:249-252 runs before callable validation.
   - the handler never runs on an aborted run (C10).
 - A step that panics is recovered by the executor and routed like any thrown step error.
   A recovered value that is an `error` routes as itself; any other value is converted
-  with the step name and the panic value — `panic("boom")` becomes a step error carrying
-  `"boom"` — mirroring TS's falsey-throw wrap (`err || new Error('Pipe threw a falsey
-  value')`). The same conversion applies to handler panics before `errors.Join`.
+  to an error wrapping `ErrPanicked`, carrying the step name and the panic value —
+  `panic("boom")` becomes a step error carrying `"boom"` — mirroring TS's falsey-throw
+  wrap (`err || new Error('Pipe threw a falsey value')`). The same conversion applies
+  to handler panics before `errors.Join`.
 
 **C9 — Settlement.**
 - The run settles when: all steps complete, a boolean halt fires, any error, or abort.
@@ -378,6 +379,7 @@ var (
     ErrAborted           = errors.New("superpipe: pipeline aborted")
     ErrDependency        = errors.New("superpipe: dependency is not a valid step function")
     ErrInvalidDefinition = errors.New("superpipe: invalid pipeline definition")
+    ErrPanicked          = errors.New("superpipe: step panicked")
 )
 
 type AbortedError struct{ Reason any }   // Unwrap() → ErrAborted; Reason from context.Cause
@@ -386,7 +388,8 @@ type AbortedError struct{ Reason any }   // Unwrap() → ErrAborted; Reason from
 Sentinel coverage: reserved/shadowed output names wrap `ErrOutputName`; spec/return
 shape failures wrap `ErrOutputKey`; cancellation is `AbortedError` → `ErrAborted`; the
 C2 dependency-resolution failure wraps `ErrDependency`; every construction violation
-returned by `Build` wraps `ErrInvalidDefinition`.
+returned by `Build` wraps `ErrInvalidDefinition`; a converted non-error panic wraps
+`ErrPanicked` (an `error`-valued panic routes as itself, wrapping whatever it wraps).
 
 There is deliberately **no** `ErrNoErrorHandler`: settlement is uniform (C8), so a failed
 run returns the active error whether or not a handler ran — there is no separate
