@@ -88,10 +88,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   no-spec form, which Go callers express by omitting the spec; a zero-key pick is a
   caller error; the reference `Fetcher` rejects an empty input array outright,
   Fetcher.ts:108-119 — and `.In()` must not be confusable with omitted `.In`, which
-  forwards the invocation args; `OutputFields` likewise requires a field), and every
-  input declaration — `Input`, `.In`, `.InFields` members — rejecting the reserved
-  name `next` (decision 4 removed the callback; a declared `next` would silently
-  degrade into an ordinary lookup of nil-or-dep instead of failing), every
+  forwards the invocation args; `OutputFields` likewise requires a field), every
+  **step** input declaration — `.In`/`.InFields` members — rejecting the reserved
+  name `next` (decision 4 removed the callback; declaring it would silently degrade
+  into an ordinary lookup of nil-or-dep instead of failing). An `Input` def naming
+  `next` is **not** a construction error — the reserved-name violation surfaces at
+  merge time when the invocation input lands, like the reference (C3/C4), every
   declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
   `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
@@ -149,7 +151,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   bindings**: the step advances and any prior value for its output names persists.
 - Invocation-input specs (the `Input` **def** — not a step's `.In`, which declares
   container inputs): `Input("userId")` binds the first invocation arg;
-  `Input("a", "b")` binds invocation args positionally; `InputFromObject("a", "b")`
+  `Input("a", "b")` binds invocation args positionally — a duplicated name is not
+  rejected; the **last** write wins (`Input("x", "x")` binds the second argument,
+  matching repeated `setEntry`, Producer.ts:220-223); `InputFromObject("a", "b")`
   picks keys from the first arg. Every requested name is **always bound** — a missing
   positional arg, a nil/absent object source, or a **present source lacking a requested
   key** binds present-with-nil, never the map's zero value, a panic, or an error
@@ -296,7 +300,12 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
   chooses. The pipeline advances one step at a time; no step starts while its predecessor
   is in flight.
 - The return is the single continuation channel:
-  `(value, nil)` with non-nil value → produce → merge → advance. `(nil, nil)` → for
+  `(value, nil)` with non-nil value → produce → merge → advance. The no-value test is
+  **reflect-based**, not `value != nil` on the interface: a **typed nil** (a nil
+  pointer, map, slice, or func inside the interface) counts as **no value** — the same
+  rule as a plain nil return, no binding, prior value persists (mirrors JS's `null`
+  return and avoids the classic Go nil-interface trap; JS cannot express typed nils,
+  so the port defines the case). `(nil, nil)` → for
   `Out` and no-spec steps, advance **without producing bindings** — any prior value
   bound to the step's output names persists (the `value != null` merge guard,
   executor.ts:461-471); for `Rename`/`Pick`/`Destructure`/`Merge`, the §3.2 value
@@ -471,8 +480,11 @@ run returns the active error whether or not a handler ran — there is no separa
 no-handler outcome to name. The TS `Pipeline error: ...` wrapper exists only to convert
 non-`Error` throwables, which Go cannot have.
 
-All engine-produced errors wrap a sentinel, so `errors.Is(err, superpipe.ErrAborted)` is
-the consumer-side check (the TS-side reason consumers catch exported classes).
+All framework-generated errors wrap a sentinel from the coverage map above, so
+`errors.Is(err, superpipe.ErrAborted)` and friends are the consumer-side checks
+(replacing the TS-side `instanceof` on exported classes). Ordinary step failures are
+outside this guarantee: the engine's context wrapper adds no framework sentinel, and
+the step author's chain passes through intact.
 
 ## 7. Test plan
 
