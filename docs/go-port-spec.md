@@ -44,6 +44,7 @@ Principles that govern every design decision below:
 | JS strings index UTF-16 code units (`length` counts code units) | Go string positions and `length` are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing and the `length` key. |
 | JS property access on non-map sources exposes inherited prototype members (`source['toString']`, array `map`/`filter`) | Only canonical numeric indexes and `length` are honored on non-map sources; every other named property binds nil | Prototype members are unportable by construction and never useful data; honoring them would import JS's object model into Go. |
 | `Pick`/`Destructure` accept inherited properties (TS `source in result` walks the prototype chain — class-shaped returns pass; test at 1127-1140) | Output picking reads **map keys only** — own keys, no inheritance; structs and class-shaped values are shape errors | Go has no prototype chain; a step returning a typed shape converts it to a map (or binds the whole value with `Out`) |
+| Configured deps can be inherited through the object's prototype (shadow check sees them — test at 815-822); a present-`undefined` container value is "unresolved" for `Optional` | Shadow checks consider only the `Deps` map's own keys; present-with-nil is **resolved** (comma-ok presence is the unresolved test — C7) | Go maps have no prototype; and Go's single `nil` cannot split TS's `undefined`-vs-`null`, so the `null` semantics win |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
@@ -365,8 +366,13 @@ ordinary data everywhere else: a `false` returned by a normal step binds as the 
 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
 when the resolved fn is absent, plain nil, or a typed nil (C2), or when any declared
-input resolves to nil-or-absent in both container and deps (value-based, matching TS
-`hasUnresolved`). The skip test — fn unresolved **or any declared input unresolved** —
+input is **absent** from both container and deps. Input presence is comma-ok
+**presence-based**, not nil-based: TS `hasUnresolved` treats only `undefined` as
+unresolved — an explicit `null` input is resolved and the step runs (`Fetcher.ts:166-170`)
+— and a Go present-with-nil key is that `null`, so it does **not** skip. (TS's
+present-`undefined` — bound on the error path — is also unresolved there, but Go
+cannot represent it distinctly from `null`; the port resolves both, §2.) The skip
+test — fn unresolved **or any declared input unresolved** —
 is evaluated **before** dependency-type validation: `Optional("handler").In("missing")`
 with `handler = 42` and `missing` absent skips rather than failing, because the
 combined guard at executor.ts:249-252 runs before callable validation.
@@ -436,7 +442,10 @@ combined guard at executor.ts:249-252 runs before callable validation.
   the handler runs, during its execution, or after — does not replace the active
   error, and the handler runs to completion with its failures joining per C8. The
   handler is **not** a cancellation observation point; `AbortedError` settles only
-  when cancellation is observed with **no** active error.
+  when cancellation is observed with **no** active error. Accordingly the handler
+  receives a **detached context** — `context.WithoutCancel(ctx)` — so a handler
+  selecting on `Done()` cannot abort itself and the "changes nothing" guarantee holds
+  mechanically, not just by convention (values in ctx are preserved).
 - An operation already in flight is not preempted — Go cannot interrupt a running
   goroutine. Steps should pass ctx into their own I/O so they stop early; the engine's
   guarantee is about what starts and what lands, not about preempting user code.
