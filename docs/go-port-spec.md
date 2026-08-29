@@ -305,12 +305,15 @@ non-bool, or a callable of any other signature) fails the run **before invocatio
 with a `Dependency "<name>" is not a valid step function` error: framework-error class
 (C8), unwrapped, never routed to the error handler — **`Optional` included**
 (executor.ts:249: the optional skip tests `fn === undefined`; a present invalid value
-still throws). Absent, **plain nil**, and **typed nil** all count as unresolved — a Go
-nil interface is TS `undefined`, and an invocation input can write a present nil over a
-configured callable (§3.2): `Optional` skips; a non-`Optional` step fails with the same
-`ErrDependency` error before invocation. (A typed-nil callable — a func value that is
-nil after conversion, non-nil as an interface but uninvocable — would otherwise panic;
-JS cannot express it, so the port defines the case.)
+still throws). Resolution of the callable is **presence-based**, like C7's inputs: an
+**absent** name is TS `undefined` — `Optional` skips, a non-`Optional` step fails with
+`ErrDependency`. A **present plain nil** is TS `null`, which fails the `fn ===
+undefined` guard and reaches callable validation — so it fails with `ErrDependency`,
+`Optional` included (an invocation input writing nil over a configured callable makes
+the step fail, exactly like TS). A **present typed nil** (a func value that is nil
+after conversion — non-nil as an interface but uninvocable) is unrepresentable in JS;
+the port treats it as unresolved to avoid a panic: `Optional` skips, a non-`Optional`
+step fails with `ErrDependency`.
 
 **C3 — Invocation inputs.** Input pipes map invocation args into the container per §3.2
 input rules, **in declaration order** — multiple input defs binding the same name are not
@@ -524,7 +527,9 @@ Sentinel coverage: reserved/shadowed output names wrap `ErrOutputName`; spec/ret
 shape failures wrap `ErrOutputKey`; cancellation is `AbortedError` → `ErrAborted`; the
 C2 dependency-resolution failure wraps `ErrDependency`; every construction violation
 returned by `Build` wraps `ErrInvalidDefinition`; a converted non-error panic wraps
-`ErrPanicked` (an `error`-valued panic routes as itself, wrapping whatever it wraps).
+`ErrPanicked` (an `error`-valued panic routes as itself, wrapping whatever it wraps —
+**except** `*runtime.PanicNilError`, which is the nil-panic case and wraps
+`ErrPanicked`, C8).
 The guarantee covers these **framework-generated categories only**: an ordinary step
 failure is the step author's error, and the engine's pipeline/step context wraps it
 with `%w` (the step's own chain, sentinel or not, stays intact) — no framework
