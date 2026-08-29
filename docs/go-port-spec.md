@@ -80,7 +80,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, every `Input` def
   declaring **at least one** name (TS rejects the empty input array — Pipeline.ts:42-43),
-  every declared name —
+  every named-list constructor — `Pick`, `Destructure`, `InputFromObject`, `.InFields` —
+  declaring **at least one** key (TS's empty array collapses to the no-spec form, which
+  Go callers express by omitting the spec; a zero-key pick is a caller error), every
+  declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
   `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
   functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc` value
@@ -152,7 +155,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   strings by **rune count**, consistent with the rune position model.
   String positions and lengths are runes (code points); JS uses UTF-16 code units —
   the two differ only for astral-plane characters, for both indexing and `length`
-  (§2).
+  (§2). An indexed string position binds the **one-rune string** at that position
+  (`string(r)`, matching JS `source[key]`'s string result — never a bare `rune` or
+  `byte`).
 - Step inputs have an object form: `.InFields("error", "key1")` resolves each name per
   C2 and delivers **one** `map[string]any` argument containing them (TS object-string
   inputs — test *delivers a result value alongside an error to the handler inputs*),
