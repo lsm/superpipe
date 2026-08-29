@@ -124,8 +124,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   container inputs): `Input("userId")` binds the first invocation arg;
   `Input("a", "b")` binds invocation args positionally; `InputFromObject("a", "b")`
   picks keys from the first arg. Every requested name is **always bound** — a missing
-  positional arg, or a nil/absent object source, binds present-with-nil, never a panic
-  or an error (test *maps an absent object-string input argument to undefined values*).
+  positional arg, a nil/absent object source, or a **present source lacking a requested
+  key** binds present-with-nil, never the map's zero value, a panic, or an error
+  (Producer.produceFromObject's `source[key]` → `undefined`; test *maps an absent
+  object-string input argument to undefined values*).
 - Step inputs have an object form: `.InFields("error", "key1")` resolves each name per
   C2 and delivers **one** `map[string]any` argument containing them (TS object-string
   inputs — test *delivers a result value alongside an error to the handler inputs*),
@@ -195,7 +197,10 @@ Each contract is the acceptance bar. §7 maps them to tests.
 
 **C1 — Definition shape.** Zero or more input defs first — all before the first step,
 accumulating (test `accumulates multiple input declarations` maps the same invocation
-args through two input defs) — then steps, at most one error handler last. The `Output`
+args through two input defs). The error handler does not count as a step: an input def
+after `Error` but before any step is accepted, matching `Pipeline.input`'s
+`pipes.length > 0` guard (Pipeline.ts:38-46). Then steps, at most one error handler
+last. The `Output`
 def may appear **anywhere** among the definitions (conventionally last); definitions
 after it are still collected and execute — TS tuples after an `end` tuple still process
 (test `processes tuples that follow an explicit end tuple`). Repeated `Output` defs are
@@ -379,7 +384,7 @@ var (
     ErrAborted           = errors.New("superpipe: pipeline aborted")
     ErrDependency        = errors.New("superpipe: dependency is not a valid step function")
     ErrInvalidDefinition = errors.New("superpipe: invalid pipeline definition")
-    ErrPanicked          = errors.New("superpipe: step panicked")
+    ErrPanicked          = errors.New("superpipe: panic recovered")
 )
 
 type AbortedError struct{ Reason any }   // Unwrap() → ErrAborted; Reason from context.Cause
