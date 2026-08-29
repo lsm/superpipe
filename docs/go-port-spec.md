@@ -189,11 +189,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   **non-nil** string-keyed map — a scalar, struct, pointer (typed-nil pointers
   included), or a nil map (a nil source, per the collection rule above) — binds every
   requested name present-with-nil, mirroring JS property access on primitives; no
-  source kind is an error. A key spelled as a **canonical JavaScript array index** —
-  `"0"` or decimal digits without leading zeros, with value at most **2^32−2**
-  (ECMAScript's array-index bound; `"4294967295"` and larger are ordinary
-  properties) — indexes slice, array, and string
-  sources at that position (out-of-range binds present-with-nil); non-canonical
+  source kind is an error. A key spelled as a **canonical numeric index string** —
+  `"0"` or decimal digits without leading zeros — indexes the source at that
+  position: for **slices and arrays** the value is capped at **2^32−2** (ECMAScript's
+  array-index bound; `"4294967295"` and larger are ordinary properties), while
+  **strings** accept any canonical index within their rune count (string exotics
+  carry no array ceiling); out-of-range binds present-with-nil. Non-canonical
   spellings such as `"01"` or over-cap values are ordinary keys and bind nil on
   non-map sources, exactly
   like JS property access (`produceFromObject`'s `source[key]`, Producer.ts:230-232).
@@ -424,7 +425,11 @@ combined guard at executor.ts:249-252 runs before callable validation.
   defaults to a single input: the active error (builder.ts:68-70; test *should trigger
   error when calling next with error*).
   The handler itself may be injected — `ErrorCall("<name>")` resolves it by name at
-  error time, container first then `Deps`; a resolution failure or signature mismatch
+  error time from the **pre-snapshot run container** first, then `Deps` — never from
+  the handler input snapshot, so `ErrorCall("error")` backed by `Deps{"error": ...}`
+  finds the configured handler, not the active error (builder.ts:79-84 resolves from
+  the live container; the error enters only the separate input snapshot); a
+  resolution failure or signature mismatch
   **joins** the settlement error — `errors.Join(settlementErr, lookupErr)`, with the
   pipeline/step context already applied exactly like a handler's own failure — so the
   active error stays primary and `errors.Is` finds either.
