@@ -77,7 +77,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   The step blocks until it has its result; its return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, no reserved output
-  names, no shadowing of configured deps (for specs whose keys are static).
+  names. **Shadowing of configured deps is not a construction check** — it is enforced
+  at merge time against the live `Deps` map (C4), because `Deps` mutations between runs
+  are observed (§5).
 - `Not` and `Optional` **compose** on injected boolean control:
   `Optional(Not("check"))` is the optional inverted-boolean step (TS `!?check`) —
   skipped when unresolved, inverted when present. `Optional` accepts a name or a
@@ -227,9 +229,12 @@ input rules. These merges are exempt from the shadow check (they are the invocat
 names), but not from the reserved-name check.
 
 **C4 — Output binding.** Merging produced keys into the container enforces:
-- key `next` → `OutputNameError` ("reserved").
-- key equal to a configured dep name (static keys only) → `OutputNameError` ("shadows a
-  configured dependency"). Merge-form keys are checked as they land.
+- key `next` → `OutputNameError` ("reserved") — a construction-time check.
+- key equal to a **live** configured dep name → `OutputNameError` ("shadows a configured
+  dependency"). All shadow checks — static and merge-form keys alike — run when the
+  produced output **lands**, against that run's `Deps` map: a name added to `Deps` after
+  `Build` shadows retroactively; one removed before `Run` no longer does
+  (executor.ts:108-120, consistent with §5's live `Deps`).
 Merge overwrites prior values; a later step may rebind any non-reserved name.
 
 **C5 — Step execution model.**
@@ -264,7 +269,10 @@ ordinary data everywhere else: a `false` returned by a normal step binds as the 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
 when the resolved fn is absent, plain nil, or a typed nil (C2), or when any declared
 input resolves to nil-or-absent in both container and deps (value-based, matching TS
-`hasUnresolved`).
+`hasUnresolved`). The skip test — fn unresolved **or any declared input unresolved** —
+is evaluated **before** dependency-type validation: `Optional("handler").In("missing")`
+with `handler = 42` and `missing` absent skips rather than failing, because the
+combined guard at executor.ts:249-252 runs before callable validation.
 
 **C8 — Errors.**
 - Errors reach the engine as a step's non-nil error return, including recovered panics.
