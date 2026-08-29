@@ -75,7 +75,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Step(name string, fn StepFunc)` — the only step type: `StepFunc func(ctx context.Context, args []any) (any, error)`.
   `args` arrives positionally in declared `In` order. A step with **no** `.In` receives
   the invocation args verbatim (TS `fetchNothing` — test *passes the invocation arguments
-  to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}`.
+  to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}` —
+  as a **fresh slice per step**: TS pipes receive positional values and can never mutate
+  or retain a shared argument array, so the Go port copies; a step mutating or retaining
+  its `args` must not affect any other step or race a later run observation (§5).
   The step blocks until it has its result; its return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, every `Input` def
@@ -452,6 +455,10 @@ shape failures wrap `ErrOutputKey`; cancellation is `AbortedError` → `ErrAbort
 C2 dependency-resolution failure wraps `ErrDependency`; every construction violation
 returned by `Build` wraps `ErrInvalidDefinition`; a converted non-error panic wraps
 `ErrPanicked` (an `error`-valued panic routes as itself, wrapping whatever it wraps).
+The guarantee covers these **framework-generated categories only**: an ordinary step
+failure is the step author's error, and the engine's pipeline/step context wraps it
+with `%w` (the step's own chain, sentinel or not, stays intact) — no framework
+sentinel is attached to it.
 
 There is deliberately **no** `ErrNoErrorHandler`: settlement is uniform (C8), so a failed
 run returns the active error whether or not a handler ran — there is no separate
