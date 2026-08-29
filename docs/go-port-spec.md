@@ -92,10 +92,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   no-spec form, which Go callers express by omitting the spec; a zero-key pick is a
   caller error; the reference `Fetcher` rejects an empty input array outright,
   Fetcher.ts:108-119 — and `.In()` must not be confusable with omitted `.In`, which
-  forwards the invocation args; `Output`/`OutputFields` likewise requires a name —
-  but **all** final-output validation, cardinality and `next` alike, applies only to
-  the **effective** (last) definition: a superseded `Output` is never constructed or
-  validated, so `Output("")` followed by a valid `Output("x")` builds), every
+  forwards the invocation args; the effective (last) `Output`/`OutputFields`
+  definition requires a name — except the **bare reset form** `Output()` with zero
+  names, which is valid and clears the final output (C1) — and **all** final-output
+  validation, cardinality and `next` alike, applies only to that effective
+  definition: a superseded `Output` is never constructed or validated, so
+  `Output("")` followed by a valid `Output("x")` builds), every
   **step** input declaration — `.In`/`.InFields` members, and `Error`/`ErrorCall`
   handler inputs alike (the reference's `createErrorPipe` rejects a handler fetcher
   with `hasNext`) — rejecting the reserved
@@ -406,9 +408,12 @@ combined guard at executor.ts:249-252 runs before callable validation.
   handler is reserved for runtime (step) failures (TS: a `{...}` shape violation throws
   on the invoking stack with the handler unrun).
 - **One error handler**, invoked once, with the container snapshot (copy); the active
-  error is available under the key `error` as the **original** object the step
-  returned/panicked with — not the engine's context wrapper — so identity comparisons
-  and messages hold (executor.ts:473-503 passes `state.activeError` verbatim); the
+  error is available under the key `error` as the **original error** — the exact
+  object when the step returned an error or panicked with an `error` value; a
+  non-error panic value arrives as its **converted** `ErrPanicked` error (C8's
+  conversion happens before routing, so the handler never sees a bare non-error
+  value) — and never the engine's context wrapper, so identity comparisons and
+  messages hold (executor.ts:473-503 passes `state.activeError` verbatim); the
   pipeline/step `%w` wrapper applies only to the error `Run` returns (its declared
   inputs resolve against that snapshot). An `Error(...)` def with **no** `.In`
   defaults to a single input: the active error (builder.ts:68-70; test *should trigger
@@ -428,7 +433,9 @@ combined guard at executor.ts:249-252 runs before callable validation.
     pipeline name and step index (with a handler, the handler runs first);
   - the handler is an observer of a failed run, not a resolver;
   - a handler's non-nil return — or a recovered panic — joins the settlement error:
-    `errors.Join(activeErr, handlerErr)`; the active error stays primary;
+    `errors.Join(settlementErr, handlerErr)` — the settlement error **with its
+    pipeline/step context already applied**, not the raw snapshot value, so every
+    failed `Run` carries context; the active error stays primary;
   - the handler never runs on an aborted run (C10).
 - A step that panics is recovered by the executor and routed like any thrown step error.
   Panic detection uses a **completed-flag**, not the recovered value alone: a `done`
@@ -460,9 +467,12 @@ combined guard at executor.ts:249-252 runs before callable validation.
 - The run settles with `AbortedError{Reason: context.Cause(ctx)}`. Cancellation **never**
   routes to the error handler.
 - **The guarantees are defined at observable boundaries.** The engine observes
-  cancellation at exactly three points — **before processing invocation inputs** (a
+  cancellation at exactly four points — **before processing invocation inputs** (a
   pre-cancelled ctx aborts before any `Input` def runs; a step-free pipeline still
-  observes this point), before each step starts, and when a step's return lands. A
+  observes this point), before each step starts, when a step's return lands, and
+  **before successful settlement** — so a run cancelled after the pre-input check but
+  during input processing, or after the final step of a step-free pipeline, settles
+  with `AbortedError` instead of success. A
   step starts only if cancellation has not been observed at its entry boundary; a
   result is merged only if cancellation has not been observed when it lands; once
   observed, `aborted` is terminal. Because `Run` executes inline with no
