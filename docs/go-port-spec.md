@@ -250,8 +250,9 @@ Generics are used exactly where Go's type system permits them to help, and nowhe
   arrive via the engine's error wrapping (C8), since a `Get` failure is an ordinary error
   returned from the step. An out-of-range index (negative or `i >= len(args)`) returns an
   error naming the position and the length — never a panic — routed as an ordinary step
-  error. A plain-nil argument yields the **zero value** of a nilable `T` (pointer, map,
-  slice, channel, func, interface) with a nil error — `Get[*User](args, 0)` on a
+  error. A plain-nil argument yields the **zero value** of a nilable `T` (pointer,
+  `unsafe.Pointer`, map, slice, channel, func, interface) with a nil error —
+  `Get[*User](args, 0)` on a
   missing input gives `nil, nil` — and is a type mismatch for non-nilable `T`
   (`int`, `string`, structs), mirroring C2's nil-for-absent delivery.
   No naked assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
@@ -345,7 +346,8 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
 - The return is the single continuation channel:
   `(value, nil)` with non-nil value → produce → merge → advance. The no-value test is
   **reflect-based**, not `value != nil` on the interface: a **typed nil** (a nil
-  pointer, map, slice, channel, or func inside the interface) counts as **no value** — the same
+  pointer, `unsafe.Pointer`, map, slice, channel, or func inside the interface —
+  `reflect.UnsafePointer` is distinct from `reflect.Ptr`) counts as **no value** — the same
   rule as a plain nil return (mirrors JS's `null` return and avoids the classic Go
   nil-interface trap; JS cannot express typed nils, so the port defines the case):
   for `Out`/no-spec steps, no binding and the prior value persists; under
