@@ -42,7 +42,7 @@ Principles that govern every design decision below:
 | `__proto__` inert setter | Plain `map[string]any` assignment | Go maps have no prototype chain; the attack surface does not exist. |
 | Object-string members may be empty (`'{a,}'` binds an empty key — a comma-syntax artifact) | Empty members rejected in **every** spec form (`ErrInvalidDefinition`) | Go's constructors are typed, so an empty member is always a caller error, never a parse accident. |
 | JS strings index UTF-16 code units (`length` counts code units) | Go string positions and `length` are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing and the `length` key. |
-| JS property access on non-map sources exposes inherited prototype members (`source['toString']`, array `map`/`filter`) | Only canonical numeric indexes and `length` are honored on non-map sources; every other named property binds nil | Prototype members are unportable by construction and never useful data; honoring them would import JS's object model into Go. |
+| JS property access exposes inherited prototype members on **every** source — `source['toString']` works on plain objects too (`Producer.ts:228-233`) | Go reads **own keys only**, everywhere: map keys on map sources, canonical numeric indexes and `length` on slices/arrays/strings; every other name binds nil | Prototype members are unportable by construction and never useful data; honoring them would import JS's object model into Go. |
 | `Pick`/`Destructure` accept inherited properties (TS `source in result` walks the prototype chain — class-shaped returns pass; test at 1127-1140) | Output picking reads **map keys only** — own keys, no inheritance; structs and class-shaped values are shape errors | Go has no prototype chain; a step returning a typed shape converts it to a map (or binds the whole value with `Out`) |
 | Configured deps can be inherited through the object's prototype (shadow check sees them — test at 815-822); a present-`undefined` container value is "unresolved" for `Optional` | Shadow checks consider only the `Deps` map's own keys; present-with-nil is **resolved** (comma-ok presence is the unresolved test — C7) | Go maps have no prototype; and Go's single `nil` cannot split TS's `undefined`-vs-`null`, so the `null` semantics win |
 | TS `end()` returns its fetched outputs alongside a handled error | **Nil result on any non-nil error** (§3.3); partials are observable via the handler snapshot only | Go convention: a value paired with an error is not to be trusted |
@@ -92,7 +92,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   no-spec form, which Go callers express by omitting the spec; a zero-key pick is a
   caller error; the reference `Fetcher` rejects an empty input array outright,
   Fetcher.ts:108-119 — and `.In()` must not be confusable with omitted `.In`, which
-  forwards the invocation args; `OutputFields` likewise requires a field), every
+  forwards the invocation args; `Output`/`OutputFields` likewise requires a name —
+  but **all** final-output validation, cardinality and `next` alike, applies only to
+  the **effective** (last) definition: a superseded `Output` is never constructed or
+  validated, so `Output("")` followed by a valid `Output("x")` builds), every
   **step** input declaration — `.In`/`.InFields` members, and `Error`/`ErrorCall`
   handler inputs alike (the reference's `createErrorPipe` rejects a handler fetcher
   with `hasNext`) — rejecting the reserved
@@ -402,10 +405,14 @@ combined guard at executor.ts:249-252 runs before callable validation.
   propagate as themselves, never wrapped, and **never route to the error handler** — the
   handler is reserved for runtime (step) failures (TS: a `{...}` shape violation throws
   on the invoking stack with the handler unrun).
-- **One error handler**, invoked once, with the container snapshot (copy) plus the active
-  error available under the key `error` (its declared inputs resolve against that
-  snapshot). An `Error(...)` def with **no** `.In` defaults to a single input: the active
-  error (builder.ts:68-70; test *should trigger error when calling next with error*).
+- **One error handler**, invoked once, with the container snapshot (copy); the active
+  error is available under the key `error` as the **original** object the step
+  returned/panicked with — not the engine's context wrapper — so identity comparisons
+  and messages hold (executor.ts:473-503 passes `state.activeError` verbatim); the
+  pipeline/step `%w` wrapper applies only to the error `Run` returns (its declared
+  inputs resolve against that snapshot). An `Error(...)` def with **no** `.In`
+  defaults to a single input: the active error (builder.ts:68-70; test *should trigger
+  error when calling next with error*).
   The handler itself may be injected — `ErrorCall("<name>")` resolves it by name at
   error time, container first then `Deps`; a resolution failure or signature mismatch
   **joins** the settlement error — `errors.Join(activeErr, lookupErr)`, exactly like a
