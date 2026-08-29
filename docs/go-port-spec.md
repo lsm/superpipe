@@ -76,7 +76,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}`.
   The step blocks until it has its result; its return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
-  steps after it, input pipe first, all spec forms well-formed. **Reserved output names
+  steps after it, input pipe first, all spec forms well-formed, and directly supplied
+  step functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc`
+  value is knowably broken at construction and fails with `ErrInvalidDefinition`, not a
+  runtime panic. **Reserved output names
   and dependency shadowing are not construction checks** — both are enforced at merge
   time, when the produced output lands against that run's live `Deps` map (C4): the
   reference builds a runner with a reserved output name and raises `OutputNameError`
@@ -127,7 +130,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   positional arg, a nil/absent object source, or a **present source lacking a requested
   key** binds present-with-nil, never the map's zero value, a panic, or an error
   (Producer.produceFromObject's `source[key]` → `undefined`; test *maps an absent
-  object-string input argument to undefined values*).
+  object-string input argument to undefined values*). A present **non-map** source
+  (scalar, struct, pointer — including typed-nil pointers and nil maps) also binds
+  every requested name present-with-nil, mirroring JS property access on primitives;
+  only string-keyed maps are read for values, and no source kind is an error.
 - Step inputs have an object form: `.InFields("error", "key1")` resolves each name per
   C2 and delivers **one** `map[string]any` argument containing them (TS object-string
   inputs — test *delivers a result value alongside an error to the handler inputs*),
@@ -334,6 +340,15 @@ combined guard at executor.ts:249-252 runs before callable validation.
   its error is dropped (no handler run, no double-settle).
 - The run settles with `AbortedError{Reason: context.Cause(ctx)}`. Cancellation **never**
   routes to the error handler.
+- **The guarantees are defined at observable boundaries.** The engine observes
+  cancellation at exactly two points — before a step starts, and when a step's return
+  lands. A step starts only if cancellation has not been observed at its entry
+  boundary; a result is merged only if cancellation has not been observed when it
+  lands; once observed, `aborted` is terminal. Because `Run` executes inline with no
+  synchronization against the canceling goroutine, cancellation arriving between an
+  observation and the step call is detected at that step's landing boundary — the
+  cooperative-cancellation norm in Go, and the precise meaning of "no unstarted step
+  executes" and "in-flight results are discarded" throughout this contract.
 - An operation already in flight is not preempted — Go cannot interrupt a running
   goroutine. Steps should pass ctx into their own I/O so they stop early; the engine's
   guarantee is about what starts and what lands, not about preempting user code.
