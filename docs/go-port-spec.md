@@ -193,7 +193,9 @@ accumulating (test `accumulates multiple input declarations` maps the same invoc
 args through two input defs) — then steps, at most one error handler last. The `Output`
 def may appear **anywhere** among the definitions (conventionally last); definitions
 after it are still collected and execute — TS tuples after an `end` tuple still process
-(test `processes tuples that follow an explicit end tuple`). Steps after the error
+(test `processes tuples that follow an explicit end tuple`). Repeated `Output` defs are
+allowed and the **last wins**, including a bare `Output()` resetting the final output to
+none (index.ts:23-24 assigns per `end` tuple). Steps after the error
 handler: construction error. A second error
 handler: construction error. An input def after any step: construction error. The built `*Runner`'s definition is immutable; concurrent runs are
 safe under the §5 `Deps` rule; every run gets fresh state.
