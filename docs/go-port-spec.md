@@ -382,7 +382,8 @@ ordinary data everywhere else: a `false` returned by a normal step binds as the 
 `false`.
 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
-when the resolved fn is absent, plain nil, or a typed nil (C2), or when any declared
+when the resolved fn is absent or a typed nil (C2 — a **present plain nil** callable
+is TS `null` and fails validation; it never skips), or when any declared
 input is **absent** from both container and deps. Input presence is comma-ok
 **presence-based**, not nil-based: TS `hasUnresolved` treats only `undefined` as
 unresolved — an explicit `null` input is resolved and the step runs (`Fetcher.ts:166-170`)
@@ -423,6 +424,10 @@ combined guard at executor.ts:249-252 runs before callable validation.
     `errors.Join(activeErr, handlerErr)`; the active error stays primary;
   - the handler never runs on an aborted run (C10).
 - A step that panics is recovered by the executor and routed like any thrown step error.
+  Panic detection uses a **completed-flag**, not the recovered value alone: a `done`
+  marker set after the step returns normally distinguishes "returned nil" from
+  "panicked with nil", so `panic(nil)` under `GODEBUG=panicnil=1` (where `recover()`
+  returns plain nil on Go 1.21+) still converts and wraps `ErrPanicked`.
   A recovered value that is an `error` routes as itself — **except**
   `*runtime.PanicNilError` (Go ≥1.21's recovery of `panic(nil)`), which is classified
   as the nil-panic case and wraps `ErrPanicked` like any other converted value, so
