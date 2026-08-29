@@ -97,7 +97,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   name `next` (decision 4 removed the callback; declaring it would silently degrade
   into an ordinary lookup of nil-or-dep instead of failing). An `Input` def naming
   `next` is **not** a construction error — the reserved-name violation surfaces at
-  merge time when the invocation input lands, like the reference (C3/C4). `Output`/
+  merge time when the invocation input lands, like the reference (C3/C4). An injected
+  **name** of `next` — `Call("next")`, `Not("next")`, `Optional("next")`,
+  `ErrorCall("next")` — **is** a construction error: in the reference the container
+  owns `next` (executor.ts:518-521) and container-first resolution means a configured
+  dep of that name is never selected; the callback-free port would silently resolve
+  it instead, changing behavior. `Output`/
   `OutputFields` naming `next` **is** a construction error: the reference's final
   fetch of `next` returns the continuation callback itself (executor.ts:518-521,
   Pipeline.ts:74-95), which the callback-free port cannot represent — resolving
@@ -320,7 +325,7 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
 - The return is the single continuation channel:
   `(value, nil)` with non-nil value → produce → merge → advance. The no-value test is
   **reflect-based**, not `value != nil` on the interface: a **typed nil** (a nil
-  pointer, map, slice, or func inside the interface) counts as **no value** — the same
+  pointer, map, slice, channel, or func inside the interface) counts as **no value** — the same
   rule as a plain nil return (mirrors JS's `null` return and avoids the classic Go
   nil-interface trap; JS cannot express typed nils, so the port defines the case):
   for `Out`/no-spec steps, no binding and the prior value persists; under
