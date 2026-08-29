@@ -139,7 +139,11 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 | `Destructure("a", "b")` | `['a', 'b']` | Array return → positional binding (short array throws `OutputKeyError`); map return → picks by name (missing key throws). |
 | `Merge()` | `'{...}'` | Return must be a non-array map; merges every key into the container. Other return types throw `OutputKeyError`. |
 
-- Keys inside `Pick`/`Destructure` accept `"dst"` or `"src:dst"` spellings (rename applies).
+- Keys inside `Pick`/`Destructure` accept `"dst"` or `"src:dst"` spellings (rename
+  applies). A string that does **not** match the rename grammar — exactly one colon
+  with non-empty sides — remains a **literal key**: `"a:b:c"` and `"a:"` bind the
+  literal names `a:b:c` / `a:` (RE_RENAME, Producer.ts:12 — the reference does not
+  reject or re-split them).
 - `...` is valid **only** as the entire `Merge()` spec. Any key spelling that targets `...`
   (`"..."`, `"...x"`, `"x:..."`) is a construction error.
 - Destinations bind in **declaration order**; a duplicate destination is not rejected —
@@ -223,7 +227,11 @@ Generics are used exactly where Go's type system permits them to help, and nowhe
   arrive via the engine's error wrapping (C8), since a `Get` failure is an ordinary error
   returned from the step. An out-of-range index (negative or `i >= len(args)`) returns an
   error naming the position and the length — never a panic — routed as an ordinary step
-  error. No naked assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
+  error. A plain-nil argument yields the **zero value** of a nilable `T` (pointer, map,
+  slice, channel, func, interface) with a nil error — `Get[*User](args, 0)` on a
+  missing input gives `nil, nil` — and is a type mismatch for non-nilable `T`
+  (`int`, `string`, structs), mirroring C2's nil-for-absent delivery.
+  No naked assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
   interface methods still cannot declare type parameters); `Get` and the spec
   constructors (`Pick`, `Destructure`, `Merge`) stay package-level **by choice** — they
   are values passed into `Build(defs...)`, not methods on a receiver, and package-level
