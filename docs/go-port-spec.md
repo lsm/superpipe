@@ -223,7 +223,14 @@ channel is the Go spelling of a future, so the library ships exactly one entry p
 - Final-output resolution uses the same lookup as C2 — the run container first, then
   `Deps`: `Output("config")` with no step producing `config` returns the configured
   dependency (test `resolves .end(output) from configured dependencies`). A name absent
-  from both returns `nil`.
+  from both returns `nil`. Duplicate positional names are accepted and **retained in
+  order** — `Output("x", "x")` returns two elements (`fetchAsArray` maps every declared
+  key, Fetcher.ts:191-199); no deduplication.
+- **On any non-nil error, `Run` returns a nil result** — partial bindings from a failed
+  step are observable through the error handler's snapshot, never through the return
+  value (Go convention: a value paired with an error is not to be trusted; a deliberate
+  divergence from TS `end()`, which returned its fetched outputs alongside a handled
+  error).
 
 ### 3.4 Typed boundaries (generics policy)
 
@@ -398,7 +405,8 @@ combined guard at executor.ts:249-252 runs before callable validation.
 - Settlement error behavior is **uniform — one `Run`, one behavior** (a deliberate
   divergence: TS `end()` swallows the error when a handler exists — an artifact of sync
   JS having no other channel, not a designed contract):
-  - with or without a handler, the caller receives the active error, wrapped with
+  - with or without a handler, the caller receives the active error (and a **nil**
+    result, §3.3), wrapped with
     pipeline name and step index (with a handler, the handler runs first);
   - the handler is an observer of a failed run, not a resolver;
   - a handler's non-nil return — or a recovered panic — joins the settlement error:
