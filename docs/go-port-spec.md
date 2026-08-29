@@ -115,6 +115,18 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   picks keys from the first arg. Every requested name is **always bound** — a missing
   positional arg, or a nil/absent object source, binds present-with-nil, never a panic
   or an error (test *maps an absent object-string input argument to undefined values*).
+- Step inputs have an object form: `.InFields("error", "key1")` resolves each name per
+  C2 and delivers **one** `map[string]any` argument containing them (TS object-string
+  inputs — test *delivers a result value alongside an error to the handler inputs*),
+  instead of positional args. Valid on `Error`/`ErrorCall` defs too, where the TS form
+  is most common.
+- **Collection typing (Go-specific):** "map" means any non-nil map with string keys,
+  "array" any non-nil slice or array — element types are irrelevant (values land in the
+  container as `any`; named collection types included; judged by underlying kind, so an
+  implementation must not require `map[string]any`/`[]any` exactly). A nil map or slice
+  is **no value** for the value-requirement rule — not an empty collection. Structs are
+  not maps: a struct return against a pick/destructure/merge spec is a shape error;
+  bind structs with `Out`.
 
 ### 3.3 Running
 
@@ -245,8 +257,10 @@ to nil-or-absent in both container and deps (value-based, matching TS `hasUnreso
   snapshot). An `Error(...)` def with **no** `.In` defaults to a single input: the active
   error (builder.ts:68-70; test *should trigger error when calling next with error*).
   The handler itself may be injected — `ErrorCall("<name>")` resolves it by name at
-  error time, container first then `Deps`; a resolution failure or signature mismatch is
-  the C2 framework-error class.
+  error time, container first then `Deps`; a resolution failure or signature mismatch
+  **joins** the settlement error — `errors.Join(activeErr, lookupErr)`, exactly like a
+  handler's own failure — so the active error stays primary and `errors.Is` finds
+  either.
   A non-nil handler return — or a recovered panic — joins the settlement
   error (below); it is never ignored. A failing handler does not re-enter error handling.
 - Settlement error behavior is **uniform — one `Run`, one behavior** (a deliberate
