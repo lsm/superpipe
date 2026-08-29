@@ -40,6 +40,8 @@ Principles that govern every design decision below:
 | `end()` / `endAsync()` — two entry points; a blocking `end()` is impossible in JS (single-threaded event loop; async is contagious) | One blocking `Run(ctx, ...) (any, error)`, always inline on the caller's goroutine | Go blocks cheaply and has no sync/async function coloring — a promise is JS's only spelling of "wait", and `go` + channel is Go's, owned by the caller |
 | `undefined`/`null` dual | `nil` is the one no-value, and **presence is representable**: comma-ok distinguishes present-with-nil from absent | Container membership and output merging are presence-based in TS (own keys; a present-`undefined` value binds); Go carries that with comma-ok. Input lookup returns the value either way; the optional-step skip check stays value-based (nil or absent both count unresolved), matching TS `hasUnresolved`. |
 | `__proto__` inert setter | Plain `map[string]any` assignment | Go maps have no prototype chain; the attack surface does not exist. |
+| Object-string members may be empty (`'{a,}'` binds an empty key — a comma-syntax artifact) | Empty members rejected in **every** spec form (`ErrInvalidDefinition`) | Go's constructors are typed, so an empty member is always a caller error, never a parse accident. |
+| JS strings index UTF-16 code units | Go string positions are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing. |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
@@ -78,10 +80,13 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, every declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
-  `Output` names — **non-empty** (TS rejects empty input/output names), and directly
-  supplied step functions and error handlers **non-nil** — a nil
-  `StepFunc`/`ErrorHandlerFunc` value is knowably broken at construction and fails
-  with `ErrInvalidDefinition`, not a runtime panic. **Reserved output names
+  `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
+  functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc` value
+  is knowably broken at construction and fails with `ErrInvalidDefinition`, not a
+  runtime panic. (TS rejects empty plain and array-form names, but object-string
+  members like `'{a,}'` slip through as an empty key — a comma-syntax parsing
+  artifact; Go's typed constructors make an empty member unrepresentable by accident,
+  so it is rejected in every form — a deliberate strictness, §2.) **Reserved output names
   and dependency shadowing are not construction checks** — both are enforced at merge
   time, when the produced output lands against that run's live `Deps` map (C4): the
   reference builds a runner with a reserved output name and raises `OutputNameError`
@@ -136,10 +141,14 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   **non-nil** string-keyed map — a scalar, struct, pointer (typed-nil pointers
   included), or a nil map (a nil source, per the collection rule above) — binds every
   requested name present-with-nil, mirroring JS property access on primitives; no
-  source kind is an error. A key that parses as a non-negative integer **indexes**
-  slice, array, and string sources at that position (out-of-range binds present-with-
-  nil), mirroring JS numeric property access — `produceFromObject` indexes any
-  non-null source (Producer.ts:230-232).
+  source kind is an error. A key spelled as a **canonical JavaScript array index** —
+  `"0"` or decimal digits without leading zeros — indexes slice, array, and string
+  sources at that position (out-of-range binds present-with-nil); non-canonical
+  spellings such as `"01"` are ordinary keys and bind nil on non-map sources, exactly
+  like JS property access (`produceFromObject`'s `source[key]`, Producer.ts:230-232).
+  The key `length` binds the source's length (the JS array/string property). String
+  positions are **runes** (code points); JS indexes UTF-16 code units — the two differ
+  only for astral-plane characters (§2).
 - Step inputs have an object form: `.InFields("error", "key1")` resolves each name per
   C2 and delivers **one** `map[string]any` argument containing them (TS object-string
   inputs — test *delivers a result value alongside an error to the handler inputs*),
@@ -180,7 +189,9 @@ Generics are used exactly where Go's type system permits them to help, and nowhe
 - `Get[T any](args []any, i int) (T, error)` — the typed accessor for step bodies. A type
   mismatch fails with the argument position and both types; the step and pipeline context
   arrive via the engine's error wrapping (C8), since a `Get` failure is an ordinary error
-  returned from the step. No naked assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
+  returned from the step. An out-of-range index (negative or `i >= len(args)`) returns an
+  error naming the position and the length — never a panic — routed as an ordinary step
+  error. No naked assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
   interface methods still cannot declare type parameters); `Get` and the spec
   constructors (`Pick`, `Destructure`, `Merge`) stay package-level **by choice** — they
   are values passed into `Build(defs...)`, not methods on a receiver, and package-level
