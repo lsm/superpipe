@@ -397,8 +397,10 @@ ordinary data everywhere else: a `false` returned by a normal step binds as the 
 `false`.
 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
-when the resolved fn is absent or a typed nil (C2 — a **present plain nil** callable
-is TS `null` and fails validation; it never skips), or when any declared
+when the resolved fn is absent, or is a typed nil **of a type convertible to
+`StepFunc`** (C2 — any other present value, including a typed nil of another
+signature such as `func()`, a nil map, or a **present plain nil**, is invalid and
+fails with `ErrDependency`; it never skips), or when any declared
 input is **absent** from both container and deps. Input presence is comma-ok
 **presence-based**, not nil-based: TS `hasUnresolved` treats only `undefined` as
 unresolved — an explicit `null` input is resolved and the step runs (`Fetcher.ts:166-170`)
