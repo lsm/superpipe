@@ -42,6 +42,7 @@ Principles that govern every design decision below:
 | `__proto__` inert setter | Plain `map[string]any` assignment | Go maps have no prototype chain; the attack surface does not exist. |
 | Object-string members may be empty (`'{a,}'` binds an empty key — a comma-syntax artifact) | Empty members rejected in **every** spec form (`ErrInvalidDefinition`) | Go's constructors are typed, so an empty member is always a caller error, never a parse accident. |
 | JS strings index UTF-16 code units (`length` counts code units) | Go string positions and `length` are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing and the `length` key. |
+| JS property access on non-map sources exposes inherited prototype members (`source['toString']`, array `map`/`filter`) | Only canonical numeric indexes and `length` are honored on non-map sources; every other named property binds nil | Prototype members are unportable by construction and never useful data; honoring them would import JS's object model into Go. |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
@@ -311,9 +312,11 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
   `(value, nil)` with non-nil value → produce → merge → advance. The no-value test is
   **reflect-based**, not `value != nil` on the interface: a **typed nil** (a nil
   pointer, map, slice, or func inside the interface) counts as **no value** — the same
-  rule as a plain nil return, no binding, prior value persists (mirrors JS's `null`
-  return and avoids the classic Go nil-interface trap; JS cannot express typed nils,
-  so the port defines the case). `(nil, nil)` → for
+  rule as a plain nil return (mirrors JS's `null` return and avoids the classic Go
+  nil-interface trap; JS cannot express typed nils, so the port defines the case):
+  for `Out`/no-spec steps, no binding and the prior value persists; under
+  `Rename`/`Pick`/`Destructure`/`Merge`, the §3.2 value requirement fails it with
+  `OutputKeyError`, exactly like a plain nil. `(nil, nil)` → for
   `Out` and no-spec steps, advance **without producing bindings** — any prior value
   bound to the step's output names persists (the `value != null` merge guard,
   executor.ts:461-471); for `Rename`/`Pick`/`Destructure`/`Merge`, the §3.2 value
