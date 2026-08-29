@@ -176,9 +176,14 @@ safe under the §5 `Deps` rule; every run gets fresh state.
 container first, then the configured deps, else absent. Absent key delivers `nil`. This
 order lets a run output override a dep of the same name *for reads*; writing such a key is
 C4's shadow error. Injected-name steps (`Call`, `Not`, `Optional`) resolve their function
-the same way at execution time. A non-`Optional` injected step that resolves to an absent
-value — or to anything that is not a func or bool — fails the run **before invocation**
-with a `Dependency "<name>" is not a function or boolean` error: framework-error class
+the same way at execution time. A resolved callable must have **exactly `StepFunc`'s
+signature** — `func(context.Context, []any) (any, error)`; a named type with that
+underlying signature is accepted and converted (Go function types are not
+interchangeable, so no reflection/adaptation of arbitrary signatures exists). A bool
+remains a valid injected value — it is the C6 flow-control case, never invoked. A
+non-`Optional` injected step that resolves to an absent value, to a non-callable
+non-bool, or to a callable of any other signature fails the run **before invocation**
+with a `Dependency "<name>" is not a valid step function` error: framework-error class
 (C8), unwrapped, never routed to the error handler.
 
 **C3 — Invocation inputs.** Input pipes map invocation args into the container per §3.2
@@ -306,7 +311,7 @@ var (
     ErrOutputName        = errors.New("superpipe: invalid output name")
     ErrOutputKey         = errors.New("superpipe: output spec mismatch")
     ErrAborted           = errors.New("superpipe: pipeline aborted")
-    ErrDependency        = errors.New("superpipe: dependency is not a function or boolean")
+    ErrDependency        = errors.New("superpipe: dependency is not a valid step function")
     ErrInvalidDefinition = errors.New("superpipe: invalid pipeline definition")
 )
 
