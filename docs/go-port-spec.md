@@ -229,7 +229,9 @@ input rules. These merges are exempt from the shadow check (they are the invocat
 names), but not from the reserved-name check.
 
 **C4 — Output binding.** Merging produced keys into the container enforces:
-- key `next` → `OutputNameError` ("reserved") — a construction-time check.
+- key `next` → `OutputNameError` ("reserved"). Statically declared destinations are
+  checked at construction, and **every produced key is checked again as it lands** — a
+  `Merge()` map containing `next` at runtime is rejected (executor.ts:109-113).
 - key equal to a **live** configured dep name → `OutputNameError` ("shadows a configured
   dependency"). All shadow checks — static and merge-form keys alike — run when the
   produced output **lands**, against that run's `Deps` map: a name added to `Deps` after
@@ -262,7 +264,9 @@ Merge overwrites prior values; a later step may rebind any non-reserved name.
 **C6 — Flow control.** A boolean-resolved step (`Not(...)`, or an injected boolean dep)
 controls flow: `true` continues, `false` **halts** — no later step executes; the run
 settles successfully with the partial snapshot immediately (in-band returns leave
-nothing in flight). `Not` inverts the boolean **before** the decision. Booleans are
+nothing in flight). A halting `false` **creates no output bindings**: the producer
+never runs (executor.ts:392-402 branches before advancing), so prior bindings for the
+step's output names persist. `Not` inverts the boolean **before** the decision. Booleans are
 ordinary data everywhere else: a `false` returned by a normal step binds as the value
 `false`.
 
