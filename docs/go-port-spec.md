@@ -315,7 +315,10 @@ remains a valid injected value — it is the C6 flow-control case, never invoked
 injected step that resolves to a present **non-nil** invalid value (a non-callable
 non-bool, or a callable of any other signature) fails the run **before invocation**
 with a `Dependency "<name>" is not a valid step function` error: framework-error class
-(C8), unwrapped, never routed to the error handler — **`Optional` included**
+(C8), unwrapped, never routed to the error handler — **`Optional` included, but
+only when the step's declared inputs all resolve**: C7's combined guard (fn or any
+declared input unresolved) runs **before** validation and skips, so
+`Optional("handler").In("missing")` with `handler = 42` skips
 (executor.ts:249: the optional skip tests `fn === undefined`; a present invalid value
 still throws). Resolution of the callable is **presence-based**, like C7's inputs: an
 **absent** name is TS `undefined` — `Optional` skips, a non-`Optional` step fails with
@@ -344,11 +347,13 @@ each writing into the same container). These merges are exempt from the shadow c
   (executor.ts:108-120, consistent with §5's live `Deps`).
 Merge overwrites prior values; a later step may rebind any non-reserved name.
 When a produced map contains **multiple** invalid keys, validation order preserves
-declaration order where it is known — static specs (`Pick`, `Destructure`, …)
-validate in declared key order, matching TS — and applies **lexicographic key
-order** only for dynamic `Merge()` results, whose declaration order a Go map cannot
-reproduce; the reported `OutputNameError` is thereby deterministic across runs
-(a Go-defined rule standing in for TS's stable `Object.keys` insertion order, §2).
+declaration order where it is known — with ECMAScript's integer-key rule: canonical
+integer-index destinations enumerate in **ascending numeric order first**, then the
+remaining keys in declared order (`Object.keys` returns integer-like properties
+numerically before string keys, so `Pick("b:2", "a:1")` reports `1` first) — and
+applies **lexicographic key order** only for dynamic `Merge()` results, whose
+declaration order a Go map cannot reproduce; the reported `OutputNameError` is
+thereby deterministic across runs (§2).
 
 **C5 — Step execution model.**
 - A step is `func(ctx context.Context, args []any) (any, error)`; it blocks until it has
