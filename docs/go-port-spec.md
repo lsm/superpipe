@@ -343,10 +343,12 @@ each writing into the same container). These merges are exempt from the shadow c
   `Build` shadows retroactively; one removed before `Run` no longer does
   (executor.ts:108-120, consistent with §5's live `Deps`).
 Merge overwrites prior values; a later step may rebind any non-reserved name.
-When a produced map contains **multiple** invalid keys (e.g., `next` and a
-shadowing key), validation applies in **lexicographic key order**, so the reported
-`OutputNameError` is deterministic across runs — a Go-defined rule standing in for
-TS's stable `Object.keys` insertion order, which a Go map cannot reproduce (§2).
+When a produced map contains **multiple** invalid keys, validation order preserves
+declaration order where it is known — static specs (`Pick`, `Destructure`, …)
+validate in declared key order, matching TS — and applies **lexicographic key
+order** only for dynamic `Merge()` results, whose declaration order a Go map cannot
+reproduce; the reported `OutputNameError` is thereby deterministic across runs
+(a Go-defined rule standing in for TS's stable `Object.keys` insertion order, §2).
 
 **C5 — Step execution model.**
 - A step is `func(ctx context.Context, args []any) (any, error)`; it blocks until it has
