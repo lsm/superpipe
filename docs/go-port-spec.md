@@ -354,9 +354,12 @@ numeric order first**; all other keys — including over-cap numerics like
 orders array-index properties numerically before string keys, so
 `Pick("b:2", "a:1")` reports `1` first, while `Pick("a:z", "b:4294967295")` reports
 `z`) — and
-applies **lexicographic key order** only for dynamic `Merge()` results, whose
-declaration order a Go map cannot reproduce; the reported `OutputNameError` is
-thereby deterministic across runs (§2).
+applies to dynamic `Merge()` results the same array-index rule (canonical indexes
+ascending first) with **lexicographic order** for the remaining keys, standing in
+for the insertion order a Go map cannot reproduce — so `Merge()` returning `"2"` and
+`"10"` reports `"2"` first, like `Object.keys`, while two string keys may report in
+a different order than TS's insertion order (§2); the reported `OutputNameError` is
+thereby deterministic across runs.
 
 **C5 — Step execution model.**
 - A step is `func(ctx context.Context, args []any) (any, error)`; it blocks until it has
