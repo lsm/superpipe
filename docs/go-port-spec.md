@@ -348,9 +348,12 @@ each writing into the same container). These merges are exempt from the shadow c
 Merge overwrites prior values; a later step may rebind any non-reserved name.
 When a produced map contains **multiple** invalid keys, validation order preserves
 declaration order where it is known — with ECMAScript's integer-key rule: canonical
-integer-index destinations enumerate in **ascending numeric order first**, then the
-remaining keys in declared order (`Object.keys` returns integer-like properties
-numerically before string keys, so `Pick("b:2", "a:1")` reports `1` first) — and
+array-index destinations (unsigned integers ≤ **2^32−2**) enumerate in **ascending
+numeric order first**; all other keys — including over-cap numerics like
+`4294967295`, which are ordinary strings — follow in declared order (`Object.keys`
+orders array-index properties numerically before string keys, so
+`Pick("b:2", "a:1")` reports `1` first, while `Pick("a:z", "b:4294967295")` reports
+`z`) — and
 applies **lexicographic key order** only for dynamic `Merge()` results, whose
 declaration order a Go map cannot reproduce; the reported `OutputNameError` is
 thereby deterministic across runs (§2).
