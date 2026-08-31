@@ -150,7 +150,11 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   not the stripped name — so rejecting them would diverge; the empty key resolves
   through C2/C7 like any other (`Output("")` is the other exception: a
   single empty-string final-output name is the
-  raw-string branch and is valid), and directly supplied step
+  raw-string branch and is valid), **and every declared name must round-trip through
+  its TS serialization** — grammar-sensitive spellings (object-string shapes,
+  comma-bearing object-string members, colon-bearing `Rename` operands, sigil-prefixed
+  dependency names that no TS string produces) are construction errors per the
+  §3.2 round-trip rule — and directly supplied step
   functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc` value
   is knowably broken at construction and fails with `ErrInvalidDefinition`, not a
   runtime panic. (TS rejects empty plain and array-form names, but object-string
@@ -221,6 +225,27 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   express. Use the typed spelling of the intended form: `Rename("a", "b")`,
   `Pick("a")`. Names failing both patterns — `"a:b:c"`, `"a:"`, `"{a"` — are
   single-form literals in the reference and bind literally here.
+- **Every declared name must round-trip through its TS serialization** — the same
+  principle as the `Out` rule, the `Rename` colon rule, and the sigil round-trip,
+  stated once for all name positions. What is rejected depends on how the constructor
+  serializes:
+  - **Standalone string** (single-name `Input`, single-name `.In`, single-name
+    `Output`): a name matching the object-string shape `'{…}'` is a construction
+    error — the reference parses it as the object form (Fetcher.ts:96-111,
+    Producer.ts:37-48), never as a literal name. Rename-grammar names are **fine**
+    here: on the fetch side `'a:b'` is a literal key (the raw fetcher and the
+    input-mode producer never apply the rename split).
+  - **Array form** (`Input` multi-name, `.In` multi-name, `Destructure` keys,
+    multi-name `Output`): a member matching `'{…}'` is a construction error —
+    `objectStringIsNotAllowed` throws on object-string members of array arguments
+    (common.ts:95-100). Rename-grammar and comma-containing members are fine.
+  - **Object-string form** (`InputFromObject`, `.InFields`, `Pick`, `OutputFields`):
+    a member containing a comma is a construction error — `objectStringToArray`
+    re-splits on commas (common.ts:102-107). Object-string-shaped members are
+    otherwise fine: they survive the split and trim literally.
+  - **`Rename(src, dst)`**: both operands must be colon-free — `Rename("a:b", "c")`
+    serializes to `'a:b:c'`, which the reference classifies as a single bind, not a
+    rename (RE_RENAME, Producer.ts:12, 60-74).
 - `...` is a **destination marker**, and as a destination it is valid **only** as the
   entire `Merge()` spec; as a **source or lookup name** it is ordinary and read
   literally. On the **producer side** — step
