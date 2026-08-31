@@ -191,7 +191,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   with non-empty sides — remains a **literal key**: `"a:b:c"` and `"a:"` bind the
   literal names `a:b:c` / `a:` (RE_RENAME, Producer.ts:12 — the reference does not
   reject or re-split them).
-- `...` is valid **only** as the entire `Merge()` spec. On the **producer side** — step
+- `...` is a **destination marker**, and as a destination it is valid **only** as the
+  entire `Merge()` spec; as a **source or lookup name** it is ordinary and read
+  literally. On the **producer side** — step
   output specs — the construction error is precisely a **destination** that is `...` or
   starts with `...` (`destination === '...' || destination.startsWith('...'`,
   Producer.ts:88-96): `Out("...")` (TS classifies bare `'...'` as the single form, then
