@@ -10,9 +10,12 @@ its environment; compare only runs from the same machine.
 npm run bench
 ```
 
-Or individually — `mem.mjs` needs the flag:
+Or individually — the scripts import the built package from `dist/`, which is
+gitignored, so build first on a fresh checkout (`npm run bench` already does);
+`mem.mjs` also needs the flag:
 
 ```sh
+npm run build
 node bench/perf.mjs
 node bench/async.mjs
 node --expose-gc bench/mem.mjs
