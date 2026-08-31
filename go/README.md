@@ -141,9 +141,13 @@ delivers the same names as one `map[string]any` argument instead.
 
 The handler observes a snapshot of the container plus the original error under
 the `error` key, runs on a detached context, and never runs on an aborted run.
-Framework errors (`ErrOutputName`, `ErrOutputKey`, `ErrDependency`,
-`ErrInvalidDefinition`, `ErrPanicked`, `ErrAborted`) propagate as themselves,
-wrapped in nothing, and never reach the handler — check them with `errors.Is`:
+It is likewise bypassed by **definition errors** — a reserved or shadowed
+output name (`ErrOutputName`), a spec/shape mismatch (`ErrOutputKey`), an
+unusable dependency (`ErrDependency`), or anything `Build` would have caught
+(`ErrInvalidDefinition`) — which propagate as themselves, wrapped in nothing.
+A converted panic is different: it wraps `ErrPanicked` and routes to the
+handler like any step failure, with step context attached. Every category
+stays findable with `errors.Is`:
 
 ```go
 _, err := run.Run(ctx, "u-123")
