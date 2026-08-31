@@ -50,6 +50,7 @@ Principles that govern every design decision below:
 | Configured deps can be inherited through the object's prototype — the shadow check sees them (test at 815-822), and injected callables **resolve** them (`functions[fnName]` walks the prototype — executor.ts:210-214, builder.ts:79-85); a present-`undefined` container value is "unresolved" for `Optional` | Shadow checks and callable resolution alike consider only the `Deps` map's own keys — an inherited callable is invisible: `Call` fails with `ErrDependency`, `Optional` skips; present-with-nil is **resolved** (comma-ok presence is the unresolved test — C7) | Go maps have no prototype; and Go's single `nil` cannot split TS's `undefined`-vs-`null`, so the `null` semantics win |
 | TS `end()` returns its fetched outputs alongside a handled error | **Nil result on any non-nil error** (§3.3); partials are observable via the handler snapshot only | Go convention: a value paired with an error is not to be trusted |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
+| Step errors propagate as the same `Error` object on both sync and async paths (`common.ts:121-124`, `executor.ts:182-186`, `Pipeline.ts:118-121`) | `Run` returns the active error wrapped with pipeline/step context via `%w` (C8) | Go's idiom is to attach context to errors; the original stays reachable through `errors.Is`, but error identity and exact message differ from TS |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
 ## 3. Public API sketch
@@ -467,8 +468,10 @@ combined guard at executor.ts:249-252 runs before callable validation.
   divergence: TS `end()` swallows the error when a handler exists — an artifact of sync
   JS having no other channel, not a designed contract):
   - with or without a handler, the caller receives the active error (and a **nil**
-    result, §3.3), wrapped with
-    pipeline name and step index (with a handler, the handler runs first);
+    result, §3.3), wrapped with `%w` to add pipeline and step context (with a handler,
+    the handler runs first). The original error remains reachable via `errors.Is`, but the
+    value returned from `Run` is a new wrapper — so identity checks and exact message
+    comparisons differ from TS's same-`Error` propagation (catalogued in §2);
   - the handler is an observer of a failed run, not a resolver;
   - a handler's non-nil return — or a recovered panic — joins the settlement error:
     `errors.Join(settlementErr, handlerErr)` — the settlement error **with its
