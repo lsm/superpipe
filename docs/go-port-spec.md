@@ -241,7 +241,16 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
     (common.ts:95-100). Rename-grammar and comma-containing members are fine.
   - **Object-string form** (`InputFromObject`, `.InFields`, `Pick`, `OutputFields`):
     a member containing a comma is a construction error — `objectStringToArray`
-    re-splits on commas (common.ts:102-107). Object-string-shaped members are
+    re-splits on commas (common.ts:102-107). A member with **leading or trailing
+    whitespace** is likewise an error: every parsed member is `trim()`med, so
+    `" a"` would silently become `a` (common.ts:102-107). A member containing a
+    **JavaScript line terminator** — `\n`, `\r`, ` `, ` ` — is an error
+    too: `RE_IS_OBJ_STRING` (`^` `{` `.+` `}` `$`, no `dotAll`), so the serialized
+    `'{…}'` string would fail object-form recognition and be classified as an
+    ordinary single-form name (common.ts:4). The round-trip is defined on the
+    **complete serialized string**: `{` + members joined by `, ` + `}` must match
+    `RE_IS_OBJ_STRING`, and re-parsing it (slice braces, split on commas, trim) must
+    yield the original member list exactly. Object-string-shaped members are
     otherwise fine: they survive the split and trim literally.
   - **`Rename(src, dst)`**: both operands must be colon-free — `Rename("a:b", "c")`
     serializes to `'a:b:c'`, which the reference classifies as a single bind, not a
