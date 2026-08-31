@@ -138,12 +138,17 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   earlier `Output` is never interpreted (the reference builds its fetcher from the
   last assignment only, index.ts:23-24), so an invalid superseded def is **not** an
   error, every
-  declared name —
+  declared **bare** name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
-  `Call`/`Not`/`Optional`/`ErrorCall` names, `Output` names — **non-empty**
-  (`Not("")` and `Optional("")` included: the reference's `createPipe` requires a
-  non-empty injected string — `isNonEmptyString` — and throws on `''`, builder.ts:34-53;
-  `Output("")` is the one exception: a single empty-string final-output name is the
+  `Call`/`ErrorCall` names, `Output` names — **non-empty** (the reference rejects the
+  bare empty string: `createPipe` requires `isNonEmptyString` and throws on `''`,
+  builder.ts:34-53; `createErrorPipe` likewise, builder.ts:77-90). **`Not("")` and
+  `Optional("")` are valid** and resolve the empty-string dependency name: their TS
+  spellings `'!'`, `'?'`, and `'!?'` pass the pre-strip `isNonEmptyString` check and
+  strip to `fnName === ''` (builder.ts:34-47) — the sigil-bearing string is validated,
+  not the stripped name — so rejecting them would diverge; the empty key resolves
+  through C2/C7 like any other (`Output("")` is the other exception: a
+  single empty-string final-output name is the
   raw-string branch and is valid), and directly supplied step
   functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc` value
   is knowably broken at construction and fails with `ErrInvalidDefinition`, not a
