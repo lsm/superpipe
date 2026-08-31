@@ -74,6 +74,24 @@ func (s singleSpec) produce(value any, _ bool) ([]entry, error) {
 	return []entry{{key: s.name, value: value}}, nil
 }
 
+func isStringKeyedMap(value any) bool {
+	if value == nil {
+		return false
+	}
+	rv := reflect.ValueOf(value)
+	return rv.Kind() == reflect.Map && !rv.IsNil() && rv.Type().Key().Kind() == reflect.String
+}
+
+// mapValue reads one key from a string-keyed map value without copying it.
+func mapValue(value any, key string) (any, bool) {
+	rv := reflect.ValueOf(value)
+	mv := rv.MapIndex(reflect.ValueOf(key).Convert(rv.Type().Key()))
+	if !mv.IsValid() {
+		return nil, false
+	}
+	return mv.Interface(), true
+}
+
 func asStringKeyedMap(value any) (map[string]any, bool) {
 	if value == nil {
 		return nil, false
@@ -94,21 +112,21 @@ func asStringKeyedMap(value any) (map[string]any, bool) {
 }
 
 func (s pickSpec) produce(value any, errorPath bool) ([]entry, error) {
-	m, ok := asStringKeyedMap(value)
-	if !ok {
+	if !isStringKeyedMap(value) {
 		if errorPath {
 			return nil, nil
 		}
 		return nil, newOutputKeyError("superpipe: output spec %s picks properties, but the step returned %s", s.label(), kindOf(value))
 	}
+	// Direct reflective lookups: copying the whole map for a few keys
+	// would make the pick cost O(entries), not O(declared keys).
 	entries := make([]entry, 0, len(s.keys))
 	for _, k := range s.keys {
-		if !errorPath {
-			if _, present := m[k.src]; !present {
-				return nil, newOutputKeyError("superpipe: output %q is missing from the step's returned object", k.src)
-			}
+		v, present := mapValue(value, k.src)
+		if !errorPath && !present {
+			return nil, newOutputKeyError("superpipe: output %q is missing from the step's returned object", k.src)
 		}
-		entries = append(entries, entry{key: k.dst, value: m[k.src]})
+		entries = append(entries, entry{key: k.dst, value: v})
 	}
 	return entries, nil
 }
@@ -139,15 +157,14 @@ func (s destructureSpec) produce(value any, errorPath bool) ([]entry, error) {
 		}
 		return entries, nil
 	}
-	if m, ok := asStringKeyedMap(value); ok {
+	if isStringKeyedMap(value) {
 		entries := make([]entry, 0, len(s.keys))
 		for _, k := range s.keys {
-			if !errorPath {
-				if _, present := m[k.src]; !present {
-					return nil, newOutputKeyError("superpipe: output %q is missing from the step's returned object", k.src)
-				}
+			v, present := mapValue(value, k.src)
+			if !errorPath && !present {
+				return nil, newOutputKeyError("superpipe: output %q is missing from the step's returned object", k.src)
 			}
-			entries = append(entries, entry{key: k.dst, value: m[k.src]})
+			entries = append(entries, entry{key: k.dst, value: v})
 		}
 		return entries, nil
 	}
