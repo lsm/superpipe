@@ -450,8 +450,11 @@ func (r *Runner) produceInput(ip *InputDef, args []any) []entry {
 		if len(args) > 0 {
 			source = args[0]
 		}
+		// Prepare the source once per definition: converting the map (or
+		// the rune slice) per requested name would cost O(k·n).
+		read := memberReader(source)
 		for _, name := range ip.names {
-			entries = append(entries, entry{key: name, value: readSourceMember(source, name)})
+			entries = append(entries, entry{key: name, value: read(name)})
 		}
 		return entries
 	}
@@ -465,35 +468,43 @@ func (r *Runner) produceInput(ip *InputDef, args []any) []entry {
 	return entries
 }
 
-func readSourceMember(source any, name string) any {
+func memberReader(source any) func(name string) any {
 	if source == nil {
-		return nil
+		return func(string) any { return nil }
 	}
 	if m, ok := asStringKeyedMap(source); ok {
-		return m[name]
+		return func(name string) any { return m[name] }
 	}
 	if rv, ok := asArray(source); ok {
-		if name == "length" {
-			return rv.Len()
-		}
-		// Compare in uint64 before narrowing: on 32-bit targets a large
-		// canonical index overflows int and would satisfy a naive bound.
-		if n, ok := canonicalIndex(name); ok && n < uint64(rv.Len()) {
-			return rv.Index(int(n)).Interface()
-		}
-		return nil
+		return func(name string) any { return readArrayMember(rv, name) }
 	}
 	if rv := reflect.ValueOf(source); rv.Kind() == reflect.String {
 		runes := []rune(rv.String())
-		if name == "length" {
-			return len(runes)
-		}
-		// String positions carry no array-index ceiling: any canonical
-		// index within the rune count binds, however large the spelling.
-		if n, ok := canonicalDigits(name); ok && n < uint64(len(runes)) {
-			return string(runes[n])
-		}
-		return nil
+		return func(name string) any { return readStringMember(runes, name) }
+	}
+	return func(string) any { return nil }
+}
+
+func readArrayMember(rv reflect.Value, name string) any {
+	if name == "length" {
+		return rv.Len()
+	}
+	// Compare in uint64 before narrowing: on 32-bit targets a large
+	// canonical index overflows int and would satisfy a naive bound.
+	if n, ok := canonicalIndex(name); ok && n < uint64(rv.Len()) {
+		return rv.Index(int(n)).Interface()
+	}
+	return nil
+}
+
+func readStringMember(runes []rune, name string) any {
+	if name == "length" {
+		return len(runes)
+	}
+	// String positions carry no array-index ceiling: any canonical
+	// index within the rune count binds, however large the spelling.
+	if n, ok := canonicalDigits(name); ok && n < uint64(len(runes)) {
+		return string(runes[n])
 	}
 	return nil
 }

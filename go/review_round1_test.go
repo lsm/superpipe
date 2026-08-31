@@ -2,6 +2,7 @@ package superpipe
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -319,6 +320,58 @@ func TestDefinedBoolTypeParticipatesInFlowControl(t *testing.T) {
 	}
 	if ran {
 		t.Fatal("a Not step returning defined-bool true should invert to false and halt")
+	}
+}
+
+func TestGetInterfaceTypeNamedInError(t *testing.T) {
+	type reader interface{ Read() }
+	_, err := Get[reader]([]any{123}, 0)
+	if err == nil {
+		t.Fatal("expected a type mismatch")
+	}
+	if !strings.Contains(err.Error(), "reader") {
+		t.Fatalf("error does not name the wanted interface type: %v", err)
+	}
+	if v, err := Get[reader]([]any{nil}, 0); err != nil || v != nil {
+		t.Fatalf("nil for a nilable interface T: %v, %v; want zero, nil error", v, err)
+	}
+}
+
+func TestInputFromObjectManyNamesReadSourceOnce(t *testing.T) {
+	// Behavior-level pin: many names from one large source resolve correctly
+	// (the per-definition preparation is an internal cost property).
+	big := make(map[string]any, 50_000)
+	for i := 0; i < 50_000; i++ {
+		big[fmt.Sprint(i)] = i
+	}
+	names := make([]string, 0, 100)
+	want := make([]any, 0, 100)
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprint(i * 7)
+		names = append(names, key)
+		want = append(want, i*7)
+	}
+	defs := make([]Def, 0, 3)
+	defs = append(defs, InputFromObject(names...))
+	in := make([]string, len(names))
+	copy(in, names)
+	defs = append(defs, Step("s", func(_ context.Context, args []any) (any, error) {
+		return args[0], nil
+	}).InFields(in...).Out("m"))
+	defs = append(defs, OutputFields(names...))
+	r, err := Build("big-source", nil, defs...)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	out, err := r.Run(context.Background(), big)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := out.(map[string]any)
+	for i, n := range names {
+		if m[n] != want[i] {
+			t.Fatalf("m[%s] = %v, want %v", n, m[n], want[i])
+		}
 	}
 }
 
