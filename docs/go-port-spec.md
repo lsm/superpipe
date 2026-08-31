@@ -167,18 +167,24 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   skipped when unresolved, inverted when present. `Optional` accepts a name or a
   `Not(...)` def. (TS strips `!` then `?`, so only the `!?` order composes; `?!check`
   strips the `?` and leaves a dep literally named `!check` — a quirk the sigil-free Go
-  spelling cannot reproduce by accident and does not port.) **A `Call`/`Not`/`Optional`
-  name must not begin with `!` or `?`** — construction error (`ErrInvalidDefinition`):
-  `createPipe` unconditionally strips one leading `!` and one `?` (builder.ts:37-45),
-  so a TS injected name always resolves a sigil-free key — `'!check'` is inverted
-  `check`, `'!!x'` is the doubled-sigil escape calling literal `!x` inverted, and **no**
-  spelling yields a required, non-inverted call to a leading-sigil key. The typed
-  constructors spell intent explicitly (`Not("check")`), so a sigil-prefixed name is
-  rejected rather than silently resolving the literal key — the same strictness that
-  declines the `?!check` quirk above, and it likewise forecloses the `'!!x'` escape.
-  `ErrorCall` is **exempt**: `createErrorPipe` resolves its name verbatim with no
-  stripping (builder.ts:77-85), so `ErrorCall("!x")` resolves the literal key, exactly
-  like TS `error('!x')`.
+  spelling cannot reproduce by accident and does not port.) **A sigil-prefixed
+  `Call`/`Not`/`Optional` name is valid only when the def's flag composition has an
+  exact TS spelling**, and the test is a round-trip: prepend the def's own sigils
+  (`!` if inverted, `?` if optional) to the name and re-run the reference strip
+  (`!` first, then `?`, builder.ts:37-45) — the result must be the same flags and the
+  same name. The representable cases:
+  `Not("!x")` = `'!!x'`, `Optional("?x")` = `'??x'`, `Optional("!x")` = `'?!x'`,
+  `Optional(Not("!x"))` = `'!?!x'`, and `Optional(Not("?x"))` = `'!??x'`. The
+  unrepresentable ones are construction errors (`ErrInvalidDefinition`): a required
+  non-inverted call to a leading-sigil key — `Call("!x")`, `Call("?x")` — and
+  `Not("?x")` (any TS string that strips to a `?`-prefixed name picks up `optional`
+  or loses the inversion). Rejecting those is the same strictness that declines the
+  `?!check` quirk: the typed constructors spell intent explicitly, and silently
+  resolving a literal leading-sigil key would create dependency behavior the
+  reference cannot express.
+  `ErrorCall` is **exempt** from all of this: `createErrorPipe` resolves its name
+  verbatim with no stripping (builder.ts:77-85), so `ErrorCall("!x")` resolves the
+  literal key, exactly like TS `error('!x')`.
 - `ErrorCall(name string)` — the injected form of `Error`: the handler is resolved by
   name **at error time**, run container first then `Deps` (TS string-named error
   handlers, builder.ts:77-85); the resolved callable must match `ErrorHandlerFunc`'s
