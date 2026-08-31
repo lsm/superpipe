@@ -32,6 +32,7 @@
     "lint:pkg": "publint && attw --pack . --ignore-rules missing-export-equals",
     "typecheck": "tsc --noEmit",
     "build": "tsdown && tsdown --config tsdown.iife.config.mts",
+    "bench": "npm run build && node bench/perf.mjs && node bench/async.mjs && node --expose-gc bench/mem.mjs",
     "lint": "biome check src test",
     "check:no-comments": "node scripts/strip-comments.mjs --check",
     "lint:fix": "biome check src test --write",
