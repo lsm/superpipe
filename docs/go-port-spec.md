@@ -50,7 +50,7 @@ Principles that govern every design decision below:
 | Configured deps can be inherited through the object's prototype — the shadow check sees them (test at 815-822), and injected callables **resolve** them (`functions[fnName]` walks the prototype — executor.ts:210-214, builder.ts:79-85); a present-`undefined` container value is "unresolved" for `Optional` | Shadow checks and callable resolution alike consider only the `Deps` map's own keys — an inherited callable is invisible: `Call` fails with `ErrDependency`, `Optional` skips; present-with-nil is **resolved** (comma-ok presence is the unresolved test — C7) | Go maps have no prototype; and Go's single `nil` cannot split TS's `undefined`-vs-`null`, so the `null` semantics win |
 | TS `end()` returns its fetched outputs alongside a handled error | **Nil result on any non-nil error** (§3.3); partials are observable via the handler snapshot only | Go convention: a value paired with an error is not to be trusted |
 | Error handler return ignored; only a *throwing* handler propagates | Handler returns `error`; non-nil returns and recovered panics join the settlement error via `errors.Join` | One error channel — swallowing handler failures (DLQ writes, alerting) would be un-Go. |
-| Step errors propagate as the same `Error` object on both sync and async paths (`common.ts:121-124`, `executor.ts:182-186`, `Pipeline.ts:118-121`) | `Run` returns the active error wrapped with pipeline/step context via `%w` (C8) | Go's idiom is to attach context to errors; the original stays reachable through `errors.Is`, but error identity and exact message differ from TS |
+| Step errors propagate as the same `Error` object on both sync and async paths (`common.ts:121-124`, `executor.ts:182-186`, `Pipeline.ts:118-121`) | `Run` returns the active error wrapped with pipeline/step context via `%w` (C8) | Go's idiom is to attach context to errors; the original stays in the unwrap chain and `errors.Is` matches it when the value is comparable or implements `Is(error) bool`, but error identity and exact message differ from TS |
 | Exported error classes (#66) | Exported sentinel errors + `AbortedError` type (§6) | `errors.Is` / `errors.As` replace `instanceof`. |
 
 ## 3. Public API sketch
@@ -99,11 +99,14 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   caller error; the reference `Fetcher` rejects an empty input array outright,
   Fetcher.ts:108-119 — and `.In()` must not be confusable with omitted `.In`, which
   forwards the invocation args; the effective (last) `Output`/`OutputFields`
-  definition requires a name — except the **bare reset form** `Output()` with zero
-  names, which is valid and clears the final output (C1) — and **all** final-output
-  validation, cardinality and `next` alike, applies only to that effective
-  definition: a superseded `Output` is never constructed or validated, so
-  `Output("")` followed by a valid `Output("x")` builds), every
+  definition: the **bare reset form** `Output()` with zero names is valid and clears
+  the final output (C1), and the **single empty-string name** `Output("")` is also
+  valid as a raw-string final-output name that resolves the empty key at run time
+  (`Fetcher.ts:96-102`); `OutputFields` and multi-name `Output` with empty members are
+  rejected (`ErrInvalidDefinition`), matching the array-form non-empty validation
+  (`Fetcher.ts:108-119`). All final-output validation, cardinality and `next` alike,
+  applies only to that effective definition: a superseded `Output` is never
+  constructed or validated, so `Output("")` followed by a valid `Output("x")` builds), every
   **step** input declaration — `.In`/`.InFields` members, and `Error`/`ErrorCall`
   handler inputs alike (the reference's `createErrorPipe` rejects a handler fetcher
   with `hasNext`) — rejecting the reserved
@@ -125,7 +128,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   error, every
   declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
-  `Call`/`ErrorCall` names, `Output` names — **non-empty**, and directly supplied step
+  `Call`/`ErrorCall` names, `Output` names — **non-empty** (`Output("")` is the one
+  exception: a single empty-string final-output name is the raw-string branch and is
+  valid), and directly supplied step
   functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc` value
   is knowably broken at construction and fails with `ErrInvalidDefinition`, not a
   runtime panic. (TS rejects empty plain and array-form names, but object-string
@@ -302,7 +307,8 @@ def may appear **anywhere** among the definitions (conventionally last); definit
 after it are still collected and execute — TS tuples after an `end` tuple still process
 (test `processes tuples that follow an explicit end tuple`). Repeated `Output` defs are
 allowed and the **last wins**, including a bare `Output()` resetting the final output to
-none (index.ts:23-24 assigns per `end` tuple). Steps after the error
+none and the single empty-string `Output("")` resolving the empty output key
+(`Fetcher.ts:96-102`, §3.1). Steps after the error
 handler: construction error. A second error
 handler: construction error. An input def after any step: construction error. The built `*Runner`'s definition is immutable; concurrent runs are
 safe under the §5 `Deps` rule; every run gets fresh state.
@@ -469,9 +475,11 @@ combined guard at executor.ts:249-252 runs before callable validation.
   JS having no other channel, not a designed contract):
   - with or without a handler, the caller receives the active error (and a **nil**
     result, §3.3), wrapped with `%w` to add pipeline and step context (with a handler,
-    the handler runs first). The original error remains reachable via `errors.Is`, but the
-    value returned from `Run` is a new wrapper — so identity checks and exact message
-    comparisons differ from TS's same-`Error` propagation (catalogued in §2);
+    the handler runs first). The original error remains in the unwrap chain, but
+    `errors.Is` matches it only when the error value is comparable or defines matching
+    behavior. The value returned from `Run` is a new wrapper — so identity checks and
+    exact message comparisons differ from TS's same-`Error` propagation (catalogued
+    in §2);
   - the handler is an observer of a failed run, not a resolver;
   - a handler's non-nil return — or a recovered panic — joins the settlement error:
     `errors.Join(settlementErr, handlerErr)` — the settlement error **with its
