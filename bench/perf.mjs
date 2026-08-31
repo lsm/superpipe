@@ -29,15 +29,16 @@ function buildShallow() {
 }
 
 // One pipe per output-spec form: pick, rename, destructure, merge. The end
-// spec names every form's binding so the sanity check below fails if any
-// form silently stops producing.
+// spec names every form's binding plus the two keys that must NOT survive —
+// c, which the pick must drop, and src, which the rename must consume — so
+// the sanity check below fails if any form stops producing OR leaks keys.
 function buildSpecs() {
   return superpipe({})('bench-specs')
     .pipe(() => ({ a: 1, b: 2, c: 3 }), null, '{a, b}')
     .pipe(() => ({ src: 9 }), 'a', 'src:dst')
     .pipe(() => ['p', 'q'], null, ['p', 'q'])
     .pipe(() => ({ m: 7 }), null, '{...}')
-    .end('{a, b, dst, p, q, m}')
+    .end('{a, b, dst, p, q, m, c, src}')
 }
 
 function buildDeep(depth) {
@@ -78,6 +79,11 @@ const specOut = specs()
 for (const key of Object.keys(specWant)) {
   if (specOut?.[key] !== specWant[key]) {
     throw new Error(`output-spec regression at ${key}: got ${JSON.stringify(specOut?.[key])}`)
+  }
+}
+for (const key of ['c', 'src']) {
+  if (specOut?.[key] !== undefined) {
+    throw new Error(`output-spec leak at ${key}: got ${JSON.stringify(specOut[key])}`)
   }
 }
 const deep = buildDeep(100000)
