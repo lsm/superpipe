@@ -25,22 +25,29 @@ node --expose-gc bench/mem.mjs
 
 | Script | Measures |
 | --- | --- |
-| `perf.mjs` | Sync per-pipe cost against the same pipe bodies called as plain functions (the overhead ratio), one workload per output-spec form (pick, rename, destructure, merge), and a 100k-deep cascade proving stack safety. |
+| `perf.mjs` | Sync per-pipe cost against the same pipe bodies called as plain functions (the overhead ratio), one **separate single-pipe workload per output-spec form** (pick, rename, destructure, merge), and a warmed, repeated 100k-deep cascade proving stack safety. |
 | `async.mjs` | Promise-returning pipes run sequentially and 20k runs concurrently, against a plain `async`/`await` twin. |
 | `mem.mjs` | Per-run retention over 100k runs (leak detection), a deep run's post-run heap usage, and `endAsync`'s heap delta. The deep figures are sampled after the (synchronous, microtask-only) run returns — for a true in-run peak use `node --heap-prof`. |
 
 ## Reading the numbers
 
 - Each timed workload does a full warmup pass, then 5–7 repetitions; the
-  **median** is the reported figure. Treat differences under ~5% as noise.
+  **median** is the headline, and every repetition is printed so outliers and
+  bimodal runs are visible before you apply the ~5% noise rule.
+- The four output-spec rows are single-pipe pipelines, so their per-pipe
+  figure includes the fixed per-run setup cost — compare them to each other,
+  and to `shallow` for the marginal pipe cost.
 - The interesting number is the **overhead ratio** (engine ns/pipe ÷ plain
   ns/call), not absolute time — it survives machine differences and tracks
   what optimization work moves. Caveat: V8 inlines the plain baseline to near
   nothing (~2ns/call), so the ratio is measured against the theoretical
   floor of hand-written code, not a realistic workload. Read the ratio as a
   trend line and ns/pipe as the absolute cost.
-- Every pipeline result is sanity-checked before timing, so a semantic
+- Every pipeline result is sanity-checked before timing (values, plus leak
+  probes for the keys the pick and rename forms must not bind), so a semantic
   regression fails the benchmark instead of producing fast garbage.
+- The deep cascade is warmed and timed 5 times; it doubles as the stack-safety
+  check (no `RangeError` at 100k pipes).
 - Before optimizing anything, profile a workload and look:
 
 ```sh

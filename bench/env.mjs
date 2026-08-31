@@ -22,11 +22,17 @@ export function env() {
       .trim()
     // The before/after workflow usually benches uncommitted executor changes;
     // a dirty marker keeps the second stamp from reusing the first's SHA.
-    // Untracked files do not count (saved baseline JSON lives here too).
+    // status refreshes stat info first, so touched-but-unchanged files do
+    // not flag a false dirty, and untracked files do not count (saved
+    // baseline JSON lives here too).
     try {
-      execSync('git diff-index --quiet HEAD --', { cwd: repoDir, stdio: 'ignore' })
-    } catch (err) {
-      if (err.status === 1) sha = `${sha}-dirty`
+      const status = execSync('git status --porcelain --untracked-files=no', {
+        cwd: repoDir,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).toString()
+      if (status.length > 0) sha = `${sha}-dirty`
+    } catch {
+      // dirty state unknowable; keep the plain SHA
     }
   } catch {
     sha = 'unknown'

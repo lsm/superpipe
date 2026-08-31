@@ -41,6 +41,7 @@ async function timeIt(name, run, { runs, pipes, warmup = runs, reps = 5 }) {
     medianMs,
     bestMs: sorted[0],
     nsPerPipe: (medianMs / runs / pipes) * 1e6,
+    repsMs: times.map((t) => Number.parseFloat(t.toFixed(1))),
   }
 }
 
@@ -74,8 +75,12 @@ for (const r of rows) {
   console.log(
     `${r.name.padEnd(24)} median ${r.medianMs.toFixed(1)}ms  best ${r.bestMs.toFixed(1)}ms  (${r.runs} runs)  ${r.nsPerPipe.toFixed(0)} ${per}`,
   )
+  console.log(`${''.padEnd(24)} reps ${r.repsMs.join(', ')}`)
 }
 console.log(
   `${'async 3-pipe concurrent'.padEnd(24)} median ${concurrentMedianMs.toFixed(1)}ms  best ${concurrentBestMs.toFixed(1)}ms  (5 x ${RUNS} runs)  ${((concurrentMedianMs / RUNS) * 1e6).toFixed(0)}ns amortized per run`,
+)
+console.log(
+  `${''.padEnd(24)} reps ${concurrentTimes.map((t) => t.toFixed(1)).join(', ')}`,
 )
 console.log(`${'overhead ratio'.padEnd(24)} ${overheadX.toFixed(1)}x per step (engine vs plain await)`)
