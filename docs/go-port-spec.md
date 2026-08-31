@@ -82,14 +82,17 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 
 - `Step(name string, fn StepFunc)` — the only step type: `StepFunc func(ctx context.Context, args []any) (any, error)`.
   `args` arrives positionally in declared `In` order. A step with **no** `.In` receives
-  the invocation args verbatim (TS `fetchNothing` — test *passes the invocation arguments
-  to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}`.
-  The engine supplies a **fresh collection for every step invocation** — a positional
-  `[]any` for `.In` (and for the no-`.In` case above), and a fresh `map[string]any` for
-  `.InFields` — mirroring `fetchAsArray`/`fetchAsObject` (`Fetcher.ts:191-217`), which
-  create a new array or object on every call. A step mutating or retaining its `args`
-  (or field map) must not affect any other step or race a later run observation (§5).
-  The step blocks until it has its result; its return is the single continuation channel.
+  the run's invocation args slice directly (TS `fetchNothing` — test *passes the
+  invocation arguments to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers
+  `args == []any{1, 2}`. Because `fetchNothing` returns the same run-level `args`
+  (`Fetcher.ts:173-180`), multiple no-`.In` steps **share** that slice within a run; a
+  mutation is observable to later no-`.In` steps, but not to the container or to steps
+  that declared `.In`/`.InFields`. For `.In` steps the engine builds a fresh positional
+  `[]any` from the container on every invocation, and for `.InFields` a fresh
+  `map[string]any`, mirroring `fetchAsArray`/`fetchAsObject` (`Fetcher.ts:191-217`),
+  which allocate a new array or object each call. Each run uses its own invocation args
+  slice, so a no-`.In` step cannot affect a later run. The step blocks until it has its
+  result; its return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, every `Input` def
   declaring **at least one** name (TS rejects the empty input array — Pipeline.ts:42-43),
