@@ -52,7 +52,7 @@ the last one wins.
 | Definition | Meaning |
 | --- | --- |
 | `Input("a", "b")` | Bind invocation args positionally to names. |
-| `InputFromObject("a", "b")` | Pick keys from the first invocation arg (maps, slices, strings support indexes and `length`). |
+| `InputFromObject("a", "b")` | Pick keys from the first invocation arg. Maps do plain key lookups; slices, arrays, and strings are indexed sources — canonical numeric indexes bind elements and `length` binds the length. |
 | `Step("name", fn)` | Run `fn`, a `StepFunc`. |
 | `Call("dep")` | Resolve `dep` from the container/deps at run time and run it; a bool dep is flow control. |
 | `Not("dep")` | Like `Call`, inverting a boolean result (`false` halts). |
