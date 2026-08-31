@@ -64,8 +64,10 @@ console.log(
 // --- 2. Deep pipeline: post-run heap usage of one deep cascade ---
 // Sampled only after deep() returns: the run is synchronous and
 // microtask-only, so nothing can poll the heap mid-run. GC may already have
-// collected intermediates — treat these as post-run figures, not a peak;
-// for a true in-run peak use a heap profiler (node --heap-prof).
+// collected intermediates — treat these as post-run figures, not a peak. To
+// attribute what allocates across the run, profile with node --heap-prof:
+// it samples allocation sites, so it locates allocations; it does not
+// measure an exact live-heap maximum.
 const DEPTH = 100000
 const deep = buildDeep(DEPTH)
 globalThis.gc()

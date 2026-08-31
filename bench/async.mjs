@@ -8,8 +8,9 @@ import { envLine } from './env.mjs'
 const asyncInc = (v) => Promise.resolve((v || 0) + 1)
 
 const plainAsync5 = async () => {
-  let v = 0
-  v = await asyncInc(v)
+  // First call receives undefined, exactly like the engine's first pipe
+  // (declared with null input and invoked with no run arguments).
+  let v = await asyncInc()
   v = await asyncInc(v)
   v = await asyncInc(v)
   v = await asyncInc(v)
