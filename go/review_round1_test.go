@@ -190,3 +190,50 @@ func TestInvalidDefsDoNotHideOrderingViolations(t *testing.T) {
 		t.Fatalf("missing the ordering violation: %v", msg)
 	}
 }
+
+func TestLargeIndexOnSmallSliceBindsNil(t *testing.T) {
+	// Guards the 32-bit portability fix: the bound is compared in uint64
+	// before narrowing to int, so a large canonical index can never wrap
+	// negative and index a small collection.
+	for _, key := range []string{"2147483648", "3000000000", "4294967294"} {
+		r := mustBuild(t, "big-slice-idx", nil,
+			InputFromObject(key),
+			Step("s", func(_ context.Context, args []any) (any, error) { return args[0], nil }).InFields(key).Out("m"),
+			Output("m"),
+		)
+		out, err := r.Run(context.Background(), []any{1, 2, 3})
+		if err != nil {
+			t.Fatalf("key %q: %v", key, err)
+		}
+		if v := out.(map[string]any)[key]; v != nil {
+			t.Fatalf("key %q: v = %v, want nil", key, v)
+		}
+	}
+}
+
+func TestStepReturnedFrameworkErrorSkipsHandler(t *testing.T) {
+	handlerRan := false
+	inner, err := Build("inner", nil,
+		Step("s", ret(map[string]any{"next": 1})).Out(Merge()),
+	)
+	if err != nil {
+		t.Fatalf("inner Build: %v", err)
+	}
+	r := mustBuild(t, "outer", nil,
+		Step("nested", func(_ context.Context, _ []any) (any, error) {
+			_, err := inner.Run(context.Background())
+			return nil, err
+		}),
+		Error("h", func(context.Context, []any) error {
+			handlerRan = true
+			return nil
+		}),
+	)
+	_, err = r.Run(context.Background())
+	if !isFrameworkError(err) {
+		t.Fatalf("err = %v, want the framework error unwrapped", err)
+	}
+	if handlerRan {
+		t.Fatal("the outer handler ran for a framework error")
+	}
+}

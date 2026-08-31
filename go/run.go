@@ -286,10 +286,13 @@ func (r *Runner) executeStep(ctx context.Context, st *runState, idx int, d *Step
 }
 
 func (r *Runner) settleError(ctx context.Context, st *runState, idx int, stepName string, activeErr error) error {
-	settlement := activeErr
-	if !isFrameworkError(activeErr) {
-		settlement = fmt.Errorf("superpipe: pipeline %q step %d %q: %w", r.name, idx, stepName, activeErr)
+	// Framework errors are definition errors: they propagate as themselves,
+	// never wrapped, and never route to the error handler — including one
+	// returned by a step (a nested runner's failure, for example).
+	if isFrameworkError(activeErr) {
+		return activeErr
 	}
+	settlement := fmt.Errorf("superpipe: pipeline %q step %d %q: %w", r.name, idx, stepName, activeErr)
 	if r.handler == nil {
 		return settlement
 	}
@@ -458,7 +461,9 @@ func readSourceMember(source any, name string) any {
 		if name == "length" {
 			return rv.Len()
 		}
-		if n, ok := canonicalIndex(name); ok && int(n) < rv.Len() {
+		// Compare in uint64 before narrowing: on 32-bit targets a large
+		// canonical index overflows int and would satisfy a naive bound.
+		if n, ok := canonicalIndex(name); ok && n < uint64(rv.Len()) {
 			return rv.Index(int(n)).Interface()
 		}
 		return nil
