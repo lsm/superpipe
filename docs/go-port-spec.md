@@ -253,13 +253,13 @@ channel is the Go spelling of a future, so the library ships exactly one entry p
 Generics are used exactly where Go's type system permits them to help, and nowhere else:
 
 - `Get[T any](args []any, i int) (T, error)` — the typed accessor for step bodies. A type
-  mismatch fails with the argument position and both types; the step and pipeline context
-  arrive via the engine's error wrapping (C8), since a `Get` failure is an ordinary error
-  returned from the step. An out-of-range index (negative or `i >= len(args)`) returns an
-  error naming the position and the length — never a panic — routed as an ordinary step
-  error. A plain-nil argument yields the **zero value** of a nilable `T` (pointer,
-  `unsafe.Pointer`, map, slice, channel, func, interface) with a nil error —
-  `Get[*User](args, 0)` on a
+  mismatch returns an error naming the argument position and both types; because `Get` is a
+  step-body helper, that error is treated as an ordinary step error — the engine adds
+  pipeline/step context but does **not** attach a framework sentinel. An out-of-range index
+  (negative or `i >= len(args)`) returns an error naming the position and the length —
+  never a panic — and is routed as an ordinary step error the same way. A plain-nil argument
+  yields the **zero value** of a nilable `T` (pointer, `unsafe.Pointer`, map, slice,
+  channel, func, interface) with a nil error — `Get[*User](args, 0)` on a
   missing input gives `nil, nil` — and is a type mismatch for non-nilable `T`
   (`int`, `string`, structs), mirroring C2's nil-for-absent delivery.
   No naked assertions in user code. Generic *methods* only became legal in Go 1.27 (August 2026;
@@ -598,11 +598,14 @@ run returns the active error whether or not a handler ran — there is no separa
 no-handler outcome to name. The TS `Pipeline error: ...` wrapper exists only to convert
 non-`Error` throwables, which Go cannot have.
 
-All framework-generated errors wrap a sentinel from the coverage map above, so
-`errors.Is(err, superpipe.ErrAborted)` and friends are the consumer-side checks
-(replacing the TS-side `instanceof` on exported classes). Ordinary step failures are
-outside this guarantee: the engine's context wrapper adds no framework sentinel, and
-the step author's chain passes through intact.
+All framework-generated errors in the enumerated categories above wrap a sentinel from
+the coverage map, so `errors.Is(err, superpipe.ErrAborted)` and friends are the
+consumer-side checks (replacing the TS-side `instanceof` on exported classes). The
+`Get[T]` helper is deliberately not in this list: its type-mismatch and out-of-range
+errors are ordinary step errors, wrapped only by pipeline/step context, with no
+framework sentinel attached. Ordinary step failures are outside this guarantee: the
+engine's context wrapper adds no framework sentinel, and the step author's chain passes
+through intact.
 
 ## 7. Test plan
 
