@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 )
 
@@ -398,17 +399,18 @@ func orderedEntryIndices(entries []entry) []int {
 			rest = append(rest, i)
 		}
 	}
-	for a := 1; a < len(indexKeys); a++ {
-		for b := a; b > 0; b-- {
-			ka, _ := canonicalIndex(entries[indexKeys[b-1]].key)
-			kb, _ := canonicalIndex(entries[indexKeys[b]].key)
-			if kb < ka {
-				indexKeys[b-1], indexKeys[b] = indexKeys[b], indexKeys[b-1]
-			} else {
-				break
-			}
+	slices.SortStableFunc(indexKeys, func(a, b int) int {
+		ka, _ := canonicalIndex(entries[a].key)
+		kb, _ := canonicalIndex(entries[b].key)
+		switch {
+		case ka < kb:
+			return -1
+		case ka > kb:
+			return 1
+		default:
+			return 0
 		}
-	}
+	})
 	return append(indexKeys, rest...)
 }
 
