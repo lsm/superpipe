@@ -191,18 +191,19 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   with non-empty sides — remains a **literal key**: `"a:b:c"` and `"a:"` bind the
   literal names `a:b:c` / `a:` (RE_RENAME, Producer.ts:12 — the reference does not
   reject or re-split them).
-- `...` is valid **only** as the entire `Merge()` spec, and the restriction is scoped to
-  the **multi-key producer forms**: a key spelling that targets `...` (`"..."`, `"...x"`,
-  `"x:..."`) inside `Pick`/`Destructure`, or as a `Rename` operand, is a construction
-  error — those Go spellings exist to disambiguate the TS mini-grammar, and a `...`-
-  targeting key would re-create the ambiguity `Merge()` owns. Elsewhere `...` is an
-  **ordinary name**: `Out("...")` single-binds the destination `...` (TS output `'...'`
-  is a plain single destination), and every fetch-side spec — `.In`, `.InFields`,
-  `Input`, `InputFromObject`, `Output`, `OutputFields` — looks the literal key up,
-  mirroring the reference's fetcher (`'...'` non-raw parses to the single-element array
-  `['...']`; the raw branch of Fetcher.ts:96-105 selects `fetchSingle`; `'{...}'` parses
-  to the literal `...` key via `objectStringToArray`). `Output("...")` and
-  `OutputFields("...")` are therefore valid definitions that resolve the `...` key.
+- `...` is valid **only** as the entire `Merge()` spec. On the **producer side** — step
+  output specs — any destination that targets `...` is a construction error in **every**
+  form: `Out("...")` (TS classifies bare `'...'` as the single form, then the shared
+  validation rejects the destination — Producer.ts:72-74, 88-96), keys inside
+  `Pick`/`Destructure`, `Rename` operands, and `"x:..."` renames alike
+  (`destination === '...' || destination.startsWith('...')`). The **fetch side** is
+  exempt: the `Fetcher` has no ellipsis validation, so `.In`, `.InFields`, `Input`,
+  `InputFromObject`, `Output`, and `OutputFields` treat `...` as an ordinary key and
+  look it up literally (`'...'` non-raw parses to the single-element array `['...']`;
+  the raw branch of Fetcher.ts:96-105 selects `fetchSingle`; `'{...}'` parses to the
+  literal `...` key via `objectStringToArray`). `Output("...")` and
+  `OutputFields("...")` are therefore valid definitions that resolve the `...` key,
+  and `InputFromObject("...")` picks the literal `...` member.
 - Destinations bind in **declaration order**; a duplicate destination is not rejected —
   the last write wins (`Pick("a:x", "b:x")` binds `x` to the `b` entry, matching
   Producer.ts:160-192's repeated `setEntry`).
