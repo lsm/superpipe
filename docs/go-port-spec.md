@@ -167,7 +167,18 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   skipped when unresolved, inverted when present. `Optional` accepts a name or a
   `Not(...)` def. (TS strips `!` then `?`, so only the `!?` order composes; `?!check`
   strips the `?` and leaves a dep literally named `!check` — a quirk the sigil-free Go
-  spelling cannot reproduce by accident and does not port.)
+  spelling cannot reproduce by accident and does not port.) **A `Call`/`Not`/`Optional`
+  name must not begin with `!` or `?`** — construction error (`ErrInvalidDefinition`):
+  `createPipe` unconditionally strips one leading `!` and one `?` (builder.ts:37-45),
+  so a TS injected name always resolves a sigil-free key — `'!check'` is inverted
+  `check`, `'!!x'` is the doubled-sigil escape calling literal `!x` inverted, and **no**
+  spelling yields a required, non-inverted call to a leading-sigil key. The typed
+  constructors spell intent explicitly (`Not("check")`), so a sigil-prefixed name is
+  rejected rather than silently resolving the literal key — the same strictness that
+  declines the `?!check` quirk above, and it likewise forecloses the `'!!x'` escape.
+  `ErrorCall` is **exempt**: `createErrorPipe` resolves its name verbatim with no
+  stripping (builder.ts:77-85), so `ErrorCall("!x")` resolves the literal key, exactly
+  like TS `error('!x')`.
 - `ErrorCall(name string)` — the injected form of `Error`: the handler is resolved by
   name **at error time**, run container first then `Deps` (TS string-named error
   handlers, builder.ts:77-85); the resolved callable must match `ErrorHandlerFunc`'s
@@ -180,7 +191,7 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 
 | Constructor | TS form | Runtime behavior |
 | --- | --- | --- |
-| `Out("user")` | `'user'` | Binds the **whole** return value to `user`. |
+| `Out("user")` | `'user'` | Binds the **whole** return value to `user`. A **single-form** name only — see the grammar-sensitivity rule below. |
 | `Rename("src", "dst")` | `'src:dst'` (bare) | **A one-key pick, not a whole-value bind**: return must be a map; picks key `src`, binds it as `dst`; missing `src` throws `OutputKeyError` (Producer.ts:69-71 classifies a bare rename as the pick form). |
 | `Pick("a", "b")` | `'{a, b}'` | Return must be a map; picks named keys. A missing key throws `OutputKeyError`. |
 | `Destructure("a", "b")` | `['a', 'b']` | Array return → positional binding (short array throws `OutputKeyError`); map return → picks by name (missing key throws). |
@@ -191,6 +202,16 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   with non-empty sides — remains a **literal key**: `"a:b:c"` and `"a:"` bind the
   literal names `a:b:c` / `a:` (RE_RENAME, Producer.ts:12 — the reference does not
   reject or re-split them).
+- **Grammar-sensitive `Out` names are construction errors.** `Out(name)` accepts a
+  single-form name only: a name matching the rename grammar above (exactly one colon,
+  both sides non-empty) or the object-string shape `'{…}'` is rejected with
+  `ErrInvalidDefinition` — the reference's grammar would classify that string as
+  **another form entirely** (`'a:b'` is the rename pick, Producer.ts:69-71; `'{a}'` is
+  the object-string pick), so no TS pipeline can single-bind a destination spelled that
+  way, and silently doing so in Go would create output behavior the reference cannot
+  express. Use the typed spelling of the intended form: `Rename("a", "b")`,
+  `Pick("a")`. Names failing both patterns — `"a:b:c"`, `"a:"`, `"{a"` — are
+  single-form literals in the reference and bind literally here.
 - `...` is a **destination marker**, and as a destination it is valid **only** as the
   entire `Merge()` spec; as a **source or lookup name** it is ordinary and read
   literally. On the **producer side** — step
