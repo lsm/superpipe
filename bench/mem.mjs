@@ -56,15 +56,18 @@ console.log(`heap after warmup+gc : ${fmt(baseHeap)}`)
 console.log(`heap after 100k runs + gc: ${fmt(afterGcHeap)} (retained delta: ${fmt(afterGcHeap - baseHeap)})`)
 console.log(`peak heap during 100k runs (no gc): ${fmt(peak)}`)
 
-// --- 2. Deep pipeline: peak memory of one deep cascade ---
+// --- 2. Deep pipeline: post-run heap usage of one deep cascade ---
+// Sampled only after deep() returns: the run is synchronous and
+// microtask-only, so nothing can poll the heap mid-run. GC may already have
+// collected intermediates — treat these as post-run figures, not a peak;
+// for a true in-run peak use a heap profiler (node --heap-prof).
 const DEPTH = 100000
 const deep = buildDeep(DEPTH)
 globalThis.gc()
 const preDeep = process.memoryUsage().heapUsed
-let deepPeak = preDeep
 const rssBefore = process.memoryUsage().rss
 let result = deep()
-deepPeak = Math.max(deepPeak, process.memoryUsage().heapUsed)
+const postRunDeep = process.memoryUsage().heapUsed
 const rssAfter = process.memoryUsage().rss
 globalThis.gc()
 const postDeep = process.memoryUsage().heapUsed
@@ -72,8 +75,8 @@ if (result !== 100000) throw new Error('deep cascade result drifted')
 
 console.log(`--- deep ${DEPTH}-pipe pipeline ---`)
 console.log(`result: ${result}`)
-console.log(`heap before run: ${fmt(preDeep)}, right after run: ${fmt(deepPeak)}, after gc: ${fmt(postDeep)}`)
-console.log(`rss delta during deep run: ${fmt(rssAfter - rssBefore)}`)
+console.log(`heap before run: ${fmt(preDeep)}, right after run: ${fmt(postRunDeep)}, after gc: ${fmt(postDeep)}`)
+console.log(`rss delta across deep run: ${fmt(rssAfter - rssBefore)}`)
 
 // --- 3. Deep pipeline via endAsync ---
 const DEPTH2 = 50000

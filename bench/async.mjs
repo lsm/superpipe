@@ -56,9 +56,16 @@ const overheadX = rows[1].nsPerPipe / rows[0].nsPerPipe
 
 const concurrent = buildAsync(3)
 if ((await concurrent()) !== 3) throw new Error('concurrent pipeline result drifted')
-const t0 = performance.now()
-await Promise.all(Array.from({ length: RUNS }, () => concurrent()))
-const concurrentMs = performance.now() - t0
+await Promise.all(Array.from({ length: 2000 }, () => concurrent())) // warmup batch
+const concurrentTimes = []
+for (let rep = 0; rep < 5; rep++) {
+  const t0 = performance.now()
+  await Promise.all(Array.from({ length: RUNS }, () => concurrent()))
+  concurrentTimes.push(performance.now() - t0)
+}
+const concurrentSorted = [...concurrentTimes].sort((a, b) => a - b)
+const concurrentMedianMs = concurrentSorted[concurrentSorted.length >> 1]
+const concurrentBestMs = concurrentSorted[0]
 
 for (const r of rows) {
   const per = r.name.includes('plain') ? 'ns/call' : 'ns/pipe'
@@ -67,6 +74,6 @@ for (const r of rows) {
   )
 }
 console.log(
-  `${'async 3-pipe concurrent'.padEnd(24)} ${concurrentMs.toFixed(0)}ms for ${RUNS} concurrent runs (${((concurrentMs / RUNS) * 1e6).toFixed(0)}ns amortized per run)`,
+  `${'async 3-pipe concurrent'.padEnd(24)} median ${concurrentMedianMs.toFixed(1)}ms  best ${concurrentBestMs.toFixed(1)}ms  (5 x ${RUNS} runs)  ${((concurrentMedianMs / RUNS) * 1e6).toFixed(0)}ns amortized per run`,
 )
 console.log(`${'overhead ratio'.padEnd(24)} ${overheadX.toFixed(1)}x per step (engine vs plain await)`)

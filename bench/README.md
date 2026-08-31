@@ -24,7 +24,7 @@ node --expose-gc bench/mem.mjs
 | --- | --- |
 | `perf.mjs` | Sync per-pipe cost against the same pipe bodies called as plain functions (the overhead ratio), one workload per output-spec form (pick, rename, destructure, merge), and a 100k-deep cascade proving stack safety. |
 | `async.mjs` | Promise-returning pipes run sequentially and 20k runs concurrently, against a plain `async`/`await` twin. |
-| `mem.mjs` | Per-run retention over 100k runs (leak detection), a deep run's transient heap peak, and `endAsync`'s heap delta. |
+| `mem.mjs` | Per-run retention over 100k runs (leak detection), a deep run's post-run heap usage, and `endAsync`'s heap delta. The deep figures are sampled after the (synchronous, microtask-only) run returns — for a true in-run peak use `node --heap-prof`. |
 
 ## Reading the numbers
 

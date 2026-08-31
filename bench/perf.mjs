@@ -41,14 +41,16 @@ function buildShallow() {
     .end('v')
 }
 
-// One pipe per output-spec form: pick, rename, destructure, merge.
+// One pipe per output-spec form: pick, rename, destructure, merge. The end
+// spec names every form's binding so the sanity check below fails if any
+// form silently stops producing.
 function buildSpecs() {
   return superpipe({})('bench-specs')
     .pipe(() => ({ a: 1, b: 2, c: 3 }), null, '{a, b}')
     .pipe(() => ({ src: 9 }), 'a', 'src:dst')
     .pipe(() => ['p', 'q'], null, ['p', 'q'])
     .pipe(() => ({ m: 7 }), null, '{...}')
-    .end('dst')
+    .end('{a, b, dst, p, q, m}')
 }
 
 function buildDeep(depth) {
@@ -84,7 +86,13 @@ if (plain5(0) !== 5) throw new Error('plain baseline drifted')
 const shallow = buildShallow()
 if (shallow() !== 5) throw new Error('shallow pipeline result drifted')
 const specs = buildSpecs()
-if (specs() !== 9) throw new Error('output-spec pipeline result drifted')
+const specWant = { a: 1, b: 2, dst: 9, p: 'p', q: 'q', m: 7 }
+const specOut = specs()
+for (const key of Object.keys(specWant)) {
+  if (specOut?.[key] !== specWant[key]) {
+    throw new Error(`output-spec regression at ${key}: got ${JSON.stringify(specOut?.[key])}`)
+  }
+}
 const deep = buildDeep(100000)
 const t0 = performance.now()
 const deepResult = deep()
