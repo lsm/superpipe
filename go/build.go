@@ -15,7 +15,8 @@ type Runner struct {
 
 // Build validates the definition list and returns an immutable *Runner.
 // Every construction violation is reported together via errors.Join,
-// each wrapping ErrInvalidDefinition.
+// each wrapping ErrInvalidDefinition. The runner retains deep copies of
+// the accepted definitions; Deps stays live by reference per §5.
 func Build(name string, deps Deps, defs ...Def) (*Runner, error) {
 	r := &Runner{name: name, deps: deps}
 	var violations []error
@@ -30,49 +31,61 @@ func Build(name string, deps Deps, defs ...Def) (*Runner, error) {
 			if d == nil {
 				continue
 			}
-			if err := d.validate(); err != nil {
+			clone := d.clone()
+			ok := true
+			if err := clone.validate(); err != nil {
 				violations = append(violations, err)
-				continue
+				ok = false
 			}
 			if seenStep {
 				violations = append(violations, newInvalidDefinitionError("superpipe: input def must come before the first step"))
-				continue
+				ok = false
 			}
-			r.inputs = append(r.inputs, d)
+			if ok {
+				r.inputs = append(r.inputs, clone)
+			}
 
 		case *StepDef:
 			if d == nil {
 				continue
 			}
-			if err := d.validate(); err != nil {
+			clone := d.clone()
+			ok := true
+			if err := clone.validate(); err != nil {
 				violations = append(violations, err)
-				continue
+				ok = false
 			}
-			if err := validateSpec(d.out); err != nil {
+			if err := validateSpec(clone.out); err != nil {
 				violations = append(violations, err)
-				continue
+				ok = false
 			}
 			if seenHandler {
-				violations = append(violations, newInvalidDefinitionError("superpipe: step %q follows the error handler", d.name))
-				continue
+				violations = append(violations, newInvalidDefinitionError("superpipe: step %q follows the error handler", clone.name))
+				ok = false
 			}
 			seenStep = true
-			r.steps = append(r.steps, d)
+			if ok {
+				r.steps = append(r.steps, clone)
+			}
 
 		case *ErrorDef:
 			if d == nil {
 				continue
 			}
-			if err := d.validate(); err != nil {
+			clone := d.clone()
+			ok := true
+			if err := clone.validate(); err != nil {
 				violations = append(violations, err)
-				continue
+				ok = false
 			}
 			if seenHandler {
 				violations = append(violations, newInvalidDefinitionError("superpipe: each pipeline may have only one error handler"))
-				continue
+				ok = false
 			}
 			seenHandler = true
-			r.handler = d
+			if ok {
+				r.handler = clone
+			}
 
 		case *OutputDef:
 			if d == nil {
@@ -89,7 +102,7 @@ func Build(name string, deps Deps, defs ...Def) (*Runner, error) {
 		if err := lastOutput.validate(); err != nil {
 			violations = append(violations, err)
 		} else {
-			r.output = lastOutput
+			r.output = lastOutput.clone()
 		}
 	}
 

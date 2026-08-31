@@ -3,6 +3,7 @@ package superpipe
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -20,6 +21,12 @@ type InputDef struct {
 }
 
 func (d *InputDef) isDef() {}
+
+func (d *InputDef) clone() *InputDef {
+	c := *d
+	c.names = slices.Clone(d.names)
+	return &c
+}
 
 func Input(names ...string) *InputDef {
 	return &InputDef{names: names}
@@ -44,6 +51,27 @@ type StepDef struct {
 }
 
 func (d *StepDef) isDef() {}
+
+func cloneSpec(s outputSpec) outputSpec {
+	switch v := s.(type) {
+	case pickSpec:
+		v.keys = slices.Clone(v.keys)
+		return v
+	case destructureSpec:
+		v.keys = slices.Clone(v.keys)
+		return v
+	default:
+		return s
+	}
+}
+
+func (d *StepDef) clone() *StepDef {
+	c := *d
+	c.in = slices.Clone(d.in)
+	c.inFields = slices.Clone(d.inFields)
+	c.out = cloneSpec(d.out)
+	return &c
+}
 
 func Step(name string, fn StepFunc) *StepDef {
 	return &StepDef{name: name, fn: fn}
@@ -107,6 +135,13 @@ type ErrorDef struct {
 
 func (d *ErrorDef) isDef() {}
 
+func (d *ErrorDef) clone() *ErrorDef {
+	c := *d
+	c.in = slices.Clone(d.in)
+	c.inFields = slices.Clone(d.inFields)
+	return &c
+}
+
 func Error(name string, fn ErrorHandlerFunc) *ErrorDef {
 	return &ErrorDef{name: name, fn: fn}
 }
@@ -131,6 +166,12 @@ type OutputDef struct {
 }
 
 func (d *OutputDef) isDef() {}
+
+func (d *OutputDef) clone() *OutputDef {
+	c := *d
+	c.names = slices.Clone(d.names)
+	return &c
+}
 
 func Output(names ...string) *OutputDef {
 	return &OutputDef{names: names}
@@ -214,8 +255,11 @@ func validateNameForm(name, what string, form int) error {
 		if strings.ContainsRune(name, ',') {
 			return newInvalidDefinitionError("superpipe: %s %q contains a comma and would be re-split by the reference's object-string parsing", what, name)
 		}
-		if len(name) > 0 && (isJSTrimRune([]rune(name)[0]) || isJSTrimRune([]rune(name[len(name)-1:])[0])) {
-			return newInvalidDefinitionError("superpipe: %s %q has leading or trailing whitespace and would be trimmed by the reference's object-string parsing", what, name)
+		if len(name) > 0 {
+			runes := []rune(name)
+			if isJSTrimRune(runes[0]) || isJSTrimRune(runes[len(runes)-1]) {
+				return newInvalidDefinitionError("superpipe: %s %q has leading or trailing whitespace and would be trimmed by the reference's object-string parsing", what, name)
+			}
 		}
 		if hasJSLineTerminator(name) {
 			return newInvalidDefinitionError("superpipe: %s %q contains a line terminator and would break the reference's object-string form", what, name)
@@ -250,6 +294,9 @@ func validateSpec(spec outputSpec) error {
 		}
 		return validateEllipsisDst(s.name, "output name")
 	case pickSpec:
+		if len(s.keys) == 0 {
+			return newInvalidDefinitionError("superpipe: pick spec requires at least one key")
+		}
 		for _, k := range s.keys {
 			what := "pick key"
 			if k.renamed {
@@ -264,6 +311,9 @@ func validateSpec(spec outputSpec) error {
 		}
 		return nil
 	case destructureSpec:
+		if len(s.keys) == 0 {
+			return newInvalidDefinitionError("superpipe: destructure spec requires at least one key")
+		}
 		for _, k := range s.keys {
 			what := "destructure key"
 			if k.renamed {

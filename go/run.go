@@ -353,7 +353,10 @@ func (r *Runner) invokeHandler(ctx context.Context, st *runState, fn ErrorHandle
 	return err
 }
 
-func canonicalIndex(key string) (uint64, bool) {
+// canonicalDigits reports whether key is the canonical decimal spelling of
+// a number (digits only, no leading zeros) and its value; values too large
+// for uint64 clamp to the maximum, which is beyond any collection length.
+func canonicalDigits(key string) (uint64, bool) {
 	if key == "" || (len(key) > 1 && key[0] == '0') {
 		return 0, false
 	}
@@ -362,11 +365,19 @@ func canonicalIndex(key string) (uint64, bool) {
 			return 0, false
 		}
 	}
-	if len(key) > 10 {
-		return 0, false
-	}
 	n, err := strconv.ParseUint(key, 10, 64)
-	if err != nil || n > 4294967294 {
+	if err != nil {
+		return ^uint64(0), true
+	}
+	return n, true
+}
+
+// canonicalIndex is the ECMAScript array-index test used for key ordering
+// and slice/array element access: canonical digits, capped at 2^32−2.
+// Larger spellings are ordinary string properties.
+func canonicalIndex(key string) (uint64, bool) {
+	n, ok := canonicalDigits(key)
+	if !ok || n > 4294967294 {
 		return 0, false
 	}
 	return n, true
@@ -457,7 +468,9 @@ func readSourceMember(source any, name string) any {
 		if name == "length" {
 			return len(runes)
 		}
-		if n, ok := canonicalIndex(name); ok && int(n) < len(runes) {
+		// String positions carry no array-index ceiling: any canonical
+		// index within the rune count binds, however large the spelling.
+		if n, ok := canonicalDigits(name); ok && n < uint64(len(runes)) {
 			return string(runes[n])
 		}
 		return nil
