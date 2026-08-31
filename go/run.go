@@ -78,7 +78,7 @@ func (r *Runner) resolveStep(d *StepDef, container map[string]any) (StepFunc, bo
 		}
 		return nil, false, fnKindAbsent
 	}
-	if b, ok := v.(bool); ok {
+	if b, ok := asBool(v); ok {
 		return nil, b, fnKindBool
 	}
 	if fn, ok := asStepFunc(v); ok {
@@ -196,6 +196,19 @@ func invokeStep(ctx context.Context, stepName string, fn StepFunc, args []any) (
 	return value, err
 }
 
+// asBool treats any value of underlying boolean kind as a bool, so defined
+// types like type Gate bool participate in flow control like plain bool.
+func asBool(v any) (bool, bool) {
+	if v == nil {
+		return false, false
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Bool {
+		return false, false
+	}
+	return rv.Bool(), true
+}
+
 func isNoValue(v any) bool {
 	if v == nil {
 		return true
@@ -245,13 +258,13 @@ func (r *Runner) executeStep(ctx context.Context, st *runState, idx int, d *Step
 	}
 
 	if d.not {
-		if b, ok := value.(bool); ok {
+		if b, ok := asBool(value); ok {
 			value = !b
 		}
 	}
 
 	if stepErr == nil && isFlowControl {
-		if b, ok := value.(bool); ok && !b {
+		if b, ok := asBool(value); ok && !b {
 			return true, nil
 		}
 	}

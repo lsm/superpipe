@@ -278,6 +278,50 @@ func TestDefinedStringTypeIsAnIndexedSource(t *testing.T) {
 	}
 }
 
+func TestDefinedBoolTypeParticipatesInFlowControl(t *testing.T) {
+	type Gate bool
+
+	ran := false
+	r := mustBuild(t, "gate-false", Deps{"gate": Gate(false)},
+		Call("gate"),
+		Step("after", func(context.Context, []any) (any, error) {
+			ran = true
+			return nil, nil
+		}),
+	)
+	if _, err := r.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ran {
+		t.Fatal("a defined-bool false dependency should halt the run")
+	}
+
+	out, err := mustBuild(t, "gate-true", Deps{"gate": Gate(true)},
+		Call("gate").Out("v"),
+		Output("v"),
+	).Run(context.Background())
+	if err != nil || out != true {
+		t.Fatalf("out=%v err=%v, want the inverted-bool-free truthy bind", out, err)
+	}
+
+	// A callable returning a defined bool is inverted and flow-controlled.
+	ran = false
+	deps := Deps{"check": StepFunc(func(_ context.Context, _ []any) (any, error) { return Gate(true), nil })}
+	r2 := mustBuild(t, "gate-not", deps,
+		Not("check"),
+		Step("after", func(context.Context, []any) (any, error) {
+			ran = true
+			return nil, nil
+		}),
+	)
+	if _, err := r2.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ran {
+		t.Fatal("a Not step returning defined-bool true should invert to false and halt")
+	}
+}
+
 func TestBraceNewlineNamesMatchReference(t *testing.T) {
 	// JavaScript's /^{.+}$/ has no multiline flag, so $ matches only at the
 	// very end: "{a}\n" is a single-form literal, not the object form.
