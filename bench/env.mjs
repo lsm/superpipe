@@ -20,6 +20,14 @@ export function env() {
     })
       .toString()
       .trim()
+    // The before/after workflow usually benches uncommitted executor changes;
+    // a dirty marker keeps the second stamp from reusing the first's SHA.
+    // Untracked files do not count (saved baseline JSON lives here too).
+    try {
+      execSync('git diff-index --quiet HEAD --', { cwd: repoDir, stdio: 'ignore' })
+    } catch (err) {
+      if (err.status === 1) sha = `${sha}-dirty`
+    }
   } catch {
     sha = 'unknown'
   }

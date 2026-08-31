@@ -57,7 +57,9 @@ globalThis.gc()
 console.log('--- shallow 5-pipe pipeline ---')
 console.log(`heap after warmup+gc : ${fmt(baseHeap)}`)
 console.log(`heap after 100k runs + gc: ${fmt(afterGcHeap)} (retained delta: ${fmt(afterGcHeap - baseHeap)})`)
-console.log(`peak heap during 100k runs (no gc): ${fmt(peak)}`)
+console.log(
+  `max sampled heap (every 1000 of 100k runs, no gc): ${fmt(peak)} — a lower bound; automatic GC can hide transients between samples`,
+)
 
 // --- 2. Deep pipeline: post-run heap usage of one deep cascade ---
 // Sampled only after deep() returns: the run is synchronous and
