@@ -468,8 +468,8 @@ func readSourceMember(source any, name string) any {
 		}
 		return nil
 	}
-	if s, ok := source.(string); ok {
-		runes := []rune(s)
+	if rv := reflect.ValueOf(source); rv.Kind() == reflect.String {
+		runes := []rune(rv.String())
 		if name == "length" {
 			return len(runes)
 		}

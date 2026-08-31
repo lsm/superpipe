@@ -258,6 +258,26 @@ func TestRenameSerializationFormAppliesToWholeKey(t *testing.T) {
 	)
 }
 
+func TestDefinedStringTypeIsAnIndexedSource(t *testing.T) {
+	type Text string
+	r := mustBuild(t, "text-source", nil,
+		InputFromObject("1", "length"),
+		Step("s", func(_ context.Context, args []any) (any, error) { return args[0], nil }).InFields("1", "length").Out("m"),
+		Output("m"),
+	)
+	out, err := r.Run(context.Background(), Text("abc"))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := out.(map[string]any)
+	if m["1"] != "b" {
+		t.Fatalf("m[1] = %v, want b (rune-indexed like a plain string)", m["1"])
+	}
+	if m["length"] != 3 {
+		t.Fatalf("m[length] = %v, want 3", m["length"])
+	}
+}
+
 func TestBraceNewlineNamesMatchReference(t *testing.T) {
 	// JavaScript's /^{.+}$/ has no multiline flag, so $ matches only at the
 	// very end: "{a}\n" is a single-form literal, not the object form.
