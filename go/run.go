@@ -472,8 +472,11 @@ func memberReader(source any) func(name string) any {
 	if source == nil {
 		return func(string) any { return nil }
 	}
-	if m, ok := asStringKeyedMap(source); ok {
-		return func(name string) any { return m[name] }
+	if isStringKeyedMap(source) {
+		return func(name string) any {
+			v, _ := mapValue(source, name)
+			return v
+		}
 	}
 	if rv, ok := asArray(source); ok {
 		return func(name string) any { return readArrayMember(rv, name) }
