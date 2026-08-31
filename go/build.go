@@ -32,60 +32,44 @@ func Build(name string, deps Deps, defs ...Def) (*Runner, error) {
 				continue
 			}
 			clone := d.clone()
-			ok := true
-			if err := clone.validate(); err != nil {
-				violations = append(violations, err)
-				ok = false
-			}
+			errs := clone.validate()
 			if seenStep {
-				violations = append(violations, newInvalidDefinitionError("superpipe: input def must come before the first step"))
-				ok = false
+				errs = append(errs, newInvalidDefinitionError("superpipe: input def must come before the first step"))
 			}
-			if ok {
+			if len(errs) == 0 {
 				r.inputs = append(r.inputs, clone)
 			}
+			violations = append(violations, errs...)
 
 		case *StepDef:
 			if d == nil {
 				continue
 			}
 			clone := d.clone()
-			ok := true
-			if err := clone.validate(); err != nil {
-				violations = append(violations, err)
-				ok = false
-			}
-			if err := validateSpec(clone.out); err != nil {
-				violations = append(violations, err)
-				ok = false
-			}
+			errs := append(clone.validate(), validateSpec(clone.out)...)
 			if seenHandler {
-				violations = append(violations, newInvalidDefinitionError("superpipe: step %q follows the error handler", clone.name))
-				ok = false
+				errs = append(errs, newInvalidDefinitionError("superpipe: step %q follows the error handler", clone.name))
 			}
 			seenStep = true
-			if ok {
+			if len(errs) == 0 {
 				r.steps = append(r.steps, clone)
 			}
+			violations = append(violations, errs...)
 
 		case *ErrorDef:
 			if d == nil {
 				continue
 			}
 			clone := d.clone()
-			ok := true
-			if err := clone.validate(); err != nil {
-				violations = append(violations, err)
-				ok = false
-			}
+			errs := clone.validate()
 			if seenHandler {
-				violations = append(violations, newInvalidDefinitionError("superpipe: each pipeline may have only one error handler"))
-				ok = false
+				errs = append(errs, newInvalidDefinitionError("superpipe: each pipeline may have only one error handler"))
 			}
 			seenHandler = true
-			if ok {
+			if len(errs) == 0 {
 				r.handler = clone
 			}
+			violations = append(violations, errs...)
 
 		case *OutputDef:
 			if d == nil {
@@ -99,8 +83,8 @@ func Build(name string, deps Deps, defs ...Def) (*Runner, error) {
 	}
 
 	if lastOutput != nil {
-		if err := lastOutput.validate(); err != nil {
-			violations = append(violations, err)
+		if errs := lastOutput.validate(); len(errs) > 0 {
+			violations = append(violations, errs...)
 		} else {
 			r.output = lastOutput.clone()
 		}

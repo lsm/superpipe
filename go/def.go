@@ -275,78 +275,70 @@ func validateEllipsisDst(dst, what string) error {
 	return nil
 }
 
-func validateSpec(spec outputSpec) error {
+func validateSpec(spec outputSpec) []error {
 	if spec == nil {
 		return nil
 	}
+	var errs []error
 	switch s := spec.(type) {
 	case noneSpec:
-		return nil
 	case singleSpec:
 		if s.name == "" {
-			return newInvalidDefinitionError("superpipe: output name must be non-empty")
+			errs = append(errs, newInvalidDefinitionError("superpipe: output name must be non-empty"))
 		}
 		if err := validateNameForm(s.name, "output name", formStandalone); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 		if _, _, ok := splitRename(s.name); ok {
-			return newInvalidDefinitionError("superpipe: output name %q matches the rename grammar; use Rename(%q, ...) for the pick form", s.name, s.name)
+			errs = append(errs, newInvalidDefinitionError("superpipe: output name %q matches the rename grammar; use Rename(%q, ...) for the pick form", s.name, s.name))
 		}
-		return validateEllipsisDst(s.name, "output name")
+		if err := validateEllipsisDst(s.name, "output name"); err != nil {
+			errs = append(errs, err)
+		}
 	case pickSpec:
 		if len(s.keys) == 0 {
-			return newInvalidDefinitionError("superpipe: pick spec requires at least one key")
+			errs = append(errs, newInvalidDefinitionError("superpipe: pick spec requires at least one key"))
 		}
 		for _, k := range s.keys {
-			what := "pick key"
-			if k.renamed {
-				what = "rename operand"
-				if strings.ContainsRune(k.src, ':') || strings.ContainsRune(k.dst, ':') {
-					return newInvalidDefinitionError("superpipe: rename %q:%q contains a colon and would not re-parse as a rename", k.src, k.dst)
-				}
-			}
-			if err := validateSpecKey(k, what, formObjectString); err != nil {
-				return err
-			}
+			errs = append(errs, validateSpecKey(k, "pick key", formObjectString)...)
 		}
-		return nil
 	case destructureSpec:
 		if len(s.keys) == 0 {
-			return newInvalidDefinitionError("superpipe: destructure spec requires at least one key")
+			errs = append(errs, newInvalidDefinitionError("superpipe: destructure spec requires at least one key"))
 		}
 		for _, k := range s.keys {
-			what := "destructure key"
-			if k.renamed {
-				what = "rename operand"
-				if strings.ContainsRune(k.src, ':') || strings.ContainsRune(k.dst, ':') {
-					return newInvalidDefinitionError("superpipe: rename %q:%q contains a colon and would not re-parse as a rename", k.src, k.dst)
-				}
-			}
-			if err := validateSpecKey(k, what, formArray); err != nil {
-				return err
-			}
+			errs = append(errs, validateSpecKey(k, "destructure key", formArray)...)
 		}
-		return nil
 	case spreadSpec:
-		return nil
 	default:
-		return newInvalidDefinitionError("superpipe: unknown output spec %T", spec)
+		errs = append(errs, newInvalidDefinitionError("superpipe: unknown output spec %T", spec))
 	}
+	return errs
 }
 
-func validateSpecKey(k specKey, what string, form int) error {
+func validateSpecKey(k specKey, what string, form int) []error {
+	var errs []error
 	if k.src == "" || k.dst == "" {
-		return newInvalidDefinitionError("superpipe: %s must be non-empty", what)
-	}
-	if err := validateNameForm(k.src, what, form); err != nil {
-		return err
+		errs = append(errs, newInvalidDefinitionError("superpipe: %s must be non-empty", what))
 	}
 	if k.renamed {
-		if err := validateNameForm(k.dst, what, form); err != nil {
-			return err
+		what := "rename operand"
+		if strings.ContainsRune(k.src, ':') || strings.ContainsRune(k.dst, ':') {
+			errs = append(errs, newInvalidDefinitionError("superpipe: rename %q:%q contains a colon and would not re-parse as a rename", k.src, k.dst))
 		}
+		if err := validateNameForm(k.src, what, form); err != nil {
+			errs = append(errs, err)
+		}
+		if err := validateNameForm(k.dst, what, form); err != nil {
+			errs = append(errs, err)
+		}
+	} else if err := validateNameForm(k.src, what, form); err != nil {
+		errs = append(errs, err)
 	}
-	return validateEllipsisDst(k.dst, what)
+	if err := validateEllipsisDst(k.dst, what); err != nil {
+		errs = append(errs, err)
+	}
+	return errs
 }
 
 func sigilRoundTrip(name string, not, optional bool) bool {
@@ -370,30 +362,32 @@ func sigilRoundTrip(name string, not, optional bool) bool {
 	return tsNot == not && tsOpt == optional && s == name
 }
 
-func (d *StepDef) validate() error {
+func (d *StepDef) validate() []error {
+	var errs []error
 	if !d.injected && d.fn == nil {
-		return newInvalidDefinitionError("superpipe: step %q has a nil function", d.name)
+		errs = append(errs, newInvalidDefinitionError("superpipe: step %q has a nil function", d.name))
 	}
 	if d.injected {
 		if d.depName == "next" {
-			return newInvalidDefinitionError("superpipe: injected name %q is reserved", d.depName)
+			errs = append(errs, newInvalidDefinitionError("superpipe: injected name %q is reserved", d.depName))
 		}
 		if d.depName == "" && !d.not && !d.optional {
-			return newInvalidDefinitionError("superpipe: injected name must be non-empty")
+			errs = append(errs, newInvalidDefinitionError("superpipe: injected name must be non-empty"))
 		}
 		if !sigilRoundTrip(d.depName, d.not, d.optional) {
-			return newInvalidDefinitionError("superpipe: injected name %q with flags (not=%v, optional=%v) has no reference spelling", d.depName, d.not, d.optional)
+			errs = append(errs, newInvalidDefinitionError("superpipe: injected name %q with flags (not=%v, optional=%v) has no reference spelling", d.depName, d.not, d.optional))
 		}
 	}
-	return validateInputs(d.in, d.inFields, d.inSet, fmt.Sprintf("step %q", d.name))
+	return append(errs, validateInputs(d.in, d.inFields, d.inSet, fmt.Sprintf("step %q", d.name))...)
 }
 
-func validateInputs(in, inFields []string, inSet bool, what string) error {
+func validateInputs(in, inFields []string, inSet bool, what string) []error {
 	if !inSet {
 		return nil
 	}
+	var errs []error
 	if len(in) == 0 && len(inFields) == 0 {
-		return newInvalidDefinitionError("superpipe: %s declares an empty input list; omit the declaration to forward the invocation args", what)
+		return append(errs, newInvalidDefinitionError("superpipe: %s declares an empty input list; omit the declaration to forward the invocation args", what))
 	}
 	if len(in) > 0 {
 		form := formArray
@@ -401,50 +395,50 @@ func validateInputs(in, inFields []string, inSet bool, what string) error {
 			form = formStandalone
 		}
 		for _, name := range in {
-			if name == "" {
-				return newInvalidDefinitionError("superpipe: %s has an empty input name", what)
-			}
-			if name == "next" {
-				return newInvalidDefinitionError("superpipe: %s declares the reserved input name %q", what, name)
-			}
-			if err := validateNameForm(name, "input name", form); err != nil {
-				return err
-			}
+			errs = append(errs, validateInputName(name, "input name", what, form)...)
 		}
-		return nil
+		return errs
 	}
 	for _, name := range inFields {
-		if name == "" {
-			return newInvalidDefinitionError("superpipe: %s has an empty input field", what)
-		}
-		if name == "next" {
-			return newInvalidDefinitionError("superpipe: %s declares the reserved input field %q", what, name)
-		}
-		if err := validateNameForm(name, "input field", formObjectString); err != nil {
-			return err
-		}
+		errs = append(errs, validateInputName(name, "input field", what, formObjectString)...)
 	}
-	return nil
+	return errs
 }
 
-func (d *ErrorDef) validate() error {
+func validateInputName(name, kind, what string, form int) []error {
+	var errs []error
+	if name == "" {
+		return append(errs, newInvalidDefinitionError("superpipe: %s has an empty %s", what, kind))
+	}
+	if name == "next" {
+		errs = append(errs, newInvalidDefinitionError("superpipe: %s declares the reserved %s %q", what, kind, name))
+	}
+	if err := validateNameForm(name, kind, form); err != nil {
+		errs = append(errs, err)
+	}
+	return errs
+}
+
+func (d *ErrorDef) validate() []error {
+	var errs []error
 	if !d.injected && d.fn == nil {
-		return newInvalidDefinitionError("superpipe: error handler %q has a nil function", d.name)
+		errs = append(errs, newInvalidDefinitionError("superpipe: error handler %q has a nil function", d.name))
 	}
 	if d.injected {
 		if d.depName == "" {
-			return newInvalidDefinitionError("superpipe: injected error handler name must be non-empty")
+			errs = append(errs, newInvalidDefinitionError("superpipe: injected error handler name must be non-empty"))
 		}
 		if d.depName == "next" {
-			return newInvalidDefinitionError("superpipe: injected name %q is reserved", d.depName)
+			errs = append(errs, newInvalidDefinitionError("superpipe: injected name %q is reserved", d.depName))
 		}
 	}
-	return validateInputs(d.in, d.inFields, d.inSet, fmt.Sprintf("error handler %q", d.name))
+	return append(errs, validateInputs(d.in, d.inFields, d.inSet, fmt.Sprintf("error handler %q", d.name))...)
 }
 
-func (d *InputDef) validate() error {
+func (d *InputDef) validate() []error {
+	var errs []error
 	if len(d.names) == 0 {
-		return newInvalidDefinitionError("superpipe: input def requires at least one name")
+		return append(errs, newInvalidDefinitionError("superpipe: input def requires at least one name"))
 	}
 	form := formArray
 	if d.fromObject {
@@ -454,32 +448,35 @@ func (d *InputDef) validate() error {
 	}
 	for _, name := range d.names {
 		if name == "" {
-			return newInvalidDefinitionError("superpipe: input def has an empty name")
+			errs = append(errs, newInvalidDefinitionError("superpipe: input def has an empty name"))
+			continue
 		}
 		if err := validateNameForm(name, "input name", form); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errs
 }
 
-func (d *OutputDef) validate() error {
+func (d *OutputDef) validate() []error {
+	var errs []error
 	if d.fields {
 		if len(d.names) == 0 {
-			return newInvalidDefinitionError("superpipe: OutputFields requires at least one name")
+			return append(errs, newInvalidDefinitionError("superpipe: OutputFields requires at least one name"))
 		}
 		for _, name := range d.names {
 			if name == "" {
-				return newInvalidDefinitionError("superpipe: OutputFields has an empty name")
+				errs = append(errs, newInvalidDefinitionError("superpipe: OutputFields has an empty name"))
+				continue
 			}
 			if name == "next" {
-				return newInvalidDefinitionError("superpipe: output name %q is reserved", name)
+				errs = append(errs, newInvalidDefinitionError("superpipe: output name %q is reserved", name))
 			}
 			if err := validateNameForm(name, "output field", formObjectString); err != nil {
-				return err
+				errs = append(errs, err)
 			}
 		}
-		return nil
+		return errs
 	}
 	if len(d.names) == 0 {
 		return nil
@@ -489,14 +486,15 @@ func (d *OutputDef) validate() error {
 	}
 	for _, name := range d.names {
 		if name == "" {
-			return newInvalidDefinitionError("superpipe: Output has an empty name")
+			errs = append(errs, newInvalidDefinitionError("superpipe: Output has an empty name"))
+			continue
 		}
 		if name == "next" {
-			return newInvalidDefinitionError("superpipe: output name %q is reserved", name)
+			errs = append(errs, newInvalidDefinitionError("superpipe: output name %q is reserved", name))
 		}
 		if err := validateNameForm(name, "output name", formStandalone); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errs
 }

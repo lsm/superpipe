@@ -237,3 +237,35 @@ func TestStepReturnedFrameworkErrorSkipsHandler(t *testing.T) {
 		t.Fatal("the outer handler ran for a framework error")
 	}
 }
+
+func TestSimultaneousViolationsWithinOneDefinitionAggregated(t *testing.T) {
+	// One StepDef breaking three independent rules: reserved injected name,
+	// reserved input name, and an empty pick spec.
+	_, err := Build("multi", nil, Call("next").In("next").Out(Pick()))
+	if err == nil {
+		t.Fatal("expected violations")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"injected name \"next\" is reserved",
+		"declares the reserved input name",
+		"pick spec requires at least one key",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("missing %q in:\n%s", want, msg)
+		}
+	}
+
+	// One list-style definition breaking two: a comma member and an empty member.
+	_, err = Build("multi-input", nil, InputFromObject("a,b", ""))
+	if err == nil {
+		t.Fatal("expected violations")
+	}
+	msg = err.Error()
+	if !strings.Contains(msg, "contains a comma") {
+		t.Fatalf("missing the comma violation in:\n%s", msg)
+	}
+	if !strings.Contains(msg, "empty name") {
+		t.Fatalf("missing the empty-name violation in:\n%s", msg)
+	}
+}
