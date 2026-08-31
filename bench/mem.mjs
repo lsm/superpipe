@@ -4,6 +4,7 @@
 // without --expose-gc.
 import process from 'node:process'
 import superpipe from '../dist/index.mjs'
+import { envLine } from './env.mjs'
 
 if (!globalThis.gc) {
   console.error('mem.mjs needs forced GC between phases — run: node --expose-gc bench/mem.mjs')
@@ -11,6 +12,8 @@ if (!globalThis.gc) {
 }
 
 const fmt = (bytes) => `${(bytes / 1024 / 1024).toFixed(2)} MB`
+
+console.log(envLine())
 
 const inc = (v) => v + 1
 

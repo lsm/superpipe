@@ -2,24 +2,11 @@
 // same pipe bodies run through the engine vs. called as plain functions, so
 // absolute machine speed largely cancels out. Every run stamps its
 // environment; compare only runs from the same machine.
-import { execSync } from 'node:child_process'
-import os from 'node:os'
 import process from 'node:process'
 import superpipe from '../dist/index.mjs'
+import { env, envLine } from './env.mjs'
 
 const json = process.argv.includes('--json')
-
-function env() {
-  let sha = 'unknown'
-  try {
-    sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString()
-      .trim()
-  } catch {
-    sha = 'unknown'
-  }
-  return { node: process.version, cpu: os.cpus()[0]?.model ?? 'unknown', sha }
-}
 
 const inc = (v) => v + 1
 
@@ -110,8 +97,7 @@ const overheadX = rows[1].nsPerPipe / rows[0].nsPerPipe
 if (json) {
   console.log(JSON.stringify({ env: env(), rows, deepCascadeMs, overheadX }, null, 2))
 } else {
-  const e = env()
-  console.log(`env: ${e.node} · ${e.cpu} · ${e.sha}`)
+  console.log(envLine())
   for (const r of rows) {
     const per = r.name.includes('plain') ? 'ns/call' : 'ns/pipe'
     console.log(

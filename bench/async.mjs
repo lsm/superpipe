@@ -3,6 +3,7 @@
 // function. Microtask scheduling dominates at this depth, so read the
 // overhead ratio rather than absolute time.
 import superpipe from '../dist/index.mjs'
+import { envLine } from './env.mjs'
 
 const asyncInc = (v) => Promise.resolve((v || 0) + 1)
 
@@ -46,6 +47,7 @@ async function timeIt(name, run, { runs, pipes, warmup = runs, reps = 5 }) {
 if ((await plainAsync5()) !== 5) throw new Error('plain async baseline drifted')
 const run = buildAsync(5)
 if ((await run()) !== 5) throw new Error('async pipeline result drifted')
+console.log(envLine())
 
 const RUNS = 20000
 const rows = [
