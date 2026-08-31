@@ -238,6 +238,34 @@ func TestStepReturnedFrameworkErrorSkipsHandler(t *testing.T) {
 	}
 }
 
+func TestRenameSerializationFormAppliesToWholeKey(t *testing.T) {
+	// The serialized bare key "{a}:{b}" matches the object-string shape, so
+	// the reference parses it as the object form, never as a rename.
+	if err := wantBuildErrorQuiet(Step("s", ret(nil)).Out(Rename("{a}", "{b}"))); err == nil {
+		t.Fatal(`Rename("{a}","{b}") accepted; its serialization is object-shaped`)
+	}
+
+	// Whole-member checks let brace-bearing operands through where the
+	// reference does, because the member itself is not object-shaped.
+	mustBuild(t, "destructure-brace-dst", nil,
+		Step("s", ret(map[string]any{"a": 1})).Out(Destructure("a:{b}")),
+	)
+	mustBuild(t, "pick-brace-src", nil,
+		Step("s", ret(map[string]any{"{a}": 1})).Out(Pick("{a}:x")),
+	)
+	mustBuild(t, "internal-space", nil,
+		Step("s", ret(map[string]any{"a b": 1})).Out(Pick("a b:x")),
+	)
+}
+
+func TestBraceNewlineNamesMatchReference(t *testing.T) {
+	// JavaScript's /^{.+}$/ has no multiline flag, so $ matches only at the
+	// very end: "{a}\n" is a single-form literal, not the object form.
+	for _, name := range []string{"{a}\n", "{a}\r\n", "{a}\r", "{a\nb}"} {
+		mustBuild(t, "brace-literal", nil, Input(name), Output(name))
+	}
+}
+
 func TestSimultaneousViolationsWithinOneDefinitionAggregated(t *testing.T) {
 	// One StepDef breaking three independent rules: reserved injected name,
 	// reserved input name, and an empty pick spec.

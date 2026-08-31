@@ -182,7 +182,10 @@ func OutputFields(names ...string) *OutputDef {
 }
 
 func Rename(src, dst string) outputSpec {
-	return pickSpec{keys: []specKey{{src: src, dst: dst, renamed: true}}}
+	return pickSpec{
+		keys:          []specKey{{src: src, dst: dst, renamed: true}},
+		serialization: formStandalone,
+	}
 }
 
 func Pick(keys ...string) outputSpec {
@@ -190,7 +193,7 @@ func Pick(keys ...string) outputSpec {
 	for i, k := range keys {
 		parsed[i] = parseSpecKey(k)
 	}
-	return pickSpec{keys: parsed}
+	return pickSpec{keys: parsed, serialization: formObjectString}
 }
 
 func Destructure(keys ...string) outputSpec {
@@ -300,7 +303,7 @@ func validateSpec(spec outputSpec) []error {
 			errs = append(errs, newInvalidDefinitionError("superpipe: pick spec requires at least one key"))
 		}
 		for _, k := range s.keys {
-			errs = append(errs, validateSpecKey(k, "pick key", formObjectString)...)
+			errs = append(errs, validateSpecKey(k, "pick key", s.serialization)...)
 		}
 	case destructureSpec:
 		if len(s.keys) == 0 {
@@ -316,23 +319,24 @@ func validateSpec(spec outputSpec) []error {
 	return errs
 }
 
+// validateSpecKey applies the serialization-form rule to the complete
+// serialized key — "src:dst" for a rename, the key itself otherwise —
+// because the reference parses the whole spelling, not the operands.
 func validateSpecKey(k specKey, what string, form int) []error {
 	var errs []error
-	if k.src == "" || k.dst == "" {
-		errs = append(errs, newInvalidDefinitionError("superpipe: %s must be non-empty", what))
-	}
+	serialized := k.src
 	if k.renamed {
-		what := "rename operand"
+		if k.src == "" || k.dst == "" {
+			errs = append(errs, newInvalidDefinitionError("superpipe: %s must be non-empty", what))
+		}
 		if strings.ContainsRune(k.src, ':') || strings.ContainsRune(k.dst, ':') {
 			errs = append(errs, newInvalidDefinitionError("superpipe: rename %q:%q contains a colon and would not re-parse as a rename", k.src, k.dst))
 		}
-		if err := validateNameForm(k.src, what, form); err != nil {
-			errs = append(errs, err)
-		}
-		if err := validateNameForm(k.dst, what, form); err != nil {
-			errs = append(errs, err)
-		}
-	} else if err := validateNameForm(k.src, what, form); err != nil {
+		serialized = k.src + ":" + k.dst
+	} else if k.src == "" {
+		errs = append(errs, newInvalidDefinitionError("superpipe: %s must be non-empty", what))
+	}
+	if err := validateNameForm(serialized, what, form); err != nil {
 		errs = append(errs, err)
 	}
 	if err := validateEllipsisDst(k.dst, what); err != nil {

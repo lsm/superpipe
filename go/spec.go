@@ -27,7 +27,10 @@ type noneSpec struct{}
 
 type singleSpec struct{ name string }
 
-type pickSpec struct{ keys []specKey }
+type pickSpec struct {
+	keys          []specKey
+	serialization int
+}
 
 type destructureSpec struct{ keys []specKey }
 
