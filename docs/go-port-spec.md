@@ -223,9 +223,9 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   present-with-nil, mirroring JS property access on primitives; no source kind is an
   error. **Slices, arrays, and strings are excluded from that fallback**: they are
   indexed collections, governed by the numeric-index and `length` rules that follow —
-  a canonical index binds the element at that position and a non-canonical key (or
-  `length` under `InputFromObject`) binds per those rules, never the blanket nil
-  above. A key spelled as a **canonical numeric index string** —
+  a canonical index binds the element at that position, a non-canonical key binds
+  nil, and `length` binds the collection's length — never the blanket nil above.
+  A key spelled as a **canonical numeric index string** —
   `"0"` or decimal digits without leading zeros — indexes the source at that
   position: for **slices and arrays** the value is capped at **2^32−2** (ECMAScript's
   array-index bound; `"4294967295"` and larger are ordinary properties), while
