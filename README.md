@@ -422,6 +422,14 @@ const sp = superpipe<MyDeps>({
 })
 ```
 
+## Go Port
+
+SuperPipe also ships as a Go module — same semantics, idiomatic Go: one
+blocking `Run`, typed spec constructors instead of the string mini-grammar,
+`context.Context` cancellation, and `errors.Is`-checkable sentinels. See
+[`go/README.md`](go/README.md) for the user guide and
+[`docs/go-port-spec.md`](docs/go-port-spec.md) for the full contract.
+
 ## License
 
 [MIT](LICENSE)
