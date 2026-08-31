@@ -217,10 +217,15 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   key** binds present-with-nil, never the map's zero value, a panic, or an error
   (Producer.produceFromObject's `source[key]` → `undefined`; test *maps an absent
   object-string input argument to undefined values*). A present source that is not a
-  **non-nil** string-keyed map — a scalar, struct, pointer (typed-nil pointers
-  included), or a nil map (a nil source, per the collection rule above) — binds every
-  requested name present-with-nil, mirroring JS property access on primitives; no
-  source kind is an error. A key spelled as a **canonical numeric index string** —
+  **non-nil** string-keyed map and not an indexed collection — a scalar, struct,
+  pointer (typed-nil pointers included), a nil map (a nil source, per the collection
+  rule above), or any other non-map, non-indexed kind — binds every requested name
+  present-with-nil, mirroring JS property access on primitives; no source kind is an
+  error. **Slices, arrays, and strings are excluded from that fallback**: they are
+  indexed collections, governed by the numeric-index and `length` rules that follow —
+  a canonical index binds the element at that position and a non-canonical key (or
+  `length` under `InputFromObject`) binds per those rules, never the blanket nil
+  above. A key spelled as a **canonical numeric index string** —
   `"0"` or decimal digits without leading zeros — indexes the source at that
   position: for **slices and arrays** the value is capped at **2^32−2** (ECMAScript's
   array-index bound; `"4294967295"` and larger are ordinary properties), while
