@@ -143,8 +143,11 @@ The handler observes a snapshot of the container plus the original error under
 the `error` key, runs on a detached context, and never runs on an aborted run.
 It is likewise bypassed by **definition errors** — a reserved or shadowed
 output name (`ErrOutputName`), a spec/shape mismatch (`ErrOutputKey`), an
-unusable dependency (`ErrDependency`), or anything `Build` would have caught
-(`ErrInvalidDefinition`) — which propagate as themselves, wrapped in nothing.
+unusable step dependency (`ErrDependency`), or anything `Build` would have
+caught (`ErrInvalidDefinition`) — which propagate as themselves, wrapped in
+nothing. One nuance: when an injected `ErrorCall` handler itself fails to
+resolve, its `ErrDependency` is joined onto the settlement error rather than
+replacing it, so `errors.Is` finds both.
 A converted panic is different: it wraps `ErrPanicked` and routes to the
 handler like any step failure, with step context attached. Every category
 stays findable with `errors.Is`:
