@@ -192,18 +192,22 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   literal names `a:b:c` / `a:` (RE_RENAME, Producer.ts:12 — the reference does not
   reject or re-split them).
 - `...` is valid **only** as the entire `Merge()` spec. On the **producer side** — step
-  output specs — any destination that targets `...` is a construction error in **every**
-  form: `Out("...")` (TS classifies bare `'...'` as the single form, then the shared
-  validation rejects the destination — Producer.ts:72-74, 88-96), keys inside
-  `Pick`/`Destructure`, `Rename` operands, and `"x:..."` renames alike
-  (`destination === '...' || destination.startsWith('...')`). The **fetch side** is
-  exempt: the `Fetcher` has no ellipsis validation, so `.In`, `.InFields`, `Input`,
-  `InputFromObject`, `Output`, and `OutputFields` treat `...` as an ordinary key and
-  look it up literally (`'...'` non-raw parses to the single-element array `['...']`;
-  the raw branch of Fetcher.ts:96-105 selects `fetchSingle`; `'{...}'` parses to the
-  literal `...` key via `objectStringToArray`). `Output("...")` and
-  `OutputFields("...")` are therefore valid definitions that resolve the `...` key,
-  and `InputFromObject("...")` picks the literal `...` member.
+  output specs — the construction error is precisely a **destination** that is `...` or
+  starts with `...` (`destination === '...' || destination.startsWith('...'`,
+  Producer.ts:88-96): `Out("...")` (TS classifies bare `'...'` as the single form, then
+  the shared validation rejects the destination — Producer.ts:72-74, 88-96), a bare
+  `Pick`/`Destructure` key of `"..."` or `"...x"`, and an `"x:..."` rename alike. A
+  `...` **source** is valid: `Rename("...", "x")` (TS `'...:x'`) and `Pick("...:x")`
+  pick the literal `...` property and bind it as `x` — the validation inspects only the
+  computed destination, so only the right-hand side is constrained (a missing `...`
+  property then fails at run time with `OutputKeyError`, like any missing key). The
+  **fetch side** is exempt altogether: the `Fetcher` has no ellipsis validation, so
+  `.In`, `.InFields`, `Input`, `InputFromObject`, `Output`, and `OutputFields` treat
+  `...` as an ordinary key and look it up literally (`'...'` non-raw parses to the
+  single-element array `['...']`; the raw branch of Fetcher.ts:96-105 selects
+  `fetchSingle`; `'{...}'` parses to the literal `...` key via `objectStringToArray`).
+  `Output("...")` and `OutputFields("...")` are therefore valid definitions that
+  resolve the `...` key, and `InputFromObject("...")` picks the literal `...` member.
 - Destinations bind in **declaration order**; a duplicate destination is not rejected —
   the last write wins (`Pick("a:x", "b:x")` binds `x` to the `b` entry, matching
   Producer.ts:160-192's repeated `setEntry`).
