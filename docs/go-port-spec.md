@@ -165,9 +165,12 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 - `Not` and `Optional` **compose** on injected boolean control:
   `Optional(Not("check"))` is the optional inverted-boolean step (TS `!?check`) —
   skipped when unresolved, inverted when present. `Optional` accepts a name or a
-  `Not(...)` def. (TS strips `!` then `?`, so only the `!?` order composes; `?!check`
-  strips the `?` and leaves a dep literally named `!check` — a quirk the sigil-free Go
-  spelling cannot reproduce by accident and does not port.) **A sigil-prefixed
+  `Not(...)` def. (TS strips `!` then `?`, so nesting only composes in the `!?` order;
+  the TS string `?!check` instead means *optional, un-inverted, dep literally named
+  `!check`* — a combination no nested `Optional(Not(...))` spelling produces, because
+  there the `!` belongs to the inversion rather than the name. It is not lost,
+  though: it is exactly the `Optional("!x")` case the round-trip rule below accepts,
+  where the sigil is part of the **name**.) **A sigil-prefixed
   `Call`/`Not`/`Optional` name is valid only when the def's flag composition has an
   exact TS spelling**, and the test is a round-trip: prepend the def's own sigils
   (`!` if inverted, `?` if optional) to the name and re-run the reference strip
@@ -178,10 +181,10 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   unrepresentable ones are construction errors (`ErrInvalidDefinition`): a required
   non-inverted call to a leading-sigil key — `Call("!x")`, `Call("?x")` — and
   `Not("?x")` (any TS string that strips to a `?`-prefixed name picks up `optional`
-  or loses the inversion). Rejecting those is the same strictness that declines the
-  `?!check` quirk: the typed constructors spell intent explicitly, and silently
-  resolving a literal leading-sigil key would create dependency behavior the
-  reference cannot express.
+  or loses the inversion). Rejecting those follows the same principle as the
+  ordering note above — the typed constructors spell intent explicitly, and silently
+  resolving a flag combination the reference cannot express would create dependency
+  behavior with no TS counterpart.
   `ErrorCall` is **exempt** from all of this: `createErrorPipe` resolves its name
   verbatim with no stripping (builder.ts:77-85), so `ErrorCall("!x")` resolves the
   literal key, exactly like TS `error('!x')`.
