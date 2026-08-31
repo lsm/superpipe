@@ -40,7 +40,7 @@ Principles that govern every design decision below:
 | `end()` / `endAsync()` — two entry points; a blocking `end()` is impossible in JS (single-threaded event loop; async is contagious) | One blocking `Run(ctx, ...) (any, error)`, always inline on the caller's goroutine | Go blocks cheaply and has no sync/async function coloring — a promise is JS's only spelling of "wait", and `go` + channel is Go's, owned by the caller |
 | `undefined`/`null` dual | `nil` is the one no-value, and **presence is representable**: comma-ok distinguishes present-with-nil from absent | Container membership and output merging are presence-based in TS (own keys; a present-`undefined` value binds); Go carries that with comma-ok. Input lookup returns the value either way; the optional-step skip check is **presence-based** (C7) — absent skips, present-with-nil runs, matching TS where only `undefined` is unresolved. |
 | `__proto__` inert setter | Plain `map[string]any` assignment | Go maps have no prototype chain; the attack surface does not exist. |
-| Object-string members may be empty (`'{a,}'` binds an empty key — a comma-syntax artifact) | Empty members rejected in **every** spec form (`ErrInvalidDefinition`) | Go's constructors are typed, so an empty member is always a caller error, never a parse accident. |
+| Object-string members may be empty (`'{a,}'` binds an empty key — a comma-syntax artifact) | Empty members rejected in **every** spec form (`ErrInvalidDefinition`) — except the single raw-string final-output name `Output("")`, which TS also accepts (§3.1) | Go's constructors are typed, so an empty member is always a caller error, never a parse accident. |
 | JS strings index UTF-16 code units (`length` counts code units) | Go string positions and `length` are runes (code points) | Differs only for astral-plane characters, in `InputFromObject` numeric indexing and the `length` key. |
 | JS property access exposes inherited prototype members on **every** source — `source['toString']` works on plain objects too (`Producer.ts:228-233`) | Go reads **own keys only**, everywhere: map keys on map sources, canonical numeric indexes and `length` on slices/arrays/strings; every other name binds nil | Prototype members are unportable by construction and never useful data; honoring them would import JS's object model into Go. |
 | `Pick`/`Destructure` accept inherited properties (TS `source in result` walks the prototype chain — class-shaped returns pass; test at 1127-1140); `{...}` accepts class instances with own enumerable fields (`Object.keys` merges them, Producer.ts:132-141) | Output picking **and** `Merge` read **map keys only** — own keys, no inheritance; structs and class-shaped values are shape errors | Go has no prototype chain; a step returning a typed shape converts it to a map (or binds the whole value with `Out`) |
@@ -82,17 +82,26 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 
 - `Step(name string, fn StepFunc)` — the only step type: `StepFunc func(ctx context.Context, args []any) (any, error)`.
   `args` arrives positionally in declared `In` order. A step with **no** `.In` receives
-  the run's invocation args slice directly (TS `fetchNothing` — test *passes the
-  invocation arguments to pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers
-  `args == []any{1, 2}`. Because `fetchNothing` returns the same run-level `args`
-  (`Fetcher.ts:173-180`), multiple no-`.In` steps **share** that slice within a run; a
-  mutation is observable to later no-`.In` steps, but not to the container or to steps
-  that declared `.In`/`.InFields`. For `.In` steps the engine builds a fresh positional
-  `[]any` from the container on every invocation, and for `.InFields` a fresh
-  `map[string]any`, mirroring `fetchAsArray`/`fetchAsObject` (`Fetcher.ts:191-217`),
-  which allocate a new array or object each call. Each run uses its own invocation args
-  slice, so a no-`.In` step cannot affect a later run. The step blocks until it has its
-  result; its return is the single continuation channel.
+  the invocation args (TS `fetchNothing` — test *passes the invocation arguments to
+  pipes that declare no inputs*): `Run(ctx, 1, 2)` delivers `args == []any{1, 2}`.
+  Although `fetchNothing` returns the run-level `args` array internally
+  (`Fetcher.ts:173-180`), the reference invokes the step with `fn.apply(0, inputArgs)`
+  (executor.ts:256) — the array's **elements** are passed as positional arguments and
+  the array object itself is never exposed, so a JS step's rest parameter or
+  `arguments` object is call-owned and a step can never observe or mutate another
+  step's argument array. The Go port reproduces that by supplying a **fresh positional
+  slice for every step invocation** — a shallow copy for each no-`.In` step (the
+  argument **values** are shared, exactly as JS passes values; only the slice header
+  is per-step), and a fresh `[]any` assembled from the container for each `.In` step,
+  and a fresh `map[string]any` for each `.InFields` step, mirroring
+  `fetchAsArray`/`fetchAsObject` (`Fetcher.ts:191-217`), which allocate a new array or
+  object per call. A step mutating or retaining its `args` (or field map) therefore
+  cannot affect any other step or race a later run observation (§5). A run with **zero**
+  invocation arguments still allocates a non-nil empty slice — `Run(ctx)` delivers
+  `args == []any{}` (never nil), because the reference's
+  `Array.prototype.slice.apply(arguments)` produces a real empty array and a nil slice
+  would be observable via `args == nil`. The step blocks until it has its result; its
+  return is the single continuation channel.
 - `Build` returns an immutable `*Runner` after validating: single error handler, no
   steps after it, input pipe first, all spec forms well-formed, every `Input` def
   declaring **at least one** name (TS rejects the empty input array — Pipeline.ts:42-43),
@@ -131,9 +140,11 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
   error, every
   declared name —
   `Input` members, `.In`/`.InFields` members, `Out`/`Rename`/`Pick`/`Destructure` keys,
-  `Call`/`ErrorCall` names, `Output` names — **non-empty** (`Output("")` is the one
-  exception: a single empty-string final-output name is the raw-string branch and is
-  valid), and directly supplied step
+  `Call`/`Not`/`Optional`/`ErrorCall` names, `Output` names — **non-empty**
+  (`Not("")` and `Optional("")` included: the reference's `createPipe` requires a
+  non-empty injected string — `isNonEmptyString` — and throws on `''`, builder.ts:34-53;
+  `Output("")` is the one exception: a single empty-string final-output name is the
+  raw-string branch and is valid), and directly supplied step
   functions and error handlers **non-nil** — a nil `StepFunc`/`ErrorHandlerFunc` value
   is knowably broken at construction and fails with `ErrInvalidDefinition`, not a
   runtime panic. (TS rejects empty plain and array-form names, but object-string
