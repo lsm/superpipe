@@ -57,10 +57,13 @@ node --cpu-prof --cpu-prof-dir=prof bench/perf.mjs
 ## Saving baselines
 
 `perf.mjs --json` emits machine-readable rows (env stamp included) so
-before/after comparisons are a diff instead of transcription:
+before/after comparisons are a diff instead of transcription. The scripts
+import the **built** package from `dist/`, so rebuild after editing the
+executor or the second run silently benchmarks the old build:
 
 ```sh
 node bench/perf.mjs --json > bench-before.json
 # ...change the executor...
+npm run build
 node bench/perf.mjs --json > bench-after.json
 ```

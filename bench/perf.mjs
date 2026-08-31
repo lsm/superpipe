@@ -8,10 +8,15 @@ import { env, envLine } from './env.mjs'
 
 const json = process.argv.includes('--json')
 
+// The same five function bodies run in both paths — the plain baseline calls
+// them directly, the engine dispatches them — so the overhead ratio isolates
+// engine cost. firstInc is called with undefined in both paths (the engine
+// passes the absent first invocation argument; plain5 passes none).
 const inc = (v) => v + 1
+const firstInc = (v) => (v || 0) + 1
 
-function plain5(v) {
-  v = inc(v)
+function plain5() {
+  let v = firstInc()
   v = inc(v)
   v = inc(v)
   v = inc(v)
@@ -20,7 +25,7 @@ function plain5(v) {
 
 function buildShallow() {
   return superpipe({})('bench-shallow')
-    .pipe((v) => (v || 0) + 1, null, 'v')
+    .pipe(firstInc, null, 'v')
     .pipe(inc, 'v', 'v')
     .pipe(inc, 'v', 'v')
     .pipe(inc, 'v', 'v')
@@ -57,7 +62,7 @@ function buildMerge() {
 }
 
 function buildDeep(depth) {
-  let p = superpipe({})('bench-deep').pipe((v) => (v || 0) + 1, null, 'v')
+  let p = superpipe({})('bench-deep').pipe(firstInc, null, 'v')
   for (let i = 1; i < depth; i++) {
     p = p.pipe(inc, 'v', 'v')
   }
@@ -90,7 +95,7 @@ function medianOf(times) {
   return { medianMs: sorted[sorted.length >> 1], bestMs: sorted[0], repsMs: times }
 }
 
-if (plain5(0) !== 5) throw new Error('plain baseline drifted')
+if (plain5() !== 5) throw new Error('plain baseline drifted')
 const shallow = buildShallow()
 if (shallow() !== 5) throw new Error('shallow pipeline result drifted')
 const pick = buildPick()
@@ -126,7 +131,7 @@ for (let rep = 0; rep < 5; rep++) {
 const deepCascade = medianOf(deepTimes)
 
 const rows = [
-  timeIt('plain 5-call baseline', () => plain5(0), { runs: 100000, pipes: 5 }),
+  timeIt('plain 5-call baseline', plain5, { runs: 100000, pipes: 5 }),
   timeIt('shallow 5-pipe', shallow, { runs: 100000, pipes: 5 }),
   timeIt('output pick 1-pipe', pick, { runs: 100000, pipes: 1 }),
   timeIt('output rename 1-pipe', rename, { runs: 100000, pipes: 1 }),
