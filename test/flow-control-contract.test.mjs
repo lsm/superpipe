@@ -317,6 +317,26 @@ describe('result output protocol', () => {
     await expect(run()).resolves.toBe(first)
   })
 
+  it('drains a sibling reason before advancing a value downstream', async () => {
+    let later = false
+    const run = superpipe({})('result-sibling-reason')
+      .pipe(
+        (valueNext, reasonNext) => {
+          valueNext(null, { value: 'ready' })
+          reasonNext(null, { reason: 'stop' })
+        },
+        ['next', 'next'],
+        'result:item',
+      )
+      .pipe(() => {
+        later = true
+      }, 'item')
+      .endAsync('item')
+
+    await expect(run()).resolves.to.equal('stop')
+    expect(later).to.equal(false)
+  })
+
   it('lets an in-flight error beat an earlier terminal reason', async () => {
     const failure = new Error('sibling failed')
     const run = superpipe({})('result-error-wins')
@@ -332,6 +352,20 @@ describe('result output protocol', () => {
       .endAsync('item')
 
     await expect(run()).rejects.toBe(failure)
+  })
+
+  it('preserves a legacy renamed partial value on the error path', async () => {
+    const failure = new Error('failed with partial')
+    let observed
+    const run = superpipe({})('result-legacy-partial')
+      .pipe((next) => next(failure, { result: 'partial' }), 'next', 'result:item')
+      .error((item) => {
+        observed = item
+      }, 'item')
+      .endAsync('item')
+
+    await expect(run()).rejects.toBe(failure)
+    expect(observed).to.equal('partial')
   })
 })
 
