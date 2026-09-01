@@ -197,6 +197,13 @@ function cancelRun(state: PipeState, reason: unknown): void {
   settle(state, new PipelineAbortedError(reason))
 }
 
+function haltRun(state: PipeState): void {
+  state.halted = true
+  for (const callbacks of state.nextRegistries) {
+    invalidateNextCallbacks(callbacks)
+  }
+}
+
 function executePipe(
   pipe: Pipe,
   state: PipeState,
@@ -329,7 +336,7 @@ function executePipe(
     const onFulfilled = (value: PipeResult): void => {
       state.pending -= 1
 
-      if (state.activeError != null) {
+      if (state.activeError != null || state.halted || state.aborted) {
         return
       }
 
@@ -458,16 +465,27 @@ function continuePipeline(
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
+  if (state.halted || state.aborted) {
+    return
+  }
+
   if (value != null) {
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
+    const producer = pipes[producerIndex].producer
+    const result = producer.isResult
+      ? producer.produceResult(value)
+      : { output: producer.produce(value, error != null), terminal: false }
     mergeIntoContainer(
       state,
       pipeline,
       producerIndex,
       pipes[producerIndex].fnName,
-      pipes[producerIndex].producer.produce(value, error != null),
+      result.output,
       false,
     )
+    if (result.terminal) {
+      haltRun(state)
+    }
   }
 
   if (error != null) {

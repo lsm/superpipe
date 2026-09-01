@@ -47,6 +47,9 @@ export type {
   PipeParameter,
   PipeRename,
   PipeResult,
+  Result,
+  ResultReason,
+  ResultValue,
 } from './common'
 
 export {

@@ -149,6 +149,27 @@ delivered alongside an error (`next(error, partialValue)`) merge without
 validation — shape mismatches included — so a failing pipe's partial
 result never masks the real error on its way to the error handler.
 
+#### Business-result early return
+
+Use `result:<name>` as a stage's output spec when it returns a business result
+rather than an ordinary value. `{ value: value }` stores `value` as `<name>` and
+continues. `{ reason: reason }` stores `reason` as `<name>` and successfully
+stops the remaining stages. The result object must contain exactly one of those
+keys. This is opt-in: ordinary returned objects, including `{ error: ... }`,
+remain data. Thrown values and `next(error)` remain pipeline failures.
+Existing `result:destination` rename mappings continue to work when the returned
+object supplies its legacy `result` property.
+
+```javascript
+const findUser = superpipe('find user')
+  .input('id')
+  .pipe(lookup, 'id', 'result:user')
+  .pipe(loadProfile, 'user', 'profile')
+  .end('user')
+
+findUser('missing') // the reason returned by lookup; loadProfile does not run
+```
+
 #### `.error(handler, input?)`
 
 Sets an error handler for the pipeline. Only one error handler is allowed per pipeline.
