@@ -118,6 +118,7 @@ spec always means the same thing, whatever the return's type:
 | `'{a, b}'` | pick the named properties |
 | `['a', 'b']` | destructure — positional for array returns, by name for objects |
 | `'{...}'` | merge every key of the returned object |
+| `'result:out'` | unwrap `{ value }`, or resolve early with `{ reason }` |
 | *(none)* | effects only — the return value is discarded |
 
 ```javascript
@@ -132,6 +133,38 @@ A pipe with no output spec discards its return value — declare an output
 (or `'{...}'`) when a pipe produces data. The `...` marker only works as
 the entire spec — mixing it with names (`'{a, ...}'`) is rejected at
 construction.
+
+#### Result outputs and successful early return
+
+Use a `result:<name>` output when a stage can either produce its normal value
+or finish the pipeline with an expected business outcome:
+
+```javascript
+const run = sp('mailbox-handoff')
+  .pipe(parseAddress, 'rawAddress', 'result:address')
+  .pipe(createEntry, 'address', 'result:entry')
+  .pipe(enqueue, 'entry', 'result:outcome')
+  .endAsync('outcome')
+
+// Each stage returns one arm:
+return { value: address }             // stores address and continues
+return { reason: { kind: 'invalid' } } // stops; run resolves with the reason
+```
+
+The object must contain exactly one of `value` or `reason`; malformed or
+ambiguous results throw `OutputKeyError` at the producing stage. Both arms use
+property presence, so `{ value: undefined }` and `{ reason: undefined }` are
+valid. A reason is a successful terminal value: later stages do not run and an
+executor with an end output returns or resolves with that reason. A thrown
+value, rejected promise, or `next(error)` still uses the error channel and
+takes precedence over a partial Result delivered with the error.
+
+The protocol is opt-in. An `error` property in ordinary returned data never
+activates it or the error handler. For compatibility with output renaming,
+`result:out` still picks a legacy `{ result: value }` return and stores it as
+`out`; use `{ value }` or `{ reason }` to select the Result protocol.
+TypeScript callers can describe a stage as returning the exported
+`StageResult<Value, Reason>` union.
 
 Destructure specs validate what they name: every key a `'{a, b}'` pick
 (or an array spec, or a `source:destination` rename) names must exist on

@@ -1,3 +1,12 @@
+Unreleased
+==========
+- Opt-in `result:<name>` outputs add a structural Result protocol. `{ value }`
+  binds the value and continues; `{ reason }` binds the reason and halts as a
+  successful business outcome. Sync `.end(output)` and `.endAsync(output)`
+  return the terminal reason, while thrown errors and `next(error)` retain
+  their existing error-channel behavior. Ordinary data, including an `error`
+  property, remains ordinary data.
+
 0.17.0 2026-08-19
 =================
 - **Output binding grammar:** a pipe's output spec now decides how its

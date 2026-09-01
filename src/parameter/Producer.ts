@@ -11,6 +11,8 @@ import {
 
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
+const RE_RESULT = /^result:([^:]+)$/
+
 const SPREAD_ALL = '...'
 
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
@@ -18,7 +20,13 @@ function applyKey(output: Record<string, PipeResult>, key: string, value: PipeRe
   setEntry(output, rename ? rename[2] : key, value)
 }
 
-type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'none'
+type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'result' | 'none'
+
+export interface Production {
+  output: PipeOutput
+  terminal: boolean
+  reason?: PipeResult
+}
 
 export default class Producer {
   private keys: string[] = []
@@ -58,7 +66,13 @@ export default class Producer {
       throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
     }
     if (typeof parameter === 'string') {
-      if (RE_IS_OBJ_STRING.test(parameter)) {
+      const result = RE_RESULT.exec(parameter)
+      if (result) {
+        this.form = 'result'
+        this.keys = [result[1]]
+      } else if (parameter.startsWith('result:')) {
+        throw new Error('Result output must use "result:<name>" with one non-empty output name.')
+      } else if (RE_IS_OBJ_STRING.test(parameter)) {
         const keys = objectStringToArray(parameter)
         if (keys.length === 1 && keys[0] === SPREAD_ALL) {
           this.form = 'spread'
@@ -105,6 +119,47 @@ export default class Producer {
     return this.produceOutput(result, true)
   }
 
+  produceWithControl(result: PipeResult, errorPath?: boolean): Production {
+    if (this.form !== 'result') {
+      return { output: this.produce(result, errorPath), terminal: false }
+    }
+
+    if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+      if (errorPath) {
+        return { output: {}, terminal: false }
+      }
+      throw new OutputKeyError(`Output spec "result:${this.keys[0]}" requires an object return.`)
+    }
+
+    const source = result as Record<string, PipeResult>
+    const hasValue = 'value' in source
+    const hasReason = 'reason' in source
+    if (!hasValue && !hasReason) {
+      if (!errorPath && !('result' in source)) {
+        throw new OutputKeyError('Output "result" is missing from the pipe\'s returned object.')
+      }
+      return {
+        output: errorPath ? {} : { [this.keys[0]]: source.result },
+        terminal: false,
+      }
+    }
+    if (hasValue === hasReason) {
+      if (errorPath) {
+        return { output: {}, terminal: false }
+      }
+      throw new OutputKeyError(
+        'Result output requires an object containing exactly one of "value" or "reason".',
+      )
+    }
+
+    const selected = hasValue ? source.value : source.reason
+    return {
+      output: { [this.keys[0]]: selected },
+      terminal: hasReason && !errorPath,
+      reason: hasReason ? selected : undefined,
+    }
+  }
+
   expectValue(): void {
     if (this.inputMode || this.form === 'single' || this.form === 'none') {
       return
@@ -127,6 +182,10 @@ export default class Producer {
   produceOutput(result: PipeResult, errorPath?: boolean): PipeOutput {
     if (this.form === 'none') {
       return {}
+    }
+
+    if (this.form === 'result') {
+      return this.produceWithControl(result, errorPath).output
     }
 
     if (this.form === 'spread') {

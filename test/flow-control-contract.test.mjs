@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import superpipe, { PipelineAbortedError } from '../src'
+import superpipe, { OutputKeyError, PipelineAbortedError } from '../src'
 
 describe('Flow-control contract (README-pinned behaviors)', () => {
   it('runs a basic pipeline to completion', () =>
@@ -174,6 +174,164 @@ describe('Flow-control contract (README-pinned behaviors)', () => {
       run({ role: 'admin' })
       expect(afterRan).to.equal(false)
     })
+  })
+})
+
+describe('result output protocol', () => {
+  it('binds a value arm and continues', () => {
+    const calls = []
+    const run = superpipe({})('result-value')
+      .pipe(() => ({ value: 4 }), null, 'result:number')
+      .pipe(
+        (number) => {
+          calls.push(number)
+          return number * 2
+        },
+        'number',
+        'doubled',
+      )
+      .end('doubled')
+
+    expect(run()).to.equal(8)
+    expect(calls).toEqual([4])
+  })
+
+  it('returns a synchronous reason and does not run later stages', () => {
+    let later = false
+    const reason = { kind: 'rejected', message: 'bad address' }
+    const run = superpipe({})('result-reason-sync')
+      .pipe(() => ({ reason }), null, 'result:address')
+      .pipe(() => {
+        later = true
+      })
+      .end('address')
+
+    expect(run()).toBe(reason)
+    expect(later).to.equal(false)
+  })
+
+  it('resolves an asynchronous reason and does not run later stages', async () => {
+    let later = false
+    const reason = { kind: 'rejected' }
+    const run = superpipe({})('result-reason-async')
+      .pipe(() => Promise.resolve({ reason }), null, 'result:item')
+      .pipe(() => {
+        later = true
+      })
+      .endAsync('item')
+
+    await expect(run()).resolves.toBe(reason)
+    expect(later).to.equal(false)
+  })
+
+  it('interprets result unions delivered through next', async () => {
+    const reason = { kind: 'stopped' }
+    const run = superpipe({})('result-next')
+      .pipe(
+        (next) => {
+          setTimeout(() => next(null, { reason }), 0)
+        },
+        'next',
+        'result:item',
+      )
+      .pipe(() => {
+        throw new Error('must not run')
+      })
+      .endAsync('item')
+
+    await expect(run()).resolves.toBe(reason)
+  })
+
+  it.each([null, 3, {}, { value: 1, reason: 2 }])(
+    'rejects malformed result value %#',
+    async (returned) => {
+      const run = superpipe({})('result-malformed')
+        .pipe(() => returned, null, 'result:item')
+        .endAsync('item')
+
+      await expect(run()).rejects.toBeInstanceOf(OutputKeyError)
+    },
+  )
+
+  it('preserves legacy result:destination property renaming', () => {
+    const run = superpipe({})('result-rename-compat')
+      .pipe(() => ({ result: 'legacy' }), null, 'result:item')
+      .end('item')
+
+    expect(run()).to.equal('legacy')
+  })
+
+  it('keeps ordinary error properties on the data channel', () => {
+    let handled = false
+    const run = superpipe({})('result-error-data')
+      .pipe(() => ({ value: { error: 'ordinary' } }), null, 'result:item')
+      .pipe((item) => item.error, 'item', 'seen')
+      .error(() => {
+        handled = true
+      })
+      .end('seen')
+
+    expect(run()).to.equal('ordinary')
+    expect(handled).to.equal(false)
+  })
+
+  it('lets a thrown error beat the result protocol', async () => {
+    const failure = new Error('boom')
+    const run = superpipe({})('result-throw')
+      .pipe(
+        () => {
+          throw failure
+        },
+        null,
+        'result:item',
+      )
+      .error(() => {})
+      .endAsync('item')
+
+    await expect(run()).rejects.toBe(failure)
+  })
+
+  it('lets next(error, partial) beat a partial result reason', async () => {
+    const failure = new Error('boom')
+    const run = superpipe({})('result-next-error')
+      .pipe((next) => next(failure, { reason: 'not-terminal' }), 'next', 'result:item')
+      .error(() => {})
+      .endAsync('item')
+
+    await expect(run()).rejects.toBe(failure)
+  })
+
+  it('preserves the first reason when a sibling continuation returns another', async () => {
+    const first = { kind: 'first' }
+    const run = superpipe({})('result-first-wins')
+      .pipe(
+        (firstNext, secondNext) => {
+          firstNext(null, { reason: first })
+          secondNext(null, { reason: { kind: 'second' } })
+        },
+        ['next', 'next'],
+        'result:item',
+      )
+      .endAsync('item')
+
+    await expect(run()).resolves.toBe(first)
+  })
+
+  it('lets an in-flight error beat an earlier terminal reason', async () => {
+    const failure = new Error('sibling failed')
+    const run = superpipe({})('result-error-wins')
+      .pipe(
+        (firstNext, secondNext) => {
+          firstNext(null, { reason: 'stop' })
+          secondNext(failure)
+        },
+        ['next', 'next'],
+        'result:item',
+      )
+      .error(() => {})
+      .endAsync('item')
+
+    await expect(run()).rejects.toBe(failure)
   })
 })
 

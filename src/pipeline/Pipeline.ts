@@ -91,7 +91,16 @@ export default class Pipeline implements PipelineBase {
     return function (): PipeOutput {
       const args: PipeResult = Array.prototype.slice.apply(arguments)
 
-      const container = runPipeline(args, pipeline)
+      let terminal = false
+      let reason: PipeResult
+
+      const container = runPipeline(args, pipeline, undefined, undefined, (value) => {
+        terminal = true
+        reason = value
+      })
+      if (terminal) {
+        return reason
+      }
       return fetcher.fetch(container, [], pipeline.functions)
     }
   }
@@ -118,6 +127,11 @@ export default class Pipeline implements PipelineBase {
           (outcome) => {
             if (outcome.error != null) {
               reject(outcome.error)
+              return
+            }
+
+            if (outcome.terminal && fetcher !== null) {
+              resolve(outcome.reason as PipeOutput)
               return
             }
 

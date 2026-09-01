@@ -145,6 +145,10 @@ interface PipeState {
 
   halted: boolean
 
+  terminal: boolean
+
+  terminalReason?: PipeResult
+
   aborted: boolean
 
   nextRegistries: NextCallbacks[]
@@ -153,7 +157,14 @@ interface PipeState {
 
   queue: QueuedContinuation[]
 
-  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
+  onSettled?: (outcome: {
+    container: ResultContainer
+    error: Error | null
+    terminal: boolean
+    reason?: PipeResult
+  }) => void
+
+  onTerminal?: (reason: PipeResult) => void
 }
 
 function settle(state: PipeState, error: Error | null): void {
@@ -170,7 +181,12 @@ function settle(state: PipeState, error: Error | null): void {
         return
       }
       state.settled = true
-      state.onSettled?.({ container: state.container, error: null })
+      state.onSettled?.({
+        container: state.container,
+        error: null,
+        terminal: state.terminal,
+        reason: state.terminalReason,
+      })
     })
     return
   }
@@ -183,7 +199,12 @@ function settle(state: PipeState, error: Error | null): void {
     state.activeError = error
   }
   state.settled = true
-  state.onSettled?.({ container: state.container, error })
+  state.onSettled?.({
+    container: state.container,
+    error,
+    terminal: state.terminal,
+    reason: state.terminalReason,
+  })
 }
 
 function cancelRun(state: PipeState, reason: unknown): void {
@@ -458,16 +479,30 @@ function continuePipeline(
   const { pipes, errorHandler } = pipeline
   const { step } = state
 
+  if (state.terminal && error == null) {
+    if (state.pending === 0) {
+      settle(state, null)
+    }
+    return
+  }
+
   if (value != null) {
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
+    const production = pipes[producerIndex].producer.produceWithControl(value, error != null)
     mergeIntoContainer(
       state,
       pipeline,
       producerIndex,
       pipes[producerIndex].fnName,
-      pipes[producerIndex].producer.produce(value, error != null),
+      production.output,
       false,
     )
+    if (production.terminal && !state.terminal) {
+      state.terminal = true
+      state.terminalReason = production.reason
+      state.halted = true
+      state.onTerminal?.(production.reason)
+    }
   }
 
   if (error != null) {
@@ -509,8 +544,14 @@ function continuePipeline(
 export function runPipeline(
   args: PipeResult,
   pipeline: PipelineBase,
-  onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void,
+  onSettled?: (outcome: {
+    container: ResultContainer
+    error: Error | null
+    terminal: boolean
+    reason?: PipeResult
+  }) => void,
   registerCancel?: (cancel: (reason: unknown) => void) => void,
+  onTerminal?: (reason: PipeResult) => void,
 ): ResultContainer {
   const state: PipeState = {
     step: 0,
@@ -527,11 +568,14 @@ export function runPipeline(
     settling: false,
     pending: 0,
     halted: false,
+    terminal: false,
+    terminalReason: undefined,
     aborted: false,
     nextRegistries: [],
     driving: false,
     queue: [],
     onSettled,
+    onTerminal,
   }
 
   registerCancel?.((reason: unknown): void => {

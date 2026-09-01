@@ -73,12 +73,16 @@ export type AnyFunction = (...args: never[]) => unknown
 
 export type PipeResult = unknown
 export type PipeOutput = PipeResult | PipeResult[] | { [key: string]: PipeResult }
+export type StageResult<T, R = unknown> =
+  | { value: T; reason?: never }
+  | { reason: R; value?: never }
 
 export type PipeFunction = string | AnyFunction | Function
 
 export type PipeName = string
 export type PipeRename = `${string}:${string}`
-export type PipeParameter = PipeName | PipeRename | string[]
+export type PipeResultOutput = `result:${string}`
+export type PipeParameter = PipeName | PipeRename | PipeResultOutput | string[]
 
 export interface FunctionContainer {
   [key: string]: unknown
