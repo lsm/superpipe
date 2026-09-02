@@ -282,6 +282,17 @@ func (r *Runner) executeStep(ctx context.Context, st *runState, idx int, d *Step
 		return false, r.settleError(ctx, st, idx, d.name, stepErr)
 	}
 
+	if result, ok := spec.(resultSpec); ok {
+		entries, terminal, resultErr := result.produceResult(value)
+		if resultErr != nil {
+			return false, resultErr
+		}
+		if mergeErr := r.mergeEntries(st, entries, false, idx, d.name); mergeErr != nil {
+			return false, mergeErr
+		}
+		return terminal, nil
+	}
+
 	if isNoValue(value) {
 		if spec.requiresValue() {
 			return false, newOutputKeyError("superpipe: pipeline %q step %d %q: output spec requires the step to return a value, but it returned none", r.name, idx, d.name)

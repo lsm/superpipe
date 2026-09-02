@@ -211,6 +211,7 @@ The variadic definition list is Go's idiomatic spelling of multi-part constructi
 | `Pick("a", "b")` | `'{a, b}'` | Return must be a map; picks named keys. A missing key throws `OutputKeyError`. |
 | `Destructure("a", "b")` | `['a', 'b']` | Array return → positional binding (short array throws `OutputKeyError`); map return → picks by name (missing key throws). |
 | `Merge()` | `'{...}'` | Return must be a non-array map; merges every key into the container. Other return types throw `OutputKeyError`. |
+| `Result("user")` | `'result:user'` | Requires sealed `Value(v)` or `Reason(r)` outcomes. Both bind their payload as `user`; `Value` continues and `Reason` settles successfully without starting later steps. |
 
 - Keys inside `Pick`/`Destructure` accept `"dst"` or `"src:dst"` spellings (rename
   applies). A string that does **not** match the rename grammar — exactly one colon
@@ -517,6 +518,15 @@ thereby deterministic across runs.
   enforced), then the error is recorded and routed — so an output-name violation in a
   partial escapes as a framework error and beats the returned error
   (executor.ts:461-475).
+- **Business results are opt-in.** `Result(name)` is the Go spelling of the TS
+  `result:<name>` output spec. `Value(v)` and `Reason(r)` return sealed `Outcome`
+  variants rather than structural maps: `Value` binds `v` and continues, while
+  `Reason` binds `r` and successfully stops the remaining steps. A successful
+  return that is not an `Outcome` is an `ErrOutputKey` mismatch at that producing
+  step. This keeps ordinary maps with `value`, `reason`, or `error` keys as data
+  under every other output spec, and keeps Go `error` returns exclusively on the
+  failure channel. On `(value, err)`, the non-nil error wins; a partial outcome is
+  not inspected or merged.
 - TS's `next` callback, retained continuations, and thenable adoption have no Go spelling
   because they have no Go need: each existed to return control to a single-threaded event
   loop. The observable timeline is identical — TS's engine already pauses advancement on
@@ -543,6 +553,16 @@ normally (executor.ts:288-292 — a `Not` step's `StepFunc` returning a string b
 that string and the run continues). Booleans are
 ordinary data everywhere else: a `false` returned by a normal step binds as the value
 `false`.
+
+**C6.1 — Business-result early return.** A non-flow-control step using
+`Result(name)` evaluates its successful return after the cancellation landing gate.
+`Value(v)` merges `name = v` and advances; `Reason(r)` merges `name = r` and
+settles immediately with the normal fetched output and nil error. No later step
+starts, and because Go returns are in-band there are no retained callback or
+promise completions to suppress. A cancelled context at that landing gate wins
+and returns `ErrAborted`, discarding either outcome. Boolean flow-control keeps
+its existing behavior: a halting `false` produces no bindings even if that step
+declared `Result(name)`.
 
 **C7 — Optional steps.** `Optional(...)` is skipped (advance immediately, no bindings)
 when the resolved fn is absent, or is a typed nil **of a type convertible to
@@ -620,7 +640,8 @@ combined guard at executor.ts:249-252 runs before callable validation.
   to handler panics before `errors.Join`.
 
 **C9 — Settlement.**
-- The run settles when: all steps complete, a boolean halt fires, any error, or abort.
+- The run settles when: all steps complete, a boolean halt or `Reason` early
+  return fires, any error, or abort.
 - Completions are in-band and totally ordered — each step's return *is* the continuation —
   so the microtask deferral and the trampoline exist only in TS, where completions
   arrived out-of-band and could race. First error wins and is sticky.

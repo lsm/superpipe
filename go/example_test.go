@@ -77,6 +77,25 @@ func Example_flowControl() {
 	// Output: ran <nil>
 }
 
+func Example_result() {
+	run, err := superpipe.Build("find-user", nil,
+		superpipe.Step("lookup", func(context.Context, []any) (any, error) {
+			return superpipe.Reason("not found"), nil
+		}).Out(superpipe.Result("user")),
+		superpipe.Step("later", func(context.Context, []any) (any, error) {
+			return "unexpected", nil
+		}).Out("later"),
+		superpipe.Output("user"),
+	)
+	if err != nil {
+		fmt.Println("build:", err)
+		return
+	}
+	out, err := run.Run(context.Background())
+	fmt.Println(out, err)
+	// Output: not found <nil>
+}
+
 // Errors settle uniformly: the handler observes the failed run, and the
 // caller still receives the active error with a nil result.
 func Example_errors() {

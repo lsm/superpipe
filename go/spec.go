@@ -36,17 +36,21 @@ type destructureSpec struct{ keys []specKey }
 
 type spreadSpec struct{}
 
+type resultSpec struct{ name string }
+
 func (noneSpec) isOutputSpec()        {}
 func (singleSpec) isOutputSpec()      {}
 func (pickSpec) isOutputSpec()        {}
 func (destructureSpec) isOutputSpec() {}
 func (spreadSpec) isOutputSpec()      {}
+func (resultSpec) isOutputSpec()      {}
 
 func (noneSpec) requiresValue() bool        { return false }
 func (singleSpec) requiresValue() bool      { return false }
 func (pickSpec) requiresValue() bool        { return true }
 func (destructureSpec) requiresValue() bool { return true }
 func (spreadSpec) requiresValue() bool      { return true }
+func (resultSpec) requiresValue() bool      { return true }
 
 func parseSpecKey(s string) specKey {
 	if src, dst, ok := splitRename(s); ok {
@@ -72,6 +76,24 @@ func (noneSpec) produce(any, bool) ([]entry, error) { return nil, nil }
 
 func (s singleSpec) produce(value any, _ bool) ([]entry, error) {
 	return []entry{{key: s.name, value: value}}, nil
+}
+
+func (s resultSpec) produce(_ any, errorPath bool) ([]entry, error) {
+	if errorPath {
+		return nil, nil
+	}
+	return nil, newOutputKeyError("superpipe: result output %q requires Value(...) or Reason(...)", s.name)
+}
+
+func (s resultSpec) produceResult(value any) ([]entry, bool, error) {
+	switch result := value.(type) {
+	case valueResult:
+		return []entry{{key: s.name, value: result.value}}, false, nil
+	case reasonResult:
+		return []entry{{key: s.name, value: result.reason}}, true, nil
+	default:
+		return nil, false, newOutputKeyError("superpipe: result output %q requires Value(...) or Reason(...)", s.name)
+	}
 }
 
 func isStringKeyedMap(value any) bool {
