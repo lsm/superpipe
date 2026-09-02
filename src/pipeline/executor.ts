@@ -127,16 +127,22 @@ interface QueuedContinuation {
   fromStep?: number
 }
 
-function hasQueuedSibling(
+function hasQueuedResultReason(
   queue: QueuedContinuation[],
   start: number,
   fromStep: number | undefined,
+  pipe: Pipe | undefined,
 ): boolean {
-  if (fromStep === undefined) {
+  if (fromStep === undefined || pipe === undefined) {
     return false
   }
   for (let index = start; index < queue.length; index += 1) {
-    if (queue[index].fromStep === fromStep) {
+    const item = queue[index]
+    if (
+      item.fromStep === fromStep &&
+      item.error == null &&
+      pipe.producer.hasResultReason(item.value)
+    ) {
       return true
     }
   }
@@ -467,7 +473,7 @@ function next(
           error,
           value,
           fromStep,
-          hasQueuedSibling(state.queue, cursor, fromStep),
+          hasQueuedResultReason(state.queue, cursor, fromStep, pipeline.pipes[fromStep ?? -1]),
         )
       } catch (err) {
         if (!state.onSettled) {
@@ -502,7 +508,6 @@ function continuePipeline(
 ): void {
   const { pipes, errorHandler } = pipeline
   const { step } = state
-  let resultProtocol = false
 
   if (state.terminal && error == null) {
     if (state.pending === 0) {
@@ -514,7 +519,6 @@ function continuePipeline(
   if (value != null) {
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
     const production = pipes[producerIndex].producer.produceWithControl(value, error != null)
-    resultProtocol = production.resultProtocol
     mergeIntoContainer(
       state,
       pipeline,
@@ -549,7 +553,7 @@ function continuePipeline(
     if (state.pending > 0) {
       return
     }
-    if (deferAdvance && resultProtocol) {
+    if (deferAdvance) {
       return
     }
     if (pipes.length > state.step) {

@@ -337,6 +337,43 @@ describe('result output protocol', () => {
     expect(later).to.equal(false)
   })
 
+  it('drains a sibling reason before advancing a legacy rename downstream', async () => {
+    let later = false
+    const run = superpipe({})('result-sibling-legacy')
+      .pipe(
+        (legacyNext, reasonNext) => {
+          legacyNext(null, { result: 'ready' })
+          reasonNext(null, { reason: 'stop' })
+        },
+        ['next', 'next'],
+        'result:item',
+      )
+      .pipe(() => {
+        later = true
+      }, 'item')
+      .endAsync('item')
+
+    await expect(run()).resolves.to.equal('stop')
+    expect(later).to.equal(false)
+  })
+
+  it.each([
+    () => Promise.resolve('adopted'),
+    () => {
+      const rejected = Promise.reject(new Error('must be observed'))
+      rejected.catch(() => {})
+      return rejected
+    },
+    () => ({ then() {} }),
+  ])('rejects thenable terminal reasons %#', async (makeReason) => {
+    const reason = makeReason()
+    const run = superpipe({})('result-thenable-reason')
+      .pipe(() => ({ reason }), null, 'result:item')
+      .endAsync('item')
+
+    await expect(run()).rejects.toBeInstanceOf(OutputKeyError)
+  })
+
   it('lets an in-flight error beat an earlier terminal reason', async () => {
     const failure = new Error('sibling failed')
     const run = superpipe({})('result-error-wins')

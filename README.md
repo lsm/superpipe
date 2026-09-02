@@ -158,6 +158,8 @@ valid. A reason is a successful terminal value: later stages do not run and an
 executor with an end output returns or resolves with that reason. A thrown
 value, rejected promise, or `next(error)` still uses the error channel and
 takes precedence over a partial Result delivered with the error.
+Reasons must not be promises or other thenables; those throw `OutputKeyError`
+at the producing stage so Promise resolution cannot adopt the reason.
 
 The protocol is opt-in. An `error` property in ordinary returned data never
 activates it or the error handler. For compatibility with output renaming,

@@ -25,7 +25,6 @@ type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'result' | '
 export interface Production {
   output: PipeOutput
   terminal: boolean
-  resultProtocol: boolean
   reason?: PipeResult
 }
 
@@ -122,12 +121,12 @@ export default class Producer {
 
   produceWithControl(result: PipeResult, errorPath?: boolean): Production {
     if (this.form !== 'result') {
-      return { output: this.produce(result, errorPath), terminal: false, resultProtocol: false }
+      return { output: this.produce(result, errorPath), terminal: false }
     }
 
     if (result === null || typeof result !== 'object' || Array.isArray(result)) {
       if (errorPath) {
-        return { output: {}, terminal: false, resultProtocol: false }
+        return { output: {}, terminal: false }
       }
       throw new OutputKeyError(`Output spec "result:${this.keys[0]}" requires an object return.`)
     }
@@ -142,12 +141,11 @@ export default class Producer {
       return {
         output: 'result' in source ? { [this.keys[0]]: source.result } : {},
         terminal: false,
-        resultProtocol: false,
       }
     }
     if (hasValue === hasReason) {
       if (errorPath) {
-        return { output: {}, terminal: false, resultProtocol: false }
+        return { output: {}, terminal: false }
       }
       throw new OutputKeyError(
         'Result output requires an object containing exactly one of "value" or "reason".',
@@ -155,12 +153,35 @@ export default class Producer {
     }
 
     const selected = hasValue ? source.value : source.reason
+    if (hasReason && !errorPath && selected !== null) {
+      const selectedType = typeof selected
+      if (selectedType === 'object' || selectedType === 'function') {
+        let then: unknown
+        try {
+          then = (selected as { then?: unknown }).then
+        } catch {
+          throw new OutputKeyError('Result reason must not be a thenable.')
+        }
+        if (typeof then === 'function') {
+          throw new OutputKeyError('Result reason must not be a thenable.')
+        }
+      }
+    }
     return {
       output: { [this.keys[0]]: selected },
       terminal: hasReason && !errorPath,
-      resultProtocol: true,
       reason: hasReason ? selected : undefined,
     }
+  }
+
+  hasResultReason(result: PipeResult): boolean {
+    return (
+      this.form === 'result' &&
+      result !== null &&
+      typeof result === 'object' &&
+      !Array.isArray(result) &&
+      'reason' in result
+    )
   }
 
   expectValue(): void {
