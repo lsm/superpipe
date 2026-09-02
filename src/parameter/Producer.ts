@@ -25,6 +25,7 @@ type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'result' | '
 export interface Production {
   output: PipeOutput
   terminal: boolean
+  resultProtocol: boolean
   reason?: PipeResult
 }
 
@@ -121,12 +122,12 @@ export default class Producer {
 
   produceWithControl(result: PipeResult, errorPath?: boolean): Production {
     if (this.form !== 'result') {
-      return { output: this.produce(result, errorPath), terminal: false }
+      return { output: this.produce(result, errorPath), terminal: false, resultProtocol: false }
     }
 
     if (result === null || typeof result !== 'object' || Array.isArray(result)) {
       if (errorPath) {
-        return { output: {}, terminal: false }
+        return { output: {}, terminal: false, resultProtocol: false }
       }
       throw new OutputKeyError(`Output spec "result:${this.keys[0]}" requires an object return.`)
     }
@@ -141,11 +142,12 @@ export default class Producer {
       return {
         output: 'result' in source ? { [this.keys[0]]: source.result } : {},
         terminal: false,
+        resultProtocol: false,
       }
     }
     if (hasValue === hasReason) {
       if (errorPath) {
-        return { output: {}, terminal: false }
+        return { output: {}, terminal: false, resultProtocol: false }
       }
       throw new OutputKeyError(
         'Result output requires an object containing exactly one of "value" or "reason".',
@@ -170,6 +172,7 @@ export default class Producer {
     return {
       output: { [this.keys[0]]: selected },
       terminal: hasReason && !errorPath,
+      resultProtocol: true,
       reason: hasReason ? selected : undefined,
     }
   }

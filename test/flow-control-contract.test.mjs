@@ -391,6 +391,28 @@ describe('result output protocol', () => {
     await expect(run()).rejects.toBe(failure)
   })
 
+  it('does not advance a Result value before a queued sibling error', async () => {
+    const failure = new Error('queued failure')
+    let later = false
+    const run = superpipe({})('result-queued-error')
+      .pipe(
+        (valueNext, errorNext) => {
+          valueNext(null, { value: 'ready' })
+          errorNext(failure)
+        },
+        ['next', 'next'],
+        'result:item',
+      )
+      .pipe(() => {
+        later = true
+      }, 'item')
+      .error(() => {})
+      .endAsync('item')
+
+    await expect(run()).rejects.toBe(failure)
+    expect(later).to.equal(false)
+  })
+
   it('preserves a legacy renamed partial value on the error path', async () => {
     const failure = new Error('failed with partial')
     let observed
