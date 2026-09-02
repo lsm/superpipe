@@ -119,4 +119,31 @@ describe('result output protocol', () => {
     callback()
     expect(errors).to.deep.equal([thrown, nextError])
   })
+
+  it('does not let a malformed partial result replace a next error', () => {
+    const original = new Error('original failure')
+    let handled
+    const run = pipe('result-partial-error')
+      .pipe((next) => next(original, { malformed: true }), 'next', 'result:out')
+      .error((error) => {
+        handled = error
+      }, 'error')
+      .end()
+
+    expect(() => run()).to.not.throw()
+    expect(handled).to.equal(original)
+  })
+
+  it('rejects endAsync with the original error when a partial result is malformed', async () => {
+    const original = new Error('async original failure')
+    const run = pipe('result-async-partial-error')
+      .pipe(
+        (next) => setTimeout(() => next(original, { malformed: true }), 0),
+        'next',
+        'result:out',
+      )
+      .endAsync('out')
+
+    await expect(run()).rejects.toBe(original)
+  })
 })

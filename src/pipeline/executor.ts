@@ -337,6 +337,9 @@ function executePipe(
       state.pending -= 1
 
       if (state.activeError != null || state.halted || state.aborted) {
+        if (state.halted && !state.aborted && state.pending === 0) {
+          settle(state, null)
+        }
         return
       }
 
@@ -366,7 +369,10 @@ function executePipe(
     }
     const onRejected = (reason: unknown): void => {
       state.pending -= 1
-      if (state.activeError != null) {
+      if (state.activeError != null || state.halted || state.aborted) {
+        if (state.halted && !state.aborted && state.pending === 0) {
+          settle(state, null)
+        }
         return
       }
 
@@ -466,15 +472,19 @@ function continuePipeline(
   const { step } = state
 
   if (state.halted || state.aborted) {
+    if (state.halted && !state.aborted && state.pending === 0) {
+      settle(state, null)
+    }
     return
   }
 
   if (value != null) {
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
     const producer = pipes[producerIndex].producer
-    const result = producer.isResult
-      ? producer.produceResult(value)
-      : { output: producer.produce(value, error != null), terminal: false }
+    const result =
+      producer.isResult && error == null
+        ? producer.produceResult(value)
+        : { output: producer.produce(value, error != null), terminal: false }
     mergeIntoContainer(
       state,
       pipeline,
