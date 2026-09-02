@@ -1,5 +1,8 @@
 0.17.0 2026-08-19
 =================
+- Added opt-in `result:<name>` output specs. A stage may return `{ value }` to
+  bind and continue, or `{ reason }` to bind a successful terminal outcome and
+  skip the remaining stages.
 - **Output binding grammar:** a pipe's output spec now decides how its
   return value is stored, independent of the value's runtime type. A
   single name (`'out'`) binds the whole return value; `'{a, b}'` picks

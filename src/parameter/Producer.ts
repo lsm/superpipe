@@ -20,6 +20,11 @@ function applyKey(output: Record<string, PipeResult>, key: string, value: PipeRe
 
 type OutputForm = 'single' | 'object-string' | 'array' | 'spread' | 'none'
 
+export interface ResultOutput {
+  output: PipeOutput
+  terminal: boolean
+}
+
 export default class Producer {
   private keys: string[] = []
 
@@ -28,6 +33,8 @@ export default class Producer {
   private inputMode: boolean = false
 
   private form: OutputForm = 'none'
+
+  private resultName?: string
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'input') {
@@ -58,7 +65,15 @@ export default class Producer {
       throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
     }
     if (typeof parameter === 'string') {
-      if (RE_IS_OBJ_STRING.test(parameter)) {
+      if (parameter.startsWith('result:')) {
+        const name = parameter.slice('result:'.length)
+        if (!name || name.includes(':')) {
+          throw new Error('Result output must use the form "result:<name>".')
+        }
+        this.form = 'object-string'
+        this.resultName = name
+        this.keys = [parameter]
+      } else if (RE_IS_OBJ_STRING.test(parameter)) {
         const keys = objectStringToArray(parameter)
         if (keys.length === 1 && keys[0] === SPREAD_ALL) {
           this.form = 'spread'
@@ -103,6 +118,35 @@ export default class Producer {
       return this._produce(result)
     }
     return this.produceOutput(result, true)
+  }
+
+  get isResult(): boolean {
+    return this.resultName !== undefined
+  }
+
+  produceResult(result: PipeResult): ResultOutput {
+    if (this.resultName === undefined) {
+      return { output: this.produce(result), terminal: false }
+    }
+
+    if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+      const box = result as Record<string, PipeResult>
+      const hasValue = Object.prototype.hasOwnProperty.call(box, 'value')
+      const hasReason = Object.prototype.hasOwnProperty.call(box, 'reason')
+      if (hasValue !== hasReason && Object.keys(box).length === 1) {
+        return {
+          output: { [this.resultName]: hasValue ? box.value : box.reason },
+          terminal: hasReason,
+        }
+      }
+      if ('result' in box) {
+        return { output: this.produceOutput(result), terminal: false }
+      }
+    }
+
+    throw new OutputKeyError(
+      `Output spec "result:${this.resultName}" requires an object with exactly one of "value" or "reason".`,
+    )
   }
 
   expectValue(): void {

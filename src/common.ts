@@ -73,6 +73,9 @@ export type AnyFunction = (...args: never[]) => unknown
 
 export type PipeResult = unknown
 export type PipeOutput = PipeResult | PipeResult[] | { [key: string]: PipeResult }
+export type ResultValue<T> = { value: T; reason?: never }
+export type ResultReason<R> = { reason: R; value?: never }
+export type Result<T, R> = ResultValue<T> | ResultReason<R>
 
 export type PipeFunction = string | AnyFunction | Function
 
