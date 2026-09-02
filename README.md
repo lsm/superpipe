@@ -118,6 +118,7 @@ spec always means the same thing, whatever the return's type:
 | `'{a, b}'` | pick the named properties |
 | `['a', 'b']` | destructure — positional for array returns, by name for objects |
 | `'{...}'` | merge every key of the returned object |
+| `'result:out'` | bind a Result value, or resolve the run early with its reason |
 | *(none)* | effects only — the return value is discarded |
 
 ```javascript
@@ -127,6 +128,34 @@ spec always means the same thing, whatever the return's type:
 .pipe(() => ({ ok: true }), null, '{...}')             // merges ok into the store
 .pipe(save)                                            // side effects only
 ```
+
+#### Result outputs
+
+`'result:name'` opts one stage into a two-arm, structural result protocol:
+the stage returns exactly one of `{ value: T }` or `{ reason: R }`. The value
+arm stores `T` as `name` and continues. The reason arm is a resolved business
+outcome: it stops all remaining stages immediately and makes `R` the return
+value of `.end()` or `.endAsync()`, regardless of that ending's output pick.
+It does not invoke `.error()` or reject `.endAsync()`.
+
+```javascript
+const run = sp('mailbox')
+  .pipe(parseAddress, 'to', 'result:address')
+  .pipe(createEntry, 'address', 'result:entry')
+  .pipe(enqueue, 'entry', 'result:outcome')
+  .endAsync('outcome')
+
+// { value: address } continues with address in the store.
+// { reason: 'unknown recipient' } resolves run() to 'unknown recipient'.
+```
+
+The producing stage validates this contract. Primitives, arrays, missing arms,
+and objects containing both arms throw `OutputKeyError`; `undefined` is valid
+inside a present `value` or `reason` property. A `next(error, partialValue)`
+remains an error-channel delivery and stores the partial value directly, so it
+does not reinterpret or mask the active error. Existing `result:name` rename
+outputs remain compatible when the returned object has a `result` property and
+does not look like a Result union.
 
 A pipe with no output spec discards its return value — declare an output
 (or `'{...}'`) when a pipe produces data. The `...` marker only works as
@@ -299,8 +328,9 @@ const workflow = await run()   // Promise — settles when the run settles
 ```
 
 `.endAsync` settles when the *run* settles — every pipe executed, a
-flow-control halt fired, or an error was dispatched. A halted run resolves
-with the partial snapshot; a failed run rejects with the active error even
+flow-control halt fired, a Result reason resolved, or an error was dispatched.
+A flow-control halt resolves with the partial snapshot; a Result reason
+resolves with that reason; a failed run rejects with the active error even
 when an error handler ran (the promise is an additional observer). Fully
 synchronous pipelines resolve immediately, so `await` works uniformly.
 Alternatively, deliver async results through a final pipe, `next`, or an
@@ -411,7 +441,7 @@ flowing through a pipeline (`PipeResult`, `PipeOutput`) are typed
 `source:destination` rename form (`PipeRename`):
 
 ```typescript
-import superpipe, { Dependencies, PipelineAPI } from 'superpipe'
+import superpipe, { Dependencies, PipelineAPI, StageResult } from 'superpipe'
 
 interface MyDeps extends Dependencies {
   logger: (msg: string) => void
@@ -420,6 +450,9 @@ interface MyDeps extends Dependencies {
 const sp = superpipe<MyDeps>({
   logger: console.log
 })
+
+const parseAddress = (input: string): StageResult<string, string> =>
+  input.includes('@') ? { value: input } : { reason: 'Invalid address' }
 ```
 
 ## Go Port

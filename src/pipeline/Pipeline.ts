@@ -14,7 +14,7 @@ import {
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
-import { runPipeline } from './executor'
+import { resultHaltReason, runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
 
@@ -83,8 +83,9 @@ export default class Pipeline implements PipelineBase {
     }
 
     if (output === undefined) {
-      return function (): undefined {
-        runPipeline(Array.prototype.slice.apply(arguments), pipeline)
+      return function (): PipeOutput {
+        const container = runPipeline(Array.prototype.slice.apply(arguments), pipeline)
+        return resultHaltReason(container)?.reason as PipeOutput
       }
     }
 
@@ -92,6 +93,10 @@ export default class Pipeline implements PipelineBase {
       const args: PipeResult = Array.prototype.slice.apply(arguments)
 
       const container = runPipeline(args, pipeline)
+      const resultHalt = resultHaltReason(container)
+      if (resultHalt) {
+        return resultHalt.reason as PipeOutput
+      }
       return fetcher.fetch(container, [], pipeline.functions)
     }
   }
@@ -118,6 +123,11 @@ export default class Pipeline implements PipelineBase {
           (outcome) => {
             if (outcome.error != null) {
               reject(outcome.error)
+              return
+            }
+
+            if (outcome.resultHalted) {
+              resolve(outcome.resultReason as PipeOutput)
               return
             }
 

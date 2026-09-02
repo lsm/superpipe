@@ -73,7 +73,7 @@ export interface Pipe {
   not?: boolean
   optional?: boolean
 }
-export type { FunctionContainer as Dependencies } from './common'
+export type { FunctionContainer as Dependencies, StageResult } from './common'
 
 export interface PipelineAPI {
   input: (input?: PipeParameter) => PipelineAPI

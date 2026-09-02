@@ -1,4 +1,5 @@
 import {
+  isNonEmptyString,
   isValidArrayParameters,
   OutputKeyError,
   objectStringToArray,
@@ -12,6 +13,14 @@ import {
 const RE_RENAME = /^([^:]+):([^:]+)$/
 
 const SPREAD_ALL = '...'
+
+const RESULT_PREFIX = 'result:'
+
+export interface ProducedOutput {
+  output: PipeOutput
+  halted: boolean
+  reason?: PipeResult
+}
 
 function applyKey(output: Record<string, PipeResult>, key: string, value: PipeResult): void {
   const rename = RE_RENAME.exec(key)
@@ -28,6 +37,8 @@ export default class Producer {
   private inputMode: boolean = false
 
   private form: OutputForm = 'none'
+
+  private resultName?: string
 
   constructor(parameter: PipeParameter | undefined, flag?: string) {
     if (flag === 'input') {
@@ -58,7 +69,15 @@ export default class Producer {
       throw new Error('Pipe output must be a non-empty string or array of non-empty strings')
     }
     if (typeof parameter === 'string') {
-      if (RE_IS_OBJ_STRING.test(parameter)) {
+      if (parameter.startsWith(RESULT_PREFIX)) {
+        const name = parameter.slice(RESULT_PREFIX.length)
+        if (!isNonEmptyString(name) || name.includes(':')) {
+          throw new Error('Result output must be a non-empty name in the form "result:name"')
+        }
+        this.form = 'single'
+        this.keys = [name]
+        this.resultName = name
+      } else if (RE_IS_OBJ_STRING.test(parameter)) {
         const keys = objectStringToArray(parameter)
         if (keys.length === 1 && keys[0] === SPREAD_ALL) {
           this.form = 'spread'
@@ -103,6 +122,49 @@ export default class Producer {
       return this._produce(result)
     }
     return this.produceOutput(result, true)
+  }
+
+  get isResult(): boolean {
+    return this.resultName !== undefined
+  }
+
+  produceResult(result: PipeResult, errorPath?: boolean): ProducedOutput {
+    if (this.resultName === undefined) {
+      return { output: this.produce(result, errorPath), halted: false }
+    }
+
+    if (errorPath) {
+      return { output: { [this.resultName]: result }, halted: false }
+    }
+
+    if (result === null || Array.isArray(result) || typeof result !== 'object') {
+      throw new OutputKeyError(
+        `Result output "result:${this.resultName}" requires an object with exactly one of "value" or "reason".`,
+      )
+    }
+
+    const hasValue = 'value' in result
+    const hasReason = 'reason' in result
+    if (!hasValue && !hasReason && 'result' in result) {
+      return {
+        output: { [this.resultName]: (result as Record<string, PipeResult>).result },
+        halted: false,
+      }
+    }
+    if (hasValue === hasReason) {
+      throw new OutputKeyError(
+        `Result output "result:${this.resultName}" requires exactly one of "value" or "reason".`,
+      )
+    }
+
+    if (hasReason) {
+      return { output: {}, halted: true, reason: (result as Record<string, PipeResult>).reason }
+    }
+
+    return {
+      output: { [this.resultName]: (result as Record<string, PipeResult>).value },
+      halted: false,
+    }
   }
 
   expectValue(): void {

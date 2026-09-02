@@ -1,3 +1,18 @@
+0.18.0 2026-09-01
+=================
+- **Native Result outputs:** `'result:name'` opts one pipe into a structural
+  `{ value: T } | { reason: R }` contract. A value binds `name` and continues;
+  a reason halts the remaining stages as a resolved business outcome and is
+  returned by either ending, including an `.endAsync('otherName')` selector.
+  Result reasons are distinct from errors: they do not invoke `.error()` or
+  reject async endings. The producer validates missing, primitive, array, and
+  ambiguous (both-arm) returns with `OutputKeyError`; present `undefined`
+  values remain valid. Error partials from `next(error, value)` stay on the
+  error/data path and bind directly. The `StageResult<T, R>` type is exported.
+- **Compatibility:** the established `result:name` source-to-destination
+  rename form remains available for returned objects with a `result` property
+  that do not match the Result union.
+
 0.17.0 2026-08-19
 =================
 - **Output binding grammar:** a pipe's output spec now decides how its
