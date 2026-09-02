@@ -206,6 +206,8 @@ func Destructure(keys ...string) outputSpec {
 
 func Merge() outputSpec { return spreadSpec{} }
 
+func Result(name string) outputSpec { return resultSpec{name: name} }
+
 const (
 	formStandalone = iota
 	formArray
@@ -313,6 +315,16 @@ func validateSpec(spec outputSpec) []error {
 			errs = append(errs, validateSpecKey(k, "destructure key", formArray)...)
 		}
 	case spreadSpec:
+	case resultSpec:
+		if s.name == "" {
+			errs = append(errs, newInvalidDefinitionError("superpipe: result output name must be non-empty"))
+		}
+		if strings.ContainsRune(s.name, ':') {
+			errs = append(errs, newInvalidDefinitionError("superpipe: result output name %q must not contain a colon", s.name))
+		}
+		if err := validateEllipsisDst(s.name, "result output name"); err != nil {
+			errs = append(errs, err)
+		}
 	default:
 		errs = append(errs, newInvalidDefinitionError("superpipe: unknown output spec %T", spec))
 	}

@@ -82,11 +82,42 @@ One constructor, one meaning — the TS string mini-grammar becomes types:
 | `Pick("a", "b")` | Return must be a map; picks the named keys (accepts `"src:dst"` renames). |
 | `Destructure("a", "b")` | Array return → positional; map return → picks by name. |
 | `Merge()` | Return must be a map; merges every key into the container. |
+| `Result("user")` | Requires `Value(v)` or `Reason(r)`; binds the payload as `user`. |
 
 `Pick`, `Destructure`, and `Merge` require a value: a step returning nothing
 under one of them fails with `ErrOutputKey`. `Out` accepts a nil return and
 simply binds nothing. Structs are not maps — return a map, or bind the whole
 value with `Out`.
+
+### Business-result early return
+
+`Result(name)` opts a stage into the TypeScript `result:<name>` protocol with
+Go constructors instead of a structural map. Return `Value(v)` to bind `v`
+and continue, or `Reason(r)` to bind `r` and stop the run successfully. The
+selected `Output` then retrieves the bound payload.
+
+```go
+run, err := superpipe.Build("find-user", nil,
+	superpipe.Input("id"),
+	superpipe.Step("lookup", func(_ context.Context, args []any) (any, error) {
+		id, _ := superpipe.Get[string](args, 0)
+		if id == "missing" {
+			return superpipe.Reason("not found"), nil
+		}
+		return superpipe.Value("user-" + id), nil
+	}).In("id").Out(superpipe.Result("user")),
+	superpipe.Step("later", func(context.Context, []any) (any, error) {
+		return "runs only after Value", nil
+	}).Out("later"),
+	superpipe.Output("user"),
+)
+```
+
+`Outcome` is sealed: only `Value` and `Reason` create it, so a regular map
+with `value`, `reason`, or `error` keys remains ordinary data. A result step
+returning any other successful value fails with `ErrOutputKey`. A non-nil Go
+error remains a failure, takes precedence over a partial outcome, and follows
+the ordinary error-handler path.
 
 ## Steps
 

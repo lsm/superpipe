@@ -1,3 +1,10 @@
+Unreleased
+==========
+- Go: added `Result(name)` output specs with sealed `Value(v)` and `Reason(r)`
+  outcomes. `Reason` binds the selected business reason and stops the run
+  successfully, matching the opt-in TypeScript `result:<name>` protocol while
+  preserving Go errors for failures.
+
 0.18.0 2026-09-02
 =================
 - Added opt-in `result:<name>` outputs for business outcomes. A stage returns
