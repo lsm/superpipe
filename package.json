@@ -1,6 +1,6 @@
 {
   "name": "superpipe",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "The missing pipeline for functional programming",
   "type": "commonjs",
   "main": "dist/index.js",

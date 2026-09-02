@@ -1,8 +1,24 @@
+0.18.0 2026-09-02
+=================
+- Added opt-in `result:<name>` outputs for business outcomes. A stage returns
+  exactly one own `{ value }` or `{ reason }` arm: `value` binds `<name>` and
+  continues, while `reason` binds `<name>` and resolves the run without
+  starting the remaining stages. The public `Result`, `ResultValue`, and
+  `ResultReason` types describe that protocol.
+- Result objects are validated at the producing stage; malformed, ambiguous,
+  or extra-key objects raise `OutputKeyError`. Promise and `next` deliveries
+  follow the same protocol. Terminal results suppress late callbacks and
+  promise completions while allowing `endAsync` to settle once in-flight work
+  has drained.
+- Preserved channel separation: ordinary data named `error` remains data, and
+  `next(error, partialValue)` retains the original error even when the partial
+  value is not a valid Result object. The established `result:<name>` rename
+  remains compatible for returned `{ result: value }` objects.
+- Added the documented Go reference implementation and its semantic spec, plus
+  a JavaScript benchmark harness for call, async, and memory baselines.
+
 0.17.0 2026-08-19
 =================
-- Added opt-in `result:<name>` output specs. A stage may return `{ value }` to
-  bind and continue, or `{ reason }` to bind a successful terminal outcome and
-  skip the remaining stages.
 - **Output binding grammar:** a pipe's output spec now decides how its
   return value is stored, independent of the value's runtime type. A
   single name (`'out'`) binds the whole return value; `'{a, b}'` picks
