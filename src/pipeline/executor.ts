@@ -11,6 +11,7 @@ import {
   type PipelineExitVia,
   type PipeOutput,
   type PipeResult,
+  type ResultContainer,
   setEntry,
   throwNoErrorHandlerError,
 } from '../common'
@@ -41,10 +42,6 @@ function invalidateNextCallbacks(callbacks: NextCallbacks): void {
     wrapper.disable()
   }
   callbacks.held.length = 0
-}
-
-interface ResultContainer {
-  [key: string]: PipeResult
 }
 
 type Continuation = (
@@ -203,13 +200,6 @@ function runExitHandlers(state: PipeState, error: Error | null): void {
 
 function settle(state: PipeState, error: Error | null): void {
   if (!state.onSettled) {
-    if (error == null && (state.settled || state.settling)) {
-      return
-    }
-    if (error != null && state.settled) {
-      return
-    }
-    state.settled = true
     runExitHandlers(state, error)
     return
   }

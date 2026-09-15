@@ -83,7 +83,7 @@ export interface PipelineExit {
   via: PipelineExitVia
   step: number | null
   name: string | null
-  reason: PipeResult
+  reason?: PipeResult
   error: Error | null
 }
 
