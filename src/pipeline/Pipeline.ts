@@ -2,6 +2,7 @@ import {
   type AbortSignalLike,
   type AnyFunction,
   type AsyncPipelineRunner,
+  type ExitHandler,
   type FunctionContainer,
   type PipeFunction,
   PipelineAbortedError,
@@ -9,12 +10,13 @@ import {
   type PipeOutput,
   type PipeParameter,
   type PipeResult,
+  type ReasonHandler,
   signalAborted,
   signalReason,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
-import { runPipeline } from './executor'
+import { dispatchAbortExit, runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
 
@@ -28,6 +30,10 @@ export default class Pipeline implements PipelineBase {
   inputPipes: InputPipe[] = []
 
   errorHandler?: AnyFunction
+
+  exitHandlers: ExitHandler[] = []
+
+  reasonHandler?: ReasonHandler
 
   constructor(name: string, functions?: FunctionContainer) {
     this.name = name
@@ -71,6 +77,25 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
+  onExit(handler: ExitHandler): Pipeline {
+    if (typeof handler !== 'function') {
+      throw new Error('Exit handler must be a function.')
+    }
+    this.exitHandlers.push(handler)
+    return this
+  }
+
+  reason(handler: ReasonHandler): Pipeline {
+    if (this.reasonHandler) {
+      throw new Error('Each pipeline could only have one reason handler.')
+    }
+    if (typeof handler !== 'function') {
+      throw new Error('Reason handler must be a function.')
+    }
+    this.reasonHandler = handler
+    return this
+  }
+
   end(output?: PipeParameter): (...args: unknown[]) => PipeOutput {
     const fetcher = new Fetcher(output, 'raw')
 
@@ -80,6 +105,8 @@ export default class Pipeline implements PipelineBase {
       inputPipes: [...this.inputPipes],
       functions: this.functions,
       errorHandler: this.errorHandler,
+      exitHandlers: [...this.exitHandlers],
+      reasonHandler: this.reasonHandler,
     }
 
     if (output === undefined) {
@@ -105,6 +132,8 @@ export default class Pipeline implements PipelineBase {
       inputPipes: [...this.inputPipes],
       functions: this.functions,
       errorHandler: this.errorHandler,
+      exitHandlers: [...this.exitHandlers],
+      reasonHandler: this.reasonHandler,
     }
 
     const runPipelinePromise = (
@@ -141,7 +170,9 @@ export default class Pipeline implements PipelineBase {
 
     run.withSignal = (signal: AbortSignalLike, ...args: unknown[]): Promise<PipeOutput> => {
       if (signalAborted(signal)) {
-        return Promise.reject(new PipelineAbortedError(signalReason(signal)))
+        const aborted = new PipelineAbortedError(signalReason(signal))
+        dispatchAbortExit(pipeline, aborted)
+        return Promise.reject(aborted)
       }
 
       let cancelRun: ((reason: unknown) => void) | undefined

@@ -7,8 +7,12 @@ import {
   OutputNameError,
   PipelineAbortedError,
   type PipelineBase,
+  type PipelineExit,
+  type PipelineExitVia,
   type PipeOutput,
   type PipeResult,
+  type ReasonHandler,
+  type ResultContainer,
   setEntry,
   throwNoErrorHandlerError,
 } from '../common'
@@ -39,10 +43,6 @@ function invalidateNextCallbacks(callbacks: NextCallbacks): void {
     wrapper.disable()
   }
   callbacks.held.length = 0
-}
-
-interface ResultContainer {
-  [key: string]: PipeResult
 }
 
 type Continuation = (
@@ -154,10 +154,133 @@ interface PipeState {
   queue: QueuedContinuation[]
 
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
+
+  pipeline: PipelineBase
+
+  exit: PipelineExit | null
+
+  exited: boolean
+
+  mergeStep: number | null
+
+  queueCursor: number
+
+  deferredValueSettle: boolean
+
+  observed: boolean
 }
 
-function settle(state: PipeState, error: Error | null): void {
+function hasExitObservers(pipeline: PipelineBase): boolean {
+  const { exitHandlers, reasonHandler } = pipeline
+  return reasonHandler !== undefined || (exitHandlers !== undefined && exitHandlers.length > 0)
+}
+
+function recordExit(
+  state: PipeState,
+  via: PipelineExitVia,
+  step: number | null,
+  name: string | null,
+  reason: PipeResult,
+  error: unknown,
+): void {
+  if (!state.observed) {
+    return
+  }
+  if (state.exit != null) {
+    if (error != null && state.exit.error == null) {
+      state.exit.error = error
+    }
+    return
+  }
+  state.exit = { via, step, name, reason, error }
+}
+
+function observableContainer(container: ResultContainer): ResultContainer {
+  const view: ResultContainer = {}
+  for (const key of Object.keys(container)) {
+    if (key !== 'next') {
+      setEntry(view, key, container[key])
+    }
+  }
+  return view
+}
+
+function containHandler(invoke: () => unknown): void {
+  let returned: unknown
+  try {
+    returned = invoke()
+  } catch {
+    return
+  }
+  if (returned == null || (typeof returned !== 'object' && typeof returned !== 'function')) {
+    return
+  }
+  try {
+    const thenFn = (returned as { then?: unknown }).then
+    if (typeof thenFn === 'function') {
+      Reflect.apply(thenFn as AnyFunction, returned, [swallow, ignoreReason])
+    }
+  } catch {}
+}
+
+export function dispatchExit(
+  pipeline: PipelineBase,
+  exit: PipelineExit,
+  container: ResultContainer,
+): void {
+  const { reasonHandler, exitHandlers } = pipeline
+  const handlers = exitHandlers && exitHandlers.length > 0 ? exitHandlers : null
+  const callsReason = exit.via === 'reason' && reasonHandler !== undefined
+  if (!handlers && !callsReason) {
+    return
+  }
+  const view = observableContainer(container)
+  if (callsReason) {
+    containHandler((): unknown => (reasonHandler as ReasonHandler)(exit.reason, exit, view))
+  }
+  if (!handlers) {
+    return
+  }
+  for (const handler of handlers) {
+    containHandler((): unknown => handler(exit, view))
+  }
+}
+
+export function dispatchAbortExit(pipeline: PipelineBase, error: unknown): void {
+  dispatchExit(pipeline, { via: 'abort', step: null, name: null, error }, {})
+}
+
+function runExitHandlers(state: PipeState, error: unknown): void {
+  if (!state.observed || state.exited) {
+    return
+  }
+  state.exited = true
+  recordExit(state, error == null ? 'value' : 'error', null, null, undefined, error)
+  dispatchExit(state.pipeline, state.exit as PipelineExit, state.container)
+}
+
+function recordFailure(state: PipeState, error: unknown, failedStep?: number): void {
+  const { pipes } = state.pipeline
+  const known = failedStep !== undefined && failedStep >= 0 && failedStep < pipes.length
+  recordExit(
+    state,
+    'error',
+    known ? (failedStep as number) : null,
+    known ? pipes[failedStep as number].fnName : null,
+    undefined,
+    error,
+  )
+}
+
+function settle(state: PipeState, error: Error | null, failedStep?: number): void {
+  if (error != null) {
+    recordFailure(state, error, failedStep)
+  } else if (state.observed && state.driving && state.queue.length > state.queueCursor) {
+    state.deferredValueSettle = true
+    return
+  }
   if (!state.onSettled) {
+    runExitHandlers(state, error)
     return
   }
   if (error == null) {
@@ -170,6 +293,7 @@ function settle(state: PipeState, error: Error | null): void {
         return
       }
       state.settled = true
+      runExitHandlers(state, null)
       state.onSettled?.({ container: state.container, error: null })
     })
     return
@@ -183,6 +307,7 @@ function settle(state: PipeState, error: Error | null): void {
     state.activeError = error
   }
   state.settled = true
+  runExitHandlers(state, error)
   state.onSettled?.({ container: state.container, error })
 }
 
@@ -194,7 +319,9 @@ function cancelRun(state: PipeState, reason: unknown): void {
     return
   }
   state.aborted = true
-  settle(state, new PipelineAbortedError(reason))
+  const aborted = new PipelineAbortedError(reason)
+  recordExit(state, 'abort', null, null, undefined, aborted)
+  settle(state, aborted)
 }
 
 function haltRun(state: PipeState): void {
@@ -233,7 +360,7 @@ function executePipe(
       }
 
       if (!state.settled) {
-        settle(state, err)
+        settle(state, err, nextCallbacks.pipeIndex)
       }
       return true
     },
@@ -348,6 +475,7 @@ function executePipe(
         resolved = !resolved
       }
       if (isFlowControl && resolved === false) {
+        recordExit(state, 'halt', pipeIndex, pipe.fnName, undefined, null)
         state.halted = true
         if (state.pending === 0) {
           settle(state, null)
@@ -358,10 +486,14 @@ function executePipe(
         try {
           pipe.producer.expectValue()
         } catch (err) {
-          if (state.onSettled && !state.settled) {
-            settle(state, err as Error)
-            return
+          if (state.onSettled) {
+            if (!state.settled) {
+              settle(state, err as Error, pipeIndex)
+              return
+            }
+            throw err
           }
+          settle(state, err as Error, pipeIndex)
           throw err
         }
       }
@@ -409,6 +541,7 @@ function executePipe(
     }
     advance(state, pipeline, null, result)
   } else if (!ownsContinuation) {
+    recordExit(state, 'halt', state.step - 1, pipe.fnName, undefined, null)
     state.halted = true
     if (state.pending === 0) {
       settle(state, null)
@@ -436,14 +569,25 @@ function next(
   try {
     let cursor = 0
     for (;;) {
+      state.queueCursor = cursor
       try {
         continuePipeline(state, pipeline, error, value, fromStep)
       } catch (err) {
+        const failedStep = state.mergeStep === null ? state.step - 1 : state.mergeStep
         if (!state.onSettled) {
+          settle(
+            state,
+            (err || new Error('Pipe continuation threw a falsey value')) as Error,
+            failedStep,
+          )
           throw err
         }
         if (!state.settled) {
-          settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+          settle(
+            state,
+            (err || new Error('Pipe continuation threw a falsey value')) as Error,
+            state.mergeStep === null ? state.step - 1 : state.mergeStep,
+          )
         }
       }
       if (state.settled || cursor >= state.queue.length) {
@@ -456,6 +600,11 @@ function next(
       fromStep = item.fromStep
     }
     state.queue.length = 0
+    state.queueCursor = 0
+    if (state.deferredValueSettle) {
+      state.deferredValueSettle = false
+      settle(state, null)
+    }
   } finally {
     state.driving = false
   }
@@ -480,6 +629,7 @@ function continuePipeline(
 
   if (value != null) {
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
+    state.mergeStep = producerIndex
     const producer = pipes[producerIndex].producer
     const result =
       producer.isResult && error == null
@@ -493,12 +643,31 @@ function continuePipeline(
       result.output,
       false,
     )
+    state.mergeStep = null
     if (result.terminal) {
+      recordExit(
+        state,
+        'reason',
+        producerIndex,
+        pipes[producerIndex].fnName,
+        Object.values(result.output as ResultContainer)[0],
+        null,
+      )
       haltRun(state)
     }
   }
 
   if (error != null) {
+    const failedIndex = fromStep === undefined ? step - 1 : fromStep
+    const failed = failedIndex >= 0 && failedIndex < pipes.length ? pipes[failedIndex] : null
+    recordExit(
+      state,
+      'error',
+      failed ? failedIndex : null,
+      failed ? failed.fnName : null,
+      undefined,
+      error,
+    )
     state.activeError = error
   }
 
@@ -560,24 +729,48 @@ export function runPipeline(
     driving: false,
     queue: [],
     onSettled,
+    pipeline,
+    exit: null,
+    exited: false,
+    mergeStep: null,
+    queueCursor: 0,
+    deferredValueSettle: false,
+    observed: hasExitObservers(pipeline),
   }
 
   registerCancel?.((reason: unknown): void => {
     cancelRun(state, reason)
   })
 
-  for (const inputPipe of pipeline.inputPipes || []) {
-    mergeIntoContainer(
-      state,
-      pipeline,
-      0,
-      inputPipe.fnName,
-      inputPipe.producer.produce(state.args),
-      true,
-    )
-  }
+  try {
+    for (const inputPipe of pipeline.inputPipes || []) {
+      mergeIntoContainer(
+        state,
+        pipeline,
+        0,
+        inputPipe.fnName,
+        inputPipe.producer.produce(state.args),
+        true,
+      )
+    }
 
-  next(state, pipeline)
+    next(state, pipeline)
+  } catch (err) {
+    const thrown = (err || new Error('Pipeline threw a falsey value')) as Error
+    const failedIndex = state.step - 1
+    const failed =
+      failedIndex >= 0 && failedIndex < pipeline.pipes.length ? pipeline.pipes[failedIndex] : null
+    recordExit(
+      state,
+      'error',
+      failed ? failedIndex : null,
+      failed ? failed.fnName : null,
+      undefined,
+      thrown,
+    )
+    runExitHandlers(state, thrown)
+    throw err
+  }
 
   return state.container
 }

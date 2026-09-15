@@ -77,6 +77,28 @@ export type ResultValue<T> = { value: T; reason?: never }
 export type ResultReason<R> = { reason: R; value?: never }
 export type Result<T, R> = ResultValue<T> | ResultReason<R>
 
+export type PipelineExitVia = 'value' | 'reason' | 'halt' | 'error' | 'abort'
+
+export interface PipelineExit {
+  via: PipelineExitVia
+  step: number | null
+  name: string | null
+  reason?: PipeResult
+  error: unknown
+}
+
+export type ExitHandler = (exit: PipelineExit, container: ResultContainer) => void
+
+export type ReasonHandler = (
+  reason: PipeResult,
+  exit: PipelineExit,
+  container: ResultContainer,
+) => void
+
+export interface ResultContainer {
+  [key: string]: PipeResult
+}
+
 export type PipeFunction = string | AnyFunction | Function
 
 export type PipeName = string
@@ -93,6 +115,8 @@ export interface PipelineBase {
   readonly inputPipes?: InputPipe[]
   readonly functions: FunctionContainer
   readonly errorHandler?: AnyFunction
+  readonly exitHandlers?: ExitHandler[]
+  readonly reasonHandler?: ReasonHandler
 }
 
 function objectStringIsNotAllowed(item: string): string {

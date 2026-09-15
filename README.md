@@ -161,13 +161,73 @@ Existing `result:destination` rename mappings continue to work when the returned
 object supplies its legacy `result` property.
 
 ```javascript
-const findUser = superpipe('find user')
+const findUser = superpipe({ lookup, loadProfile })('find user')
   .input('id')
   .pipe(lookup, 'id', 'result:user')
   .pipe(loadProfile, 'user', 'profile')
   .end('user')
 
 findUser('missing') // the reason returned by lookup; loadProfile does not run
+```
+
+#### `.onExit(handler)` and `.reason(handler)`
+
+A pipeline can end four ways, and until now three of them were silent: every
+exit that was not a natural completion simply settled with whatever the
+container held. `.onExit(handler)` registers an observer that runs exactly once
+when a run settles, however it ended.
+
+The handler receives an exit record and the container:
+
+| field | meaning |
+| --- | --- |
+| `via` | `'value'`, `'reason'`, `'halt'`, `'error'` or `'abort'` |
+| `step` | index of the stage that ended the run; `null` when no single stage did (natural completion, abort) |
+| `name` | that stage's function name, under the same rule |
+| `reason` | the rejected value, on a `'reason'` exit only |
+| `error` | the failure the caller sees, when there is one — usually an `'error'` or `'abort'` exit, but also a `'halt'` or `'reason'` exit that a later abort ended; `null` otherwise. Typed `unknown`, since a pipe may throw or reject with any value |
+
+```javascript
+const sp = superpipe({ authorize, capture })
+const run = sp('charge')
+  .input('order')
+  .pipe(authorize, 'order', 'result:authorization')
+  .pipe(capture, 'authorization', 'receipt')
+  .onExit((exit, container) => audit.write(exit))
+  .end('receipt')
+```
+
+Exit handlers observe a run; they do not handle it. They run before the error
+handler and before an `endAsync` promise resolves, in registration order, and a
+handler that throws is contained — it can never change the run's outcome, and
+the thrown value is discarded rather than reported.
+
+The container a handler receives is a snapshot of the run's named outputs
+without the pipeline's own `next` continuation, so a handler observes the run
+rather than being able to re-enter it.
+
+Four details worth knowing. A run cancelled by an already-aborted signal never
+starts, so its handlers receive an `'abort'` exit and an **empty** container —
+there is no run state to report; correlate on the exit record rather than on
+container fields if you need to cover that case. `via: 'value'` means every
+stage ran; with `endAsync`, fetching the requested output happens after the run
+settles, so a malformed output spec can still reject the promise after handlers
+have seen a `'value'` exit. A halted run with continuations still
+outstanding fires its handlers when the last one drains, not at the moment it
+halted. And
+the first exit recorded wins, so a run that halts and is then aborted reports
+`via: 'halt'` while its `endAsync` promise still rejects with
+`PipelineAbortedError` — `via` names what ended the stages, `error` what the
+caller sees.
+
+`.reason(handler)` is the rejection counterpart to `.error(handler)`. A typed
+rejection is an expected business outcome rather than a failure, so it settles
+the run quietly; this gives it the same first-class handling an error has. Only
+one reason handler is allowed per pipeline, and it fires only on a `'reason'`
+exit.
+
+```javascript
+.reason((reason, exit) => metrics.increment(`denied.${exit.name}`))
 ```
 
 #### `.error(handler, input?)`
