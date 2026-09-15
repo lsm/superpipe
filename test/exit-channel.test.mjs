@@ -359,6 +359,34 @@ describe('pipeline exit channel', () => {
     }
   })
 
+  it('lets a queued failure win over a value exit dispatched mid-drain', () => {
+    const seen = []
+    const settleThenThrow = (next) => {
+      next(null, 'ok')
+      throw new Error('late boom')
+    }
+    const run = pipe('exit-queued-failure')
+      .pipe(settleThenThrow, 'next', 'a')
+      .onExit((exit) => seen.push(exit))
+      .end('a')
+    expect(() => run()).to.throw('late boom')
+    expect(seen).to.have.lengthOf(1)
+    expect(seen[0].via).to.equal('error')
+    expect(String(seen[0].error)).to.contain('late boom')
+  })
+
+  it('still reports a value exit when the queue drains cleanly', () => {
+    const seen = []
+    const run = pipe('exit-queued-clean')
+      .pipe((next) => next(null, 'ok'), 'next', 'a')
+      .pipe((a) => `${a}!`, 'a', 'b')
+      .onExit((exit) => seen.push(exit))
+      .end('b')
+    expect(run()).to.equal('ok!')
+    expect(seen).to.have.lengthOf(1)
+    expect(seen[0].via).to.equal('value')
+  })
+
   it('refuses a non-function exit handler', () => {
     expect(() => pipe('exit-bad').onExit('nope')).to.throw('must be a function')
   })

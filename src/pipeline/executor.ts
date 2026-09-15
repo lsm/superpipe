@@ -162,6 +162,10 @@ interface PipeState {
   exited: boolean
 
   mergeStep: number | null
+
+  queueCursor: number
+
+  deferredValueSettle: boolean
 }
 
 function recordExit(
@@ -261,6 +265,9 @@ function recordFailure(state: PipeState, error: unknown, failedStep?: number): v
 function settle(state: PipeState, error: Error | null, failedStep?: number): void {
   if (error != null) {
     recordFailure(state, error, failedStep)
+  } else if (state.driving && state.queue.length > state.queueCursor) {
+    state.deferredValueSettle = true
+    return
   }
   if (!state.onSettled) {
     runExitHandlers(state, error)
@@ -552,6 +559,7 @@ function next(
   try {
     let cursor = 0
     for (;;) {
+      state.queueCursor = cursor
       try {
         continuePipeline(state, pipeline, error, value, fromStep)
       } catch (err) {
@@ -582,6 +590,11 @@ function next(
       fromStep = item.fromStep
     }
     state.queue.length = 0
+    state.queueCursor = 0
+    if (state.deferredValueSettle) {
+      state.deferredValueSettle = false
+      settle(state, null)
+    }
   } finally {
     state.driving = false
   }
@@ -710,6 +723,8 @@ export function runPipeline(
     exit: null,
     exited: false,
     mergeStep: null,
+    queueCursor: 0,
+    deferredValueSettle: false,
   }
 
   registerCancel?.((reason: unknown): void => {
