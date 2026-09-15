@@ -170,6 +170,46 @@ const findUser = superpipe('find user')
 findUser('missing') // the reason returned by lookup; loadProfile does not run
 ```
 
+#### `.onExit(handler)` and `.reason(handler)`
+
+A pipeline can end four ways, and until now three of them were silent: every
+exit that was not a natural completion simply settled with whatever the
+container held. `.onExit(handler)` registers an observer that runs exactly once
+when a run settles, however it ended.
+
+The handler receives an exit record and the container:
+
+| field | meaning |
+| --- | --- |
+| `via` | `'value'`, `'reason'`, `'halt'`, `'error'` or `'abort'` |
+| `step` | index of the stage that ended the run, or `null` on a natural completion |
+| `name` | that stage's function name, or `null` |
+| `reason` | the rejected value, on a `'reason'` exit only |
+| `error` | the failure, on `'error'` and `'abort'` exits only |
+
+```javascript
+const run = superpipe('charge')
+  .input('order')
+  .pipe(authorize, 'order', 'result:authorization')
+  .pipe(capture, 'authorization', 'receipt')
+  .onExit((exit, container) => audit.write(exit))
+  .end('receipt')
+```
+
+Exit handlers observe a run; they do not handle it. They run before the error
+handler and before an `endAsync` promise resolves, in registration order, and a
+handler that throws is contained — it can never change the run's outcome.
+
+`.reason(handler)` is the rejection counterpart to `.error(handler)`. A typed
+rejection is an expected business outcome rather than a failure, so it settles
+the run quietly; this gives it the same first-class handling an error has. Only
+one reason handler is allowed per pipeline, and it fires only on a `'reason'`
+exit.
+
+```javascript
+.reason((reason, exit) => metrics.increment(`denied.${exit.name}`))
+```
+
 #### `.error(handler, input?)`
 
 Sets an error handler for the pipeline. Only one error handler is allowed per pipeline.

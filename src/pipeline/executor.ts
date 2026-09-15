@@ -7,6 +7,8 @@ import {
   OutputNameError,
   PipelineAbortedError,
   type PipelineBase,
+  type PipelineExit,
+  type PipelineExitVia,
   type PipeOutput,
   type PipeResult,
   setEntry,
@@ -154,10 +156,61 @@ interface PipeState {
   queue: QueuedContinuation[]
 
   onSettled?: (outcome: { container: ResultContainer; error: Error | null }) => void
+
+  pipeline: PipelineBase
+
+  exit: PipelineExit | null
+
+  exited: boolean
+}
+
+function recordExit(
+  state: PipeState,
+  via: PipelineExitVia,
+  step: number | null,
+  name: string | null,
+  reason: PipeResult,
+  error: Error | null,
+): void {
+  if (state.exit != null) {
+    return
+  }
+  state.exit = { via, step, name, reason, error }
+}
+
+function runExitHandlers(state: PipeState, error: Error | null): void {
+  if (state.exited) {
+    return
+  }
+  state.exited = true
+  recordExit(state, error == null ? 'value' : 'error', null, null, undefined, error)
+  const exit = state.exit as PipelineExit
+  const { reasonHandler, exitHandlers } = state.pipeline
+  if (exit.via === 'reason' && reasonHandler) {
+    try {
+      reasonHandler(exit.reason, exit, state.container)
+    } catch {}
+  }
+  if (!exitHandlers) {
+    return
+  }
+  for (const handler of exitHandlers) {
+    try {
+      handler(exit, state.container)
+    } catch {}
+  }
 }
 
 function settle(state: PipeState, error: Error | null): void {
   if (!state.onSettled) {
+    if (error == null && (state.settled || state.settling)) {
+      return
+    }
+    if (error != null && state.settled) {
+      return
+    }
+    state.settled = true
+    runExitHandlers(state, error)
     return
   }
   if (error == null) {
@@ -170,6 +223,7 @@ function settle(state: PipeState, error: Error | null): void {
         return
       }
       state.settled = true
+      runExitHandlers(state, null)
       state.onSettled?.({ container: state.container, error: null })
     })
     return
@@ -183,6 +237,7 @@ function settle(state: PipeState, error: Error | null): void {
     state.activeError = error
   }
   state.settled = true
+  runExitHandlers(state, error)
   state.onSettled?.({ container: state.container, error })
 }
 
@@ -194,7 +249,9 @@ function cancelRun(state: PipeState, reason: unknown): void {
     return
   }
   state.aborted = true
-  settle(state, new PipelineAbortedError(reason))
+  const aborted = new PipelineAbortedError(reason)
+  recordExit(state, 'abort', null, null, undefined, aborted)
+  settle(state, aborted)
 }
 
 function haltRun(state: PipeState): void {
@@ -348,6 +405,7 @@ function executePipe(
         resolved = !resolved
       }
       if (isFlowControl && resolved === false) {
+        recordExit(state, 'halt', pipeIndex, pipe.fnName, undefined, null)
         state.halted = true
         if (state.pending === 0) {
           settle(state, null)
@@ -409,6 +467,7 @@ function executePipe(
     }
     advance(state, pipeline, null, result)
   } else if (!ownsContinuation) {
+    recordExit(state, 'halt', state.step - 1, pipe.fnName, undefined, null)
     state.halted = true
     if (state.pending === 0) {
       settle(state, null)
@@ -494,6 +553,14 @@ function continuePipeline(
       false,
     )
     if (result.terminal) {
+      recordExit(
+        state,
+        'reason',
+        producerIndex,
+        pipes[producerIndex].fnName,
+        Object.values(result.output as ResultContainer)[0],
+        null,
+      )
       haltRun(state)
     }
   }
@@ -560,6 +627,9 @@ export function runPipeline(
     driving: false,
     queue: [],
     onSettled,
+    pipeline,
+    exit: null,
+    exited: false,
   }
 
   registerCancel?.((reason: unknown): void => {
