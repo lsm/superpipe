@@ -11,7 +11,8 @@ channel, one cancellation gate) live in the executor rather than in call-site di
 Two implementations share one core contract:
 
 - `src/` — the TypeScript reference implementation, published to npm as `superpipe`.
-- `go/` — a Go port (`github.com/lsm/superpipe/go`), same semantics with idiomatic spelling.
+- `go/` — a Go port (`github.com/lsm/superpipe/go`), same core contract in idiomatic Go, with
+  documented divergences.
   `docs/go-port-spec.md` is the contract between them; every clause is traced to TS source.
 
 A behavior change in `src/` is not done until the README, the flow-control contract test, the Go
