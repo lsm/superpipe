@@ -62,9 +62,11 @@ are not installed. Do not use or extend them.
 
 - Biome: single quotes, no semicolons, trailing commas, 2-space indent, 100-column lines.
 - **Zero comments in `.ts` sources** (line, block, and JSDoc), enforced by
-  `npm run check:no-comments` over every tracked `*.ts` file. The only exemptions are functional
-  directives: shebangs, `/// <reference>`, `@ts-*`, `biome-ignore`, and `v8`/`istanbul`/`c8`
-  coverage ignores. Tests (`.mjs`), `scripts/`, `bench/`, and Go files may have comments.
+  `npm run check:no-comments` over every tracked `*.ts` file. The only exemptions are the
+  functional directives in the script's keep list: shebangs, `/// <reference>`, `@ts-*`,
+  `biome-ignore`, `eslint` pragmas, `oxlint-disable`/`oxlint-enable`, `@public`, `knip-ignore`,
+  and `v8`/`istanbul`/`c8` coverage ignores. Tests (`.mjs`), `scripts/`, `bench/`, and Go files
+  may have comments.
 - Tests use vitest with chai-style assertions (`expect(x).to.equal(y)`). Callback-driven cases
   wrap in `new Promise((done) => …)` and call `done()` from inside the pipeline.
 - `test/flow-control-contract.test.mjs` pins the behaviors the README promises. Change README
@@ -103,7 +105,7 @@ built by `src/pipeline/builder.ts`:
   `NextCallbacks` so the executor can hold, flush, or disable it.
 - **Producer** (`src/parameter/Producer.ts`) turns the return value into container entries.
   Output grammar: `'out'` binds the whole value; `'{a, b}'` picks; `['a','b']` destructures
-  (positional for arrays, by name for objects); `'{...}'` merges every own key; `'src:dst'`
+  (positional for arrays, by name for objects); `'{...}'` merges every enumerable own key; `'src:dst'`
   renames; `'result:<name>'` opts into the `{ value }` / `{ reason }` protocol where `reason`
   binds and stops the run successfully. No spec means effects only, the return is discarded.
   Destructuring specs validate presence and throw `OutputKeyError` at the producing pipe;
