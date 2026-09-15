@@ -166,6 +166,13 @@ interface PipeState {
   queueCursor: number
 
   deferredValueSettle: boolean
+
+  observed: boolean
+}
+
+function hasExitObservers(pipeline: PipelineBase): boolean {
+  const { exitHandlers, reasonHandler } = pipeline
+  return reasonHandler !== undefined || (exitHandlers !== undefined && exitHandlers.length > 0)
 }
 
 function recordExit(
@@ -176,6 +183,9 @@ function recordExit(
   reason: PipeResult,
   error: unknown,
 ): void {
+  if (!state.observed) {
+    return
+  }
   if (state.exit != null) {
     if (error != null && state.exit.error == null) {
       state.exit.error = error
@@ -241,7 +251,7 @@ export function dispatchAbortExit(pipeline: PipelineBase, error: unknown): void 
 }
 
 function runExitHandlers(state: PipeState, error: unknown): void {
-  if (state.exited) {
+  if (!state.observed || state.exited) {
     return
   }
   state.exited = true
@@ -265,7 +275,7 @@ function recordFailure(state: PipeState, error: unknown, failedStep?: number): v
 function settle(state: PipeState, error: Error | null, failedStep?: number): void {
   if (error != null) {
     recordFailure(state, error, failedStep)
-  } else if (state.driving && state.queue.length > state.queueCursor) {
+  } else if (state.observed && state.driving && state.queue.length > state.queueCursor) {
     state.deferredValueSettle = true
     return
   }
@@ -725,6 +735,7 @@ export function runPipeline(
     mergeStep: null,
     queueCursor: 0,
     deferredValueSettle: false,
+    observed: hasExitObservers(pipeline),
   }
 
   registerCancel?.((reason: unknown): void => {
