@@ -65,12 +65,15 @@ are not installed. Do not use or extend them.
   `npm run check:no-comments` over every tracked `*.ts` file. The only exemptions are the
   functional directives in the script's keep list: shebangs, `/// <reference>`, `@ts-*`,
   `biome-ignore`, `eslint` pragmas, `oxlint-disable`/`oxlint-enable`, `@public`, `knip-ignore`,
-  and `v8`/`istanbul`/`c8` coverage ignores. Tests (`.mjs`), `scripts/`, `bench/`, and Go files
-  may have comments.
+  and `v8`/`istanbul`/`c8` coverage ignores. The check has no directory exclusions, so a `.ts`
+  file anywhere in the repo is covered; `.mjs` tests and scripts, `bench/`, and Go files may have
+  comments.
 - Tests use vitest with chai-style assertions (`expect(x).to.equal(y)`). Callback-driven cases
   wrap in `new Promise((done) => …)` and call `done()` from inside the pipeline.
-- `test/flow-control-contract.test.mjs` pins the behaviors the README promises. Change README
-  and this file together.
+- README behaviors are pinned by contract suites: `test/flow-control-contract.test.mjs` for
+  flow control, output binding, cancellation, and live deps; `test/exit-channel.test.mjs` for
+  `.onExit()`/`.reason()`; `test/result-protocol.test.mjs` for `result:<name>`. Change the README
+  and the matching suite together.
 - Commit messages use conventional prefixes (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
   `ci:`, `bench:`, `feat(go):`). Releases are a `chore(release): X.Y.Z` commit that bumps
   `package.json` and adds a hand-written `X.Y.Z YYYY-MM-DD` section (underlined with `=`) to
