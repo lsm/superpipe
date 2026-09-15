@@ -237,6 +237,39 @@ describe('pipeline exit channel', () => {
     expect(seen[0].error).to.equal('denied')
   })
 
+  it('names the stage whose async output had the wrong shape', async () => {
+    const seen = []
+    const malformed = async () => 'not-an-object'
+    const run = pipe('exit-shape')
+      .pipe(() => 1, null, 'seed')
+      .pipe(malformed, 'seed', 'result:outcome')
+      .onExit((exit) => seen.push(exit))
+      .endAsync('outcome')
+    await expect(run()).rejects.toThrow()
+    expect(seen[0].via).to.equal('error')
+    expect(seen[0].step).to.equal(1)
+    expect(seen[0].name).to.equal('malformed')
+  })
+
+  it('contains a rejected promise returned by an exit handler', async () => {
+    const unhandled = []
+    const onUnhandled = (reason) => unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const run = pipe('exit-async-handler')
+        .pipe(() => 5, null, 'a')
+        .onExit(async () => {
+          throw new Error('handler exploded')
+        })
+        .endAsync('a')
+      expect(await run()).to.equal(5)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(unhandled).to.have.lengthOf(0)
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
   it('refuses a non-function exit handler', () => {
     expect(() => pipe('exit-bad').onExit('nope')).to.throw('must be a function')
   })

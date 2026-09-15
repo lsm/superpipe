@@ -175,6 +175,24 @@ function recordExit(
   state.exit = { via, step, name, reason, error }
 }
 
+function containHandler(invoke: () => unknown): void {
+  let returned: unknown
+  try {
+    returned = invoke()
+  } catch {
+    return
+  }
+  if (returned == null || (typeof returned !== 'object' && typeof returned !== 'function')) {
+    return
+  }
+  try {
+    const thenFn = (returned as { then?: unknown }).then
+    if (typeof thenFn === 'function') {
+      Reflect.apply(thenFn as AnyFunction, returned, [swallow, ignoreReason])
+    }
+  } catch {}
+}
+
 export function dispatchExit(
   pipeline: PipelineBase,
   exit: PipelineExit,
@@ -182,17 +200,13 @@ export function dispatchExit(
 ): void {
   const { reasonHandler, exitHandlers } = pipeline
   if (exit.via === 'reason' && reasonHandler) {
-    try {
-      reasonHandler(exit.reason, exit, container)
-    } catch {}
+    containHandler((): unknown => reasonHandler(exit.reason, exit, container))
   }
   if (!exitHandlers) {
     return
   }
   for (const handler of exitHandlers) {
-    try {
-      handler(exit, container)
-    } catch {}
+    containHandler((): unknown => handler(exit, container))
   }
 }
 
@@ -209,7 +223,23 @@ function runExitHandlers(state: PipeState, error: unknown): void {
   dispatchExit(state.pipeline, state.exit as PipelineExit, state.container)
 }
 
-function settle(state: PipeState, error: Error | null): void {
+function recordFailure(state: PipeState, error: unknown, failedStep?: number): void {
+  const { pipes } = state.pipeline
+  const known = failedStep !== undefined && failedStep >= 0 && failedStep < pipes.length
+  recordExit(
+    state,
+    'error',
+    known ? (failedStep as number) : null,
+    known ? pipes[failedStep as number].fnName : null,
+    undefined,
+    error,
+  )
+}
+
+function settle(state: PipeState, error: Error | null, failedStep?: number): void {
+  if (error != null) {
+    recordFailure(state, error, failedStep)
+  }
   if (!state.onSettled) {
     runExitHandlers(state, error)
     return
@@ -291,8 +321,7 @@ function executePipe(
       }
 
       if (!state.settled) {
-        recordExit(state, 'error', state.step - 1, fnName, undefined, err)
-        settle(state, err)
+        settle(state, err, nextCallbacks.pipeIndex)
       }
       return true
     },
@@ -419,8 +448,7 @@ function executePipe(
           pipe.producer.expectValue()
         } catch (err) {
           if (state.onSettled && !state.settled) {
-            recordExit(state, 'error', pipeIndex, pipe.fnName, undefined, err)
-            settle(state, err as Error)
+            settle(state, err as Error, pipeIndex)
             return
           }
           throw err
@@ -505,7 +533,11 @@ function next(
           throw err
         }
         if (!state.settled) {
-          settle(state, (err || new Error('Pipe continuation threw a falsey value')) as Error)
+          settle(
+            state,
+            (err || new Error('Pipe continuation threw a falsey value')) as Error,
+            fromStep === undefined ? state.step - 1 : fromStep,
+          )
         }
       }
       if (state.settled || cursor >= state.queue.length) {

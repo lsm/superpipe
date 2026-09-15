@@ -202,8 +202,12 @@ handler and before an `endAsync` promise resolves, in registration order, and a
 handler that throws is contained — it can never change the run's outcome, and
 the thrown value is discarded rather than reported.
 
-Two details worth knowing. A halted run with continuations still outstanding
-fires its handlers when the last one drains, not at the moment it halted. And
+Three details worth knowing. A run cancelled by an already-aborted signal never
+starts, so its handlers receive an `'abort'` exit and an **empty** container —
+there is no run state to report; correlate on the exit record rather than on
+container fields if you need to cover that case. A halted run with continuations still
+outstanding fires its handlers when the last one drains, not at the moment it
+halted. And
 the first exit recorded wins, so a run that halts and is then aborted reports
 `via: 'halt'` while its `endAsync` promise still rejects with
 `PipelineAbortedError` — `via` names what ended the stages, `error` what the
