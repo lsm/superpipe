@@ -270,6 +270,20 @@ describe('pipeline exit channel', () => {
     }
   })
 
+  it('blames the stage that threw, not the stage whose value was being merged', async () => {
+    const seen = []
+    const produce = async () => 1
+    const run = superpipe({ notAFunction: 'oops' })('exit-structural')
+      .pipe(produce, null, 'seed')
+      .pipe('notAFunction', 'seed', 'later')
+      .onExit((exit) => seen.push(exit))
+      .endAsync('later')
+    await expect(run()).rejects.toThrow()
+    expect(seen[0].via).to.equal('error')
+    expect(seen[0].step).to.equal(1)
+    expect(seen[0].name).to.equal('notAFunction')
+  })
+
   it('refuses a non-function exit handler', () => {
     expect(() => pipe('exit-bad').onExit('nope')).to.throw('must be a function')
   })

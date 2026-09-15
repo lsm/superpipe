@@ -159,6 +159,8 @@ interface PipeState {
   exit: PipelineExit | null
 
   exited: boolean
+
+  mergeStep: number | null
 }
 
 function recordExit(
@@ -170,6 +172,9 @@ function recordExit(
   error: unknown,
 ): void {
   if (state.exit != null) {
+    if (error != null && state.exit.error == null) {
+      state.exit.error = error
+    }
     return
   }
   state.exit = { via, step, name, reason, error }
@@ -536,7 +541,7 @@ function next(
           settle(
             state,
             (err || new Error('Pipe continuation threw a falsey value')) as Error,
-            fromStep === undefined ? state.step - 1 : fromStep,
+            state.mergeStep === null ? state.step - 1 : state.mergeStep,
           )
         }
       }
@@ -574,6 +579,7 @@ function continuePipeline(
 
   if (value != null) {
     const producerIndex = fromStep === undefined ? step - 1 : fromStep
+    state.mergeStep = producerIndex
     const producer = pipes[producerIndex].producer
     const result =
       producer.isResult && error == null
@@ -587,6 +593,7 @@ function continuePipeline(
       result.output,
       false,
     )
+    state.mergeStep = null
     if (result.terminal) {
       recordExit(
         state,
@@ -675,6 +682,7 @@ export function runPipeline(
     pipeline,
     exit: null,
     exited: false,
+    mergeStep: null,
   }
 
   registerCancel?.((reason: unknown): void => {
