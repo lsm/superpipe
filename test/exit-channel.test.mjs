@@ -336,6 +336,29 @@ describe('pipeline exit channel', () => {
     expect(seen[0]).to.deep.equal({ a: 1 })
   })
 
+  it('dispatches for a sync run whose async stage leaves its output unfulfilled', async () => {
+    const seen = []
+    const unhandled = []
+    const onUnhandled = (reason) => unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const empty = async () => undefined
+      const run = pipe('exit-sync-async-gap')
+        .pipe(() => 1, null, 'seed')
+        .pipe(empty, 'seed', ['x', 'y'])
+        .onExit((exit) => seen.push(exit))
+        .end('x')
+      run()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(seen).to.have.lengthOf(1)
+      expect(seen[0].via).to.equal('error')
+      expect(seen[0].step).to.equal(1)
+      expect(seen[0].name).to.equal('empty')
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
   it('refuses a non-function exit handler', () => {
     expect(() => pipe('exit-bad').onExit('nope')).to.throw('must be a function')
   })

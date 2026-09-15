@@ -469,10 +469,14 @@ function executePipe(
         try {
           pipe.producer.expectValue()
         } catch (err) {
-          if (state.onSettled && !state.settled) {
-            settle(state, err as Error, pipeIndex)
-            return
+          if (state.onSettled) {
+            if (!state.settled) {
+              settle(state, err as Error, pipeIndex)
+              return
+            }
+            throw err
           }
+          settle(state, err as Error, pipeIndex)
           throw err
         }
       }
@@ -551,7 +555,13 @@ function next(
       try {
         continuePipeline(state, pipeline, error, value, fromStep)
       } catch (err) {
+        const failedStep = state.mergeStep === null ? state.step - 1 : state.mergeStep
         if (!state.onSettled) {
+          settle(
+            state,
+            (err || new Error('Pipe continuation threw a falsey value')) as Error,
+            failedStep,
+          )
           throw err
         }
         if (!state.settled) {
