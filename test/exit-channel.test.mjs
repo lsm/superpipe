@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import superpipe from '../src'
+import { dispatchExit } from '../src/pipeline/executor'
 
 describe('pipeline exit channel', () => {
   const pipe = superpipe()
@@ -294,6 +295,45 @@ describe('pipeline exit channel', () => {
     expect(seen[0].a).to.equal(1)
     expect(seen[0].next).to.equal(undefined)
     expect(Object.keys(seen[0])).to.not.include('next')
+  })
+
+  it('keeps a __proto__ output as an own field on the snapshot', () => {
+    const seen = []
+    const run = pipe('exit-proto')
+      .pipe(() => ({ ['__proto__']: 'plain-value' }), null, '{__proto__}')
+      .onExit((_exit, container) => seen.push(container))
+      .end('__proto__')
+    run()
+    expect(Object.hasOwn(seen[0], '__proto__')).to.equal(true)
+    expect(Object.getOwnPropertyDescriptor(seen[0], '__proto__').value).to.equal('plain-value')
+  })
+
+  it('builds no snapshot when a pipeline registers no handlers', () => {
+    const touched = []
+    const container = new Proxy(
+      { a: 1 },
+      {
+        ownKeys(target) {
+          touched.push('ownKeys')
+          return Reflect.ownKeys(target)
+        },
+      },
+    )
+    const base = { name: 'probe', pipes: [], functions: {} }
+    dispatchExit(
+      { ...base, exitHandlers: [] },
+      { via: 'value', step: null, name: null, error: null },
+      container,
+    )
+    expect(touched).to.deep.equal([])
+    const seen = []
+    dispatchExit(
+      { ...base, exitHandlers: [(_exit, view) => seen.push(view)] },
+      { via: 'value', step: null, name: null, error: null },
+      container,
+    )
+    expect(touched).to.deep.equal(['ownKeys'])
+    expect(seen[0]).to.deep.equal({ a: 1 })
   })
 
   it('refuses a non-function exit handler', () => {

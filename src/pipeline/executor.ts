@@ -11,6 +11,7 @@ import {
   type PipelineExitVia,
   type PipeOutput,
   type PipeResult,
+  type ReasonHandler,
   type ResultContainer,
   setEntry,
   throwNoErrorHandlerError,
@@ -184,7 +185,7 @@ function observableContainer(container: ResultContainer): ResultContainer {
   const view: ResultContainer = {}
   for (const key of Object.keys(container)) {
     if (key !== 'next') {
-      view[key] = container[key]
+      setEntry(view, key, container[key])
     }
   }
   return view
@@ -214,18 +215,20 @@ export function dispatchExit(
   container: ResultContainer,
 ): void {
   const { reasonHandler, exitHandlers } = pipeline
-  if (!reasonHandler && !exitHandlers) {
+  const handlers = exitHandlers && exitHandlers.length > 0 ? exitHandlers : null
+  const callsReason = exit.via === 'reason' && reasonHandler !== undefined
+  if (!handlers && !callsReason) {
     return
   }
-  container = observableContainer(container)
-  if (exit.via === 'reason' && reasonHandler) {
-    containHandler((): unknown => reasonHandler(exit.reason, exit, container))
+  const view = observableContainer(container)
+  if (callsReason) {
+    containHandler((): unknown => (reasonHandler as ReasonHandler)(exit.reason, exit, view))
   }
-  if (!exitHandlers) {
+  if (!handlers) {
     return
   }
-  for (const handler of exitHandlers) {
-    containHandler((): unknown => handler(exit, container))
+  for (const handler of handlers) {
+    containHandler((): unknown => handler(exit, view))
   }
 }
 
