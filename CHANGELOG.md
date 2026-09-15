@@ -1,5 +1,14 @@
 Unreleased
 ==========
+- Added an exit channel. `.onExit(handler)` runs once when a run settles,
+  however it ended, receiving a `PipelineExit` — `via`
+  (`value`/`reason`/`halt`/`error`/`abort`), the `step` and `name` of the stage
+  that ended the run, the rejected `reason`, and the `error` — plus a snapshot
+  of the container without the pipeline's `next`. `.reason(handler)` gives a
+  typed rejection the first-class handling `.error(handler)` already had.
+  Handlers are contained, including rejected promises they return, so one that
+  fails cannot change the run's outcome. Halting and continuation semantics are
+  unchanged.
 - Go: added `Result(name)` output specs with sealed `Value(v)` and `Reason(r)`
   outcomes. `Reason` binds the selected business reason and stops the run
   successfully, matching the opt-in TypeScript `result:<name>` protocol while

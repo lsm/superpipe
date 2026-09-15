@@ -284,6 +284,18 @@ describe('pipeline exit channel', () => {
     expect(seen[0].name).to.equal('notAFunction')
   })
 
+  it('hands handlers a container without the live continuation', () => {
+    const seen = []
+    const run = pipe('exit-container')
+      .pipe(() => 1, null, 'a')
+      .onExit((_exit, container) => seen.push(container))
+      .end('a')
+    run()
+    expect(seen[0].a).to.equal(1)
+    expect(seen[0].next).to.equal(undefined)
+    expect(Object.keys(seen[0])).to.not.include('next')
+  })
+
   it('refuses a non-function exit handler', () => {
     expect(() => pipe('exit-bad').onExit('nope')).to.throw('must be a function')
   })

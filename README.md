@@ -161,7 +161,7 @@ Existing `result:destination` rename mappings continue to work when the returned
 object supplies its legacy `result` property.
 
 ```javascript
-const findUser = superpipe('find user')
+const findUser = superpipe({ lookup, loadProfile })('find user')
   .input('id')
   .pipe(lookup, 'id', 'result:user')
   .pipe(loadProfile, 'user', 'profile')
@@ -202,10 +202,17 @@ handler and before an `endAsync` promise resolves, in registration order, and a
 handler that throws is contained — it can never change the run's outcome, and
 the thrown value is discarded rather than reported.
 
-Three details worth knowing. A run cancelled by an already-aborted signal never
+The container a handler receives is a snapshot of the run's named outputs
+without the pipeline's own `next` continuation, so a handler observes the run
+rather than being able to re-enter it.
+
+Four details worth knowing. A run cancelled by an already-aborted signal never
 starts, so its handlers receive an `'abort'` exit and an **empty** container —
 there is no run state to report; correlate on the exit record rather than on
-container fields if you need to cover that case. A halted run with continuations still
+container fields if you need to cover that case. `via: 'value'` means every
+stage ran; with `endAsync`, fetching the requested output happens after the run
+settles, so a malformed output spec can still reject the promise after handlers
+have seen a `'value'` exit. A halted run with continuations still
 outstanding fires its handlers when the last one drains, not at the moment it
 halted. And
 the first exit recorded wins, so a run that halts and is then aborted reports

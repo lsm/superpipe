@@ -180,6 +180,16 @@ function recordExit(
   state.exit = { via, step, name, reason, error }
 }
 
+function observableContainer(container: ResultContainer): ResultContainer {
+  const view: ResultContainer = {}
+  for (const key of Object.keys(container)) {
+    if (key !== 'next') {
+      view[key] = container[key]
+    }
+  }
+  return view
+}
+
 function containHandler(invoke: () => unknown): void {
   let returned: unknown
   try {
@@ -204,6 +214,10 @@ export function dispatchExit(
   container: ResultContainer,
 ): void {
   const { reasonHandler, exitHandlers } = pipeline
+  if (!reasonHandler && !exitHandlers) {
+    return
+  }
+  container = observableContainer(container)
   if (exit.via === 'reason' && reasonHandler) {
     containHandler((): unknown => reasonHandler(exit.reason, exit, container))
   }
