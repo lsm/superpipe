@@ -16,7 +16,7 @@ import {
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
 import { createErrorPipe, createInputPipe, createPipe } from './builder'
-import { runPipeline } from './executor'
+import { dispatchAbortExit, runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
 
@@ -170,7 +170,9 @@ export default class Pipeline implements PipelineBase {
 
     run.withSignal = (signal: AbortSignalLike, ...args: unknown[]): Promise<PipeOutput> => {
       if (signalAborted(signal)) {
-        return Promise.reject(new PipelineAbortedError(signalReason(signal)))
+        const aborted = new PipelineAbortedError(signalReason(signal))
+        dispatchAbortExit(pipeline, aborted)
+        return Promise.reject(aborted)
       }
 
       let cancelRun: ((reason: unknown) => void) | undefined

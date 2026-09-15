@@ -184,6 +184,59 @@ describe('pipeline exit channel', () => {
     expect(seen[0].error).to.be.instanceOf(Error)
   })
 
+  it('dispatches an abort exit when the signal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const seen = []
+    let ranAStage = false
+    const run = pipe('exit-pre-aborted')
+      .pipe(
+        () => {
+          ranAStage = true
+          return 1
+        },
+        null,
+        'a',
+      )
+      .onExit((exit) => seen.push(exit))
+      .endAsync('a')
+    await expect(run.withSignal(controller.signal)).rejects.toThrow('Pipeline aborted.')
+    expect(seen).to.have.lengthOf(1)
+    expect(seen[0].via).to.equal('abort')
+    expect(ranAStage).to.equal(false)
+  })
+
+  it('names the stage whose destructuring output went unfulfilled', async () => {
+    const seen = []
+    const missing = async () => undefined
+    const run = pipe('exit-expect-value')
+      .pipe(() => 1, null, 'seed')
+      .pipe(missing, 'seed', ['x', 'y'])
+      .onExit((exit) => seen.push(exit))
+      .endAsync('x')
+    await expect(run()).rejects.toThrow()
+    expect(seen[0].via).to.equal('error')
+    expect(seen[0].step).to.equal(1)
+    expect(seen[0].name).to.equal('missing')
+  })
+
+  it('preserves a non-Error rejection verbatim on the exit record', async () => {
+    const seen = []
+    const run = pipe('exit-non-error')
+      .pipe(
+        async () => {
+          throw 'denied'
+        },
+        null,
+        'a',
+      )
+      .onExit((exit) => seen.push(exit))
+      .endAsync('a')
+    await expect(run()).rejects.toBe('denied')
+    expect(seen[0].via).to.equal('error')
+    expect(seen[0].error).to.equal('denied')
+  })
+
   it('refuses a non-function exit handler', () => {
     expect(() => pipe('exit-bad').onExit('nope')).to.throw('must be a function')
   })

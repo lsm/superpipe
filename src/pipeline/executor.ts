@@ -167,7 +167,7 @@ function recordExit(
   step: number | null,
   name: string | null,
   reason: PipeResult,
-  error: Error | null,
+  error: unknown,
 ): void {
   if (state.exit != null) {
     return
@@ -175,17 +175,15 @@ function recordExit(
   state.exit = { via, step, name, reason, error }
 }
 
-function runExitHandlers(state: PipeState, error: Error | null): void {
-  if (state.exited) {
-    return
-  }
-  state.exited = true
-  recordExit(state, error == null ? 'value' : 'error', null, null, undefined, error)
-  const exit = state.exit as PipelineExit
-  const { reasonHandler, exitHandlers } = state.pipeline
+export function dispatchExit(
+  pipeline: PipelineBase,
+  exit: PipelineExit,
+  container: ResultContainer,
+): void {
+  const { reasonHandler, exitHandlers } = pipeline
   if (exit.via === 'reason' && reasonHandler) {
     try {
-      reasonHandler(exit.reason, exit, state.container)
+      reasonHandler(exit.reason, exit, container)
     } catch {}
   }
   if (!exitHandlers) {
@@ -193,9 +191,22 @@ function runExitHandlers(state: PipeState, error: Error | null): void {
   }
   for (const handler of exitHandlers) {
     try {
-      handler(exit, state.container)
+      handler(exit, container)
     } catch {}
   }
+}
+
+export function dispatchAbortExit(pipeline: PipelineBase, error: unknown): void {
+  dispatchExit(pipeline, { via: 'abort', step: null, name: null, error }, {})
+}
+
+function runExitHandlers(state: PipeState, error: unknown): void {
+  if (state.exited) {
+    return
+  }
+  state.exited = true
+  recordExit(state, error == null ? 'value' : 'error', null, null, undefined, error)
+  dispatchExit(state.pipeline, state.exit as PipelineExit, state.container)
 }
 
 function settle(state: PipeState, error: Error | null): void {
@@ -280,6 +291,7 @@ function executePipe(
       }
 
       if (!state.settled) {
+        recordExit(state, 'error', state.step - 1, fnName, undefined, err)
         settle(state, err)
       }
       return true
@@ -407,6 +419,7 @@ function executePipe(
           pipe.producer.expectValue()
         } catch (err) {
           if (state.onSettled && !state.settled) {
+            recordExit(state, 'error', pipeIndex, pipe.fnName, undefined, err)
             settle(state, err as Error)
             return
           }

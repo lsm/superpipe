@@ -84,7 +84,7 @@ export interface PipelineExit {
   step: number | null
   name: string | null
   reason?: PipeResult
-  error: Error | null
+  error: unknown
 }
 
 export type ExitHandler = (exit: PipelineExit, container: ResultContainer) => void

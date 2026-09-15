@@ -185,7 +185,7 @@ The handler receives an exit record and the container:
 | `step` | index of the stage that ended the run; `null` when no single stage did (natural completion, abort) |
 | `name` | that stage's function name, under the same rule |
 | `reason` | the rejected value, on a `'reason'` exit only |
-| `error` | the failure, on `'error'` and `'abort'` exits only |
+| `error` | the failure, on `'error'` and `'abort'` exits only; typed `unknown`, since a pipe may throw or reject with any value |
 
 ```javascript
 const sp = superpipe({ authorize, capture })
