@@ -139,6 +139,51 @@ describe('pipeline exit channel', () => {
     expect(() => builder.reason(() => {})).to.throw('one reason handler')
   })
 
+  it('names the stage that threw on an error exit', () => {
+    const seen = []
+    const explode = () => {
+      throw new Error('boom')
+    }
+    const run = pipe('exit-error-stage')
+      .pipe(() => 1, null, 'a')
+      .pipe(explode, 'a', 'b')
+      .onExit((exit) => seen.push(exit))
+      .error(() => {})
+      .end('b')
+    run()
+    expect(seen[0].via).to.equal('error')
+    expect(seen[0].step).to.equal(1)
+    expect(seen[0].name).to.equal('explode')
+  })
+
+  it('names the stage whose promise rejected on an async error exit', async () => {
+    const seen = []
+    const failAsync = async () => {
+      throw new Error('async boom')
+    }
+    const run = pipe('exit-error-async-stage')
+      .pipe(() => 1, null, 'a')
+      .pipe(failAsync, 'a', 'b')
+      .onExit((exit) => seen.push(exit))
+      .endAsync('b')
+    await expect(run()).rejects.toThrow('async boom')
+    expect(seen[0].via).to.equal('error')
+    expect(seen[0].step).to.equal(1)
+    expect(seen[0].name).to.equal('failAsync')
+  })
+
+  it('dispatches exit handlers when a synchronous run throws out of the executor', () => {
+    const seen = []
+    const run = pipe('exit-sync-throw')
+      .pipe(() => ({ notTheResultShape: true }), null, 'result:outcome')
+      .onExit((exit) => seen.push(exit))
+      .end('outcome')
+    expect(() => run()).to.throw()
+    expect(seen).to.have.lengthOf(1)
+    expect(seen[0].via).to.equal('error')
+    expect(seen[0].error).to.be.instanceOf(Error)
+  })
+
   it('refuses a non-function exit handler', () => {
     expect(() => pipe('exit-bad').onExit('nope')).to.throw('must be a function')
   })

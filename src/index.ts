@@ -1,4 +1,11 @@
-import type { AsyncPipelineRunner, FunctionContainer, PipeFunction, PipeParameter } from './common'
+import type {
+  AsyncPipelineRunner,
+  ExitHandler,
+  FunctionContainer,
+  PipeFunction,
+  PipeParameter,
+  ReasonHandler,
+} from './common'
 import { FN_TYPE } from './pipeline/builder'
 import type { PipeDefinition } from './pipeline/Pipe'
 import PipelineBuilder from './pipeline/Pipeline'
@@ -39,15 +46,20 @@ export type {
   AbortSignalLike,
   AnyFunction,
   AsyncPipelineRunner,
+  ExitHandler,
   FunctionContainer,
   PipeFunction,
   PipelineBase,
+  PipelineExit,
+  PipelineExitVia,
   PipeName,
   PipeOutput,
   PipeParameter,
   PipeRename,
   PipeResult,
+  ReasonHandler,
   Result,
+  ResultContainer,
   ResultReason,
   ResultValue,
 } from './common'
@@ -82,6 +94,10 @@ export interface PipelineAPI {
   input: (input?: PipeParameter) => PipelineAPI
   pipe: (fn: PipeFunction, input?: PipeParameter, output?: PipeParameter) => PipelineAPI
   error: (fn: PipeFunction, input?: PipeParameter) => PipelineAPI
+
+  onExit: (handler: ExitHandler) => PipelineAPI
+
+  reason: (handler: ReasonHandler) => PipelineAPI
 
   end: (output?: PipeParameter) => Function
 

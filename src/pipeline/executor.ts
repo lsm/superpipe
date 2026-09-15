@@ -566,6 +566,16 @@ function continuePipeline(
   }
 
   if (error != null) {
+    const failedIndex = fromStep === undefined ? step - 1 : fromStep
+    const failed = failedIndex >= 0 && failedIndex < pipes.length ? pipes[failedIndex] : null
+    recordExit(
+      state,
+      'error',
+      failed ? failedIndex : null,
+      failed ? failed.fnName : null,
+      undefined,
+      error,
+    )
     state.activeError = error
   }
 
@@ -636,18 +646,35 @@ export function runPipeline(
     cancelRun(state, reason)
   })
 
-  for (const inputPipe of pipeline.inputPipes || []) {
-    mergeIntoContainer(
-      state,
-      pipeline,
-      0,
-      inputPipe.fnName,
-      inputPipe.producer.produce(state.args),
-      true,
-    )
-  }
+  try {
+    for (const inputPipe of pipeline.inputPipes || []) {
+      mergeIntoContainer(
+        state,
+        pipeline,
+        0,
+        inputPipe.fnName,
+        inputPipe.producer.produce(state.args),
+        true,
+      )
+    }
 
-  next(state, pipeline)
+    next(state, pipeline)
+  } catch (err) {
+    const thrown = (err || new Error('Pipeline threw a falsey value')) as Error
+    const failedIndex = state.step - 1
+    const failed =
+      failedIndex >= 0 && failedIndex < pipeline.pipes.length ? pipeline.pipes[failedIndex] : null
+    recordExit(
+      state,
+      'error',
+      failed ? failedIndex : null,
+      failed ? failed.fnName : null,
+      undefined,
+      thrown,
+    )
+    runExitHandlers(state, thrown)
+    throw err
+  }
 
   return state.container
 }

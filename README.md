@@ -182,13 +182,14 @@ The handler receives an exit record and the container:
 | field | meaning |
 | --- | --- |
 | `via` | `'value'`, `'reason'`, `'halt'`, `'error'` or `'abort'` |
-| `step` | index of the stage that ended the run, or `null` on a natural completion |
-| `name` | that stage's function name, or `null` |
+| `step` | index of the stage that ended the run; `null` when no single stage did (natural completion, abort) |
+| `name` | that stage's function name, under the same rule |
 | `reason` | the rejected value, on a `'reason'` exit only |
 | `error` | the failure, on `'error'` and `'abort'` exits only |
 
 ```javascript
-const run = superpipe('charge')
+const sp = superpipe({ authorize, capture })
+const run = sp('charge')
   .input('order')
   .pipe(authorize, 'order', 'result:authorization')
   .pipe(capture, 'authorization', 'receipt')
