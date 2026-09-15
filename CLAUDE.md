@@ -8,19 +8,19 @@ SuperPipe is a pipeline engine for composing (a)sync operations with dependency 
 selling point is that the invariants (declared dataflow, one error channel, one continuation
 channel, one cancellation gate) live in the executor rather than in call-site discipline.
 
-Two implementations share one semantic contract:
+Two implementations share one core contract:
 
 - `src/` — the TypeScript reference implementation, published to npm as `superpipe`.
 - `go/` — a Go port (`github.com/lsm/superpipe/go`), same semantics with idiomatic spelling.
   `docs/go-port-spec.md` is the contract between them; every clause is traced to TS source.
 
 A behavior change in `src/` is not done until the README, the flow-control contract test, the Go
-spec, and the Go port agree with it.
+spec, and the Go port agree with it, unless §2 of the spec records it as a deliberate divergence.
 
 ## Commands
 
-Node ≥ 22.18 is needed to build (tsdown); tests run on Node 22/24/26 in CI; the published
-package supports Node ≥ 18.
+Building needs a Node version the locked tsdown accepts: `^22.18.0 || >=24.11.0` (Node 23 and
+24.0–24.10 are excluded). Tests run on Node 22/24/26 in CI; the published package supports Node ≥ 18.
 
 ```bash
 npm test                      # vitest run (test/**/*.test.mjs, imports src/ directly — no build needed)
@@ -45,7 +45,7 @@ npm run bench                 # build, then bench/perf.mjs, async.mjs, mem.mjs (
 Go port (from `go/`; CI runs on Go 1.22 and stable):
 
 ```bash
-gofmt -l .
+test -z "$(gofmt -l .)"   # gofmt -l alone exits 0 even when it lists unformatted files
 go vet ./...
 go test -race ./...
 ```
@@ -149,10 +149,15 @@ built by `src/pipeline/builder.ts`:
 
 ## Go Port (`go/`)
 
-Semantics are identical to the TS engine; form differs deliberately (table in
-`docs/go-port-spec.md` §2): no `next` callback (a `StepFunc` blocks and returns
-`(any, error)`), `context.Context` instead of `AbortSignal`, typed spec constructors (`Out`,
-`Pick`, `Destructure`, `Merge`, `Rename`, `Result`) instead of the string grammar, builder
-funcs `Not`/`Optional` instead of `!`/`?` sigils, one blocking `Run`, all construction errors
-joined and reported at `Build`, and `errors.Is`-checkable sentinels in `go/errors.go`. When the
-TS contract changes, update the spec's numbered contracts (§4) and the Go tests alongside it.
+The Go port implements the same core contract as the TS engine (`docs/go-port-spec.md` §4) but
+is not a behavior-for-behavior clone: the spec's §2 table lists every deliberate divergence, and
+several are observable. No `next` callback (a `StepFunc` blocks and returns `(any, error)`, so
+callback-delivered booleans and a valueless `next()` have no Go spelling); `context.Context`
+instead of `AbortSignal`; typed spec constructors (`Out`, `Pick`, `Destructure`, `Merge`,
+`Rename`, `Result`) instead of the string grammar; builder funcs `Not`/`Optional` instead of
+`!`/`?` sigils; one blocking `Run` that returns a nil result on any error; error-handler failures
+joined into the returned error; own-key map reads with no prototype or accessor semantics; all
+construction errors joined and reported at `Build`; and `errors.Is`-checkable sentinels in
+`go/errors.go`. The Go port has no `.onExit()`/`.reason()` exit channel. When the TS contract
+changes, check §2 first: if Go deliberately diverges on that behavior, update its divergence row;
+otherwise update the numbered contracts in §4 and the Go tests alongside it.
