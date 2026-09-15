@@ -90,8 +90,10 @@ superpipe(deps)                     src/index.ts — factory; deps are shared by
                  └─ runPipeline()   src/pipeline/executor.ts — one PipeState per run
 ```
 
-`end()`/`endAsync()` snapshot the builder into an immutable `PipelineBase`; the returned runner is
-reusable and every invocation gets a fresh container.
+`end()`/`endAsync()` copy the pipe, input, and exit-handler lists into a `PipelineBase` the runner
+never mutates, but the deps object is held by reference and stays live: mutating it after `end()`
+is observed by later runs, and the contract test pins that. The runner is reusable and every
+invocation gets a fresh container.
 
 ### The three collaborators in a pipe
 
