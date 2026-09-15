@@ -4,138 +4,155 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SuperPipe is a lightweight functional reactive programming (FRP) library for JavaScript that provides a pipeline-based architecture for composing asynchronous operations with dependency injection. The codebase is approximately 594 lines of source code (excluding tests).
+SuperPipe is a pipeline engine for composing (a)sync operations with dependency injection. Its
+selling point is that the invariants (declared dataflow, one error channel, one continuation
+channel, one cancellation gate) live in the executor rather than in call-site discipline.
 
-## Development Commands
+Two implementations share one semantic contract:
 
-### Testing
+- `src/` — the TypeScript reference implementation, published to npm as `superpipe`.
+- `go/` — a Go port (`github.com/lsm/superpipe/go`), same semantics with idiomatic spelling.
+  `docs/go-port-spec.md` is the contract between them; every clause is traced to TS source.
+
+A behavior change in `src/` is not done until the README, the flow-control contract test, the Go
+spec, and the Go port agree with it.
+
+## Commands
+
+Node ≥ 22.18 is needed to build (tsdown); tests run on Node 22/24/26 in CI; the published
+package supports Node ≥ 18.
+
 ```bash
-npm test                  # Run unit tests with Mocha
-npm run coverage          # Run tests with coverage report
-npm run watch             # Watch mode - runs coverage on changes
-npm run local-browser     # Run tests in Chrome browser
-npm run browser           # Run tests on Sauce Labs (CI)
+npm test                      # vitest run (test/**/*.test.mjs, imports src/ directly — no build needed)
+npm run watch                 # vitest watch mode
+npm run coverage              # v8 coverage over src/**/*.ts (text + lcov + html in coverage/)
+npx vitest run test/superpipe.test.mjs        # one file
+npx vitest run -t "reason handler"            # tests whose name matches a pattern
+
+npm run typecheck             # tsc --noEmit
+npm run lint                  # biome check src test
+npm run lint:fix              # biome check --write
+npm run format                # biome format --write
+npm run check:no-comments     # fails if any tracked .ts file contains a comment (CI)
+node scripts/strip-comments.mjs   # strips comments from tracked .ts files in place
+
+npm run build                 # tsdown → dist/ (index.js CJS, index.mjs ESM, .d.ts/.d.mts,
+                              #   superpipe.js + superpipe.min.js IIFE with global `Superpipe`)
+npm run lint:pkg              # publint + arethetypeswrong on the built package (run after build)
+npm run bench                 # build, then bench/perf.mjs, async.mjs, mem.mjs (not run in CI)
 ```
 
-### Building
+Go port (from `go/`; CI runs on Go 1.22 and stable):
+
 ```bash
-npm run build             # Build all targets (ES, CJS, UMD)
-npm run build:es          # Build ES modules → es/
-npm run build:cjs         # Build CommonJS → lib/
-npm run build:umd         # Build UMD development → dist/alfa.js
-npm run build:umd:min     # Build UMD production → dist/alfa.min.js
+gofmt -l .
+go vet ./...
+go test -race ./...
 ```
 
-### Running Single Tests
-```bash
-# Run a specific test file
-mocha --require babel-core/register test/pipeline.test.js
+CI (`.github/workflows/ci.yml`) runs typecheck, lint, check:no-comments, and tests per Node
+version; build + lint:pkg on Node 26; the Go steps above; and a coverage job that publishes a badge
+to the `badges` branch on master pushes.
 
-# Run tests matching a pattern
-mocha --require babel-core/register --grep "error handling"
+`Makefile` and `rollup.config.mjs` are leftovers from the pre-tsdown build; the rollup plugins
+are not installed. Do not use or extend them.
+
+## Code Style and Repo Conventions
+
+- Biome: single quotes, no semicolons, trailing commas, 2-space indent, 100-column lines.
+- **Zero comments in `.ts` sources** (line, block, and JSDoc), enforced by
+  `npm run check:no-comments` over every tracked `*.ts` file. The only exemptions are functional
+  directives: shebangs, `/// <reference>`, `@ts-*`, `biome-ignore`, and `v8`/`istanbul`/`c8`
+  coverage ignores. Tests (`.mjs`), `scripts/`, `bench/`, and Go files may have comments.
+- Tests use vitest with chai-style assertions (`expect(x).to.equal(y)`). Callback-driven cases
+  wrap in `new Promise((done) => …)` and call `done()` from inside the pipeline.
+- `test/flow-control-contract.test.mjs` pins the behaviors the README promises. Change README
+  and this file together.
+- Commit messages use conventional prefixes (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
+  `ci:`, `bench:`, `feat(go):`). Releases are a `chore(release): X.Y.Z` commit that bumps
+  `package.json` and adds a hand-written `X.Y.Z YYYY-MM-DD` section (underlined with `=`) to
+  the top of `CHANGELOG.md`.
+
+## Architecture (TypeScript)
+
+### Construction → run
+
+```
+superpipe(deps)                     src/index.ts — factory; deps are shared by every pipeline
+  └─ sp(name, defs?)                declarative defs array → builds and returns .end() immediately
+       └─ new Pipeline(name, deps)  src/pipeline/Pipeline.ts — fluent builder
+            .input() .pipe() .error() .onExit() .reason()
+            .end(output?)           → sync runner: runPipeline(), then Fetcher('raw').fetch(container)
+            .endAsync(output?)      → promise runner with .withSignal(signal, ...args)
+                 └─ runPipeline()   src/pipeline/executor.ts — one PipeState per run
 ```
 
-## Architecture
+`end()`/`endAsync()` snapshot the builder into an immutable `PipelineBase`; the returned runner is
+reusable and every invocation gets a fresh container.
 
-### Core Execution Flow
+### The three collaborators in a pipe
 
-The library follows a continuation-passing style (CPS) architecture:
+Each `Pipe` (`src/pipeline/Pipe.ts`) is a function reference plus a `Fetcher` and a `Producer`,
+built by `src/pipeline/builder.ts`:
 
-```
-superpipe(deps) → sp(name, defs) → api.pipe() → api.end() → executor(args)
-                                                                    ↓
-                                                              createStore()
-                                                                    ↓
-                                                              store.next()
-                                                                    ↓
-                                                            executePipe() ← (loops)
-                                                                    ↓
-                                                              next pipe or done
-```
+- **Fetcher** (`src/parameter/Fetcher.ts`) turns the input spec into the argument list. Forms:
+  no spec (the invocation args pass through), `['a','b']` positional, `'{a, b}'` one object
+  argument. Lookup is own-property, container first then deps, `undefined` if absent. The
+  reserved key `next` yields a once-only wrapper (`once()`) registered on the pipe's
+  `NextCallbacks` so the executor can hold, flush, or disable it.
+- **Producer** (`src/parameter/Producer.ts`) turns the return value into container entries.
+  Output grammar: `'out'` binds the whole value; `'{a, b}'` picks; `['a','b']` destructures
+  (positional for arrays, by name for objects); `'{...}'` merges every own key; `'src:dst'`
+  renames; `'result:<name>'` opts into the `{ value }` / `{ reason }` protocol where `reason`
+  binds and stops the run successfully. No spec means effects only, the return is discarded.
+  Destructuring specs validate presence and throw `OutputKeyError` at the producing pipe;
+  values delivered alongside an error (`next(err, partial)`) merge leniently. The same class in
+  `'input'` mode maps `.input()` positional args.
+- **Function resolution**: a string `fn` is resolved at run time (`!` inverts booleans, `?` skips
+  the pipe when the function or any declared input is unresolved), container first then deps. A
+  resolved raw boolean, or the boolean result of a `!`-prefixed pipe, is flow control (`false`
+  halts). A plain function pipe's boolean return is data.
 
-### Key Modules
+### Executor (`src/pipeline/executor.ts`)
 
-**src/index.js** (7 lines) - Entry point that creates the main factory function
+- `runPipeline()` merges input pipes into the container, then calls `next()`.
+- `next()` is a trampoline: while `state.driving`, continuations are queued rather than
+  recursed, so 100k-deep pipelines never overflow the stack (bench/perf.mjs checks this).
+- `continuePipeline()` merges the previous pipe's produced output via `mergeIntoContainer()`
+  (which rejects the reserved name `next` and any output that would shadow a configured dep;
+  invocation inputs may override deps), records the active error if one arrived, then either
+  executes the next pipe, halts, settles, or dispatches the single error handler.
+- `executePipe()` invokes the function with `next` callbacks *held* so a synchronous `next()`
+  inside the body is replayed after the call returns. A thenable return is adopted as the
+  continuation; a pipe that both declares `next` and returns a thenable throws
+  `AmbiguousContinuationError`. `state.pending` counts outstanding `next` wrappers and promises
+  and blocks advancement until they drain.
+- Framework errors (`NextCalledTwiceError`, `OutputNameError`, `OutputKeyError`,
+  `AmbiguousContinuationError`) surface to the caller (thrown from a sync runner, rejected from
+  `endAsync`) and are never routed to the error handler.
+- `settle()` defers a *successful* settlement by one microtask under `endAsync` so an error
+  dispatched in the same unwind wins; failures settle synchronously. The promise rejects with the
+  active error even when an error handler ran.
+- Cancellation (`cancelRun()` via `withSignal`) disables every live `next` wrapper, marks the
+  run aborted, and rejects with `PipelineAbortedError` without calling the error handler.
+- Exit channel: `recordExit()` stores the first exit (`via`: value/reason/halt/error/abort, step,
+  name, reason, error); `dispatchExit()` runs `.reason()` then `.onExit()` handlers with a
+  container snapshot minus `next`, each wrapped in `containHandler()` so a throwing or rejecting
+  handler cannot change the outcome. Only computed when a pipeline has observers (`state.observed`).
 
-**src/pipeline.js** (205 lines) - Pipeline orchestration
-- `createAPI()`: Builds the fluent API interface
-- `createPipeline()`: Processes declarative pipeline definitions
-- `createStore()`: Creates execution context with fresh state per execution
-- `createPipeState()`: Tracks individual pipe execution state
-- `execPipeline()`: Starts pipeline execution
+### Invariants to preserve
 
-**src/pipe.js** (181 lines) - Pipe type definitions and factory
-- `createPipe()`: Main factory for different pipe types
-- `createInputPipe()`: Maps function arguments to dependencies
-- `createErrorPipe()`: Creates error handler pipes
-- `createInjectionPipe()`: Creates pipes with dynamic dependency injection
-- Supports special prefixes: `!` (not), `?` (optional)
+- The active error lives on `PipeState`, not in the container: a value named `error` is data.
+- One continuation channel per pipe: return value *or* `next`, never both.
+- Container writes go through `setEntry()` so `__proto__` becomes an own key.
+- Errors and abort are per run; the runner object is never mutated by a run.
 
-**src/execution.js** (131 lines) - Runtime execution logic
-- `executePipe()`: Executes a single pipe
-- `getInputArgs()`: Resolves dependencies (supports `next`, `set`, custom deps)
-- `getInjectedFunction()`: Runtime dependency resolution
-- `executeInjectedFunc()`: Handles function/boolean injection
+## Go Port (`go/`)
 
-**src/set.js** (70 lines) - State management
-- `setWithPipeState()`: Sets output values to store
-- `checkSetAutoNext()`: Determines when to auto-advance pipeline
-- Handles output mapping (e.g., `"arg2:mappedName"`)
-
-### Dependency Resolution with getProp()
-
-The `getProp()` function in execution.js:131 is critical for understanding dependency injection. It checks three sources in order:
-1. The store (runtime values)
-2. The deps object (injected dependencies)
-3. Returns undefined if not found
-
-This hybrid resolution allows pipes to reference both runtime values and pre-injected dependencies by name.
-
-### Auto Next Behavior
-
-Understanding auto-next is critical when working with pipes (src/pipeline.js:160-190):
-
-- **Automatic progression**: Pipes advance automatically by default
-- **Disabled when**: Pipe uses `next` in its input dependencies
-- **Counted when**: Pipe has `output` array AND uses `set` in input (tracked in `pipeState.autoNext`)
-- **Check logic**: `checkSetAutoNext()` in src/set.js determines when all outputs are fulfilled
-
-### Special Pipe Features
-
-**Boolean Control** (execution.js): Functions returning boolean values control flow
-**Not Pipes** (pipe.js:84): Prefix `!` inverts boolean results
-**Optional Pipes** (pipe.js:88): Prefix `?` skips pipe if dependency missing
-**Output Mapping** (pipe.js:161-176): Use `output:newName` syntax to rename outputs
-**Plain Object Returns** (execution.js): Returning `{ key: value }` auto-calls `set()`
-
-### Error Handling
-
-- Only ONE error handler per pipeline (enforced in pipeline.js:65-69)
-- Error handler triggered via `next(error)` or `set('error', err)`
-- Errors without handlers throw with helpful context (pipeline.js:193-205)
-- Subsequent `next()` calls ignored after error triggered (pipeline.js:99-102)
-
-## Code Style
-
-- Biome for linting and formatting: single quotes, no semicolons (`npm run lint`, `npm run lint:fix`)
-- Zero comments in `.ts` sources: no line, block, or JSDoc comments — enforced by `npm run check:no-comments` (CI). Exempt functional directives only: shebangs, `/// <reference>`, `@ts-*`, `biome-ignore`, coverage ignores (`v8`/`istanbul`/`c8`)
-- TypeScript sources in `src/`, built to CJS/ESM/UMD by tsdown
-
-## Test Organization
-
-Tests mirror source structure:
-- test/superpipe.test.js - Constructor API
-- test/pipeline.test.js - Pipeline features and error handling
-- test/pipe.test.js - Pipe types (input, boolean, not, optional, mapping)
-- test/execution.test.js - Execution mechanics
-- test/exceptions.test.js - Exception scenarios
-
-Use Mocha + Chai (`expect` style). Tests run in Node (Mocha) and browser (Karma + Webpack).
-
-## Build Targets
-
-- **Node.js/CommonJS**: lib/index.js (package.json "main")
-- **ES Modules**: es/index.js (package.json "module")
-- **Browser/UMD**: dist/alfa.js or dist/alfa.min.js
-
-The package supports Node >= 0.10.0 and wide browser compatibility (IE 10+, Safari 7+, Chrome 26+, Firefox 4+).
+Semantics are identical to the TS engine; form differs deliberately (table in
+`docs/go-port-spec.md` §2): no `next` callback (a `StepFunc` blocks and returns
+`(any, error)`), `context.Context` instead of `AbortSignal`, typed spec constructors (`Out`,
+`Pick`, `Destructure`, `Merge`, `Rename`, `Result`) instead of the string grammar, builder
+funcs `Not`/`Optional` instead of `!`/`?` sigils, one blocking `Run`, all construction errors
+joined and reported at `Build`, and `errors.Is`-checkable sentinels in `go/errors.go`. When the
+TS contract changes, update the spec's numbered contracts (§4) and the Go tests alongside it.
