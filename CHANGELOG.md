@@ -1,5 +1,5 @@
-Unreleased
-==========
+0.19.0 2026-09-15
+=================
 - Added an exit channel. `.onExit(handler)` runs once when a run settles,
   however it ended, receiving a `PipelineExit` — `via`
   (`value`/`reason`/`halt`/`error`/`abort`), the `step` and `name` of the stage
