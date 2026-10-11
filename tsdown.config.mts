@@ -11,6 +11,9 @@ export default defineConfig({
 
   cjsDefault: false,
   footer: (ctx) => ({
-    js: ctx.format === 'cjs' ? 'module.exports = exports.default;' : '',
+    js:
+      ctx.format === 'cjs'
+        ? 'Object.assign(exports.default, exports);\nmodule.exports = exports.default;'
+        : '',
   }),
 })

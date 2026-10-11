@@ -30,7 +30,7 @@
     "watch": "vitest",
     "coverage": "vitest run --coverage",
     "lint:pkg": "publint && attw --pack . --ignore-rules missing-export-equals",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "build": "tsdown && tsdown --config tsdown.iife.config.mts",
     "bench": "npm run build && node bench/perf.mjs && node bench/async.mjs && node --expose-gc bench/mem.mjs",
     "lint": "biome check src test",
