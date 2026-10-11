@@ -98,6 +98,14 @@ describe('typed pipe', () => {
     expectTypeOf(tp('p').pipe(() => () => 1, null, '{...}')).toExtend<Problem>()
     expectTypeOf(tp('p').pipe(() => [1], null, '{...}')).toExtend<Problem>()
     expectTypeOf(tp('p').pipe(() => ({}), null, '{...}')).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => new Date(), null, '{...}')).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => new Map<string, number>(), null, '{...}')).toExtend<Problem>()
+    class OnlyMethods {
+      run(): number {
+        return 1
+      }
+    }
+    expectTypeOf(tp('p').pipe(() => new OnlyMethods(), null, '{...}')).toExtend<Problem>()
   })
 
   it('checks array outputs against the tuple length and types open arrays', () => {
@@ -288,6 +296,13 @@ describe('injected function pipes', () => {
     expectTypeOf(withConfig('p').pipe('config', null, 'c')).toExtend<Problem>()
     expectTypeOf(withConfig('p').pipe('!config')).toExtend<Problem>()
     expectTypeOf(withConfig('p').pipe('?config', null, 'c')).toExtend<Problem>()
+  })
+
+  it('checks the invocation args against an injected function when no input is declared', () => {
+    expectTypeOf(tp<[number]>('p').pipe('loadUser', undefined, 'user')).toExtend<Problem>()
+    tp<[string]>('p')
+      .pipe('loadUser', undefined, 'user')
+      .pipe((user) => expectTypeOf(user).toEqualTypeOf<User>(), 'user')
   })
 
   it('rejects unknown dependency names unless optional', () => {

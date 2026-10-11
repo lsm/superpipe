@@ -530,7 +530,12 @@ What the types track:
   first, then deps), that `fn` accepts those values positionally, and binds
   `out` to the awaited return. Array outputs destructure (positional for tuple
   returns, by name for object returns) and `'{...}'` merges the returned
-  object. Brace picks and `src:dst` renames are not typed yet.
+  object. `'{...}'` is typed for object-literal returns: the runtime merges
+  only enumerable own keys, and the types reject functions, arrays, known
+  built-ins such as `Date` and `Map`, and shapes whose every member is a
+  method, but a class instance with data fields cannot be told from a
+  literal, so its methods would be typed yet absent. Brace picks and
+  `src:dst` renames are not typed yet.
 - `'result:<name>'` requires the pipe to return `Result<T, R>`: `<name>` is
   `T` inside the pipeline, and `R` joins the union the `.reason()` handler
   receives.

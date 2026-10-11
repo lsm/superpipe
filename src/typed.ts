@@ -108,15 +108,34 @@ type FitsTuple<
   V extends readonly unknown[],
 > = number extends V['length'] ? true : O['length'] extends Partial<V>['length'] ? true : false
 
+type BuiltIn =
+  | Date
+  | RegExp
+  | Error
+  | Promise<unknown>
+  | Map<unknown, unknown>
+  | Set<unknown>
+  | WeakMap<object, unknown>
+  | WeakSet<object>
+  | ArrayBuffer
+
+type AllMethods<V> = [Keys<V>] extends [never]
+  ? true
+  : V[Keys<V>] extends AnyCallable
+    ? true
+    : false
+
 type IsPlainObject<V> = V extends AnyCallable
   ? false
   : V extends readonly unknown[]
     ? false
-    : V extends object
-      ? [Keys<V>] extends [never]
-        ? false
-        : true
-      : false
+    : V extends BuiltIn
+      ? false
+      : V extends object
+        ? AllMethods<V> extends true
+          ? false
+          : true
+        : false
 
 type IsEmptyArray<K> = K extends readonly [] ? true : false
 
@@ -323,9 +342,8 @@ type InjectedKindProblem<S extends TypedState, N> = N extends 'input' | 'error'
 
 type EmptyNamesProblem<K> = IsEmptyArray<K> extends true ? EmptyNames : never
 
-type InjectedInputProblem<S extends TypedState, N, K> = K extends undefined | null
-  ? never
-  : IsFlowControl<Resolved<S, N>, Sigils<N>['not']> extends true
+type InjectedInputProblem<S extends TypedState, N, K> =
+  IsFlowControl<Resolved<S, N>, Sigils<N>['not']> extends true
     ? never
     : [InputTuple<S, K>] extends [Parameters<Callable<Resolved<S, N>>>]
       ? never
