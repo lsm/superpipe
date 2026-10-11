@@ -13,7 +13,10 @@ import PipelineBuilder from './pipeline/Pipeline'
 export default function superpipe<T extends FunctionContainer = FunctionContainer>(
   functions?: T,
 ): SuperPipeFactory {
-  return (name: string, defs?: PipeDefinition[]): PipelineAPI | ((...args: unknown[]) => void) => {
+  const factory = (
+    name: string,
+    defs?: PipeDefinition[],
+  ): PipelineAPI | ((...args: unknown[]) => void) => {
     let endOutput: PipeParameter | undefined
     const pipeline = new PipelineBuilder(name, functions)
 
@@ -40,6 +43,7 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
 
     return pipeline
   }
+  return factory as SuperPipeFactory
 }
 
 export type {
@@ -72,6 +76,17 @@ export {
   PipelineAbortedError,
 } from './common'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
+export type {
+  InputSpec,
+  OutputSpec,
+  TypedAsyncRunner,
+  TypedError,
+  TypedFactory,
+  TypedNext,
+  TypedPipeline,
+  TypedState,
+} from './typed'
+export { typed } from './typed'
 
 export interface Pipeline {
   name: string
@@ -104,10 +119,11 @@ export interface PipelineAPI {
   endAsync: (output?: PipeParameter) => AsyncPipelineRunner
 }
 
-export type SuperPipeFactory = (
-  name: string,
-  defs?: PipeDefinition[],
-) => PipelineAPI | ((...args: unknown[]) => void)
+export interface SuperPipeFactory {
+  (name: string): PipelineAPI
+  (name: string, defs: PipeDefinition[]): (...args: unknown[]) => void
+  (name: string, defs?: PipeDefinition[]): PipelineAPI | ((...args: unknown[]) => void)
+}
 export type Store = {
   next: (error?: unknown, value?: unknown) => void
   error?: unknown

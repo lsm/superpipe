@@ -503,6 +503,57 @@ const sp = superpipe<MyDeps>({
 })
 ```
 
+### Typed pipelines
+
+`typed(deps)` is a second entry point over the same runtime that carries the
+pipeline's context through the type system, so the compiler checks how stages
+connect and the final runner needs no cast. The untyped API is unchanged.
+
+```typescript
+import { typed, type Result } from 'superpipe'
+
+const tp = typed({ loadUser, isBlocked: false })
+
+const findUser = tp<[string]>('find-user')
+  .input('id')
+  .pipe(admit, 'id', 'result:user')          // admit: (id: string) => Result<User, Denied>
+  .pipe((user) => user.name, 'user', 'name')  // user: User
+  .reason((reason) => audit(reason))          // reason: Denied
+  .endAsync('user')                           // (id: string) => Promise<User | Denied>
+```
+
+What the types track:
+
+- `tp<[A, B]>(name)` declares the invocation arguments; `.input(['a', 'b'])`
+  binds them positionally and the runner's parameters are inferred from them.
+- `.pipe(fn, ['a', 'b'], 'out')` checks that every input name exists (context
+  first, then deps), that `fn` accepts those values positionally, and binds
+  `out` to the awaited return. Array outputs destructure (positional for tuple
+  returns, by name for object returns) and `'{...}'` merges the returned
+  object. Brace picks and `src:dst` renames are not typed yet.
+- `'result:<name>'` requires the pipe to return `Result<T, R>`: `<name>` is
+  `T` inside the pipeline, and `R` joins the union the `.reason()` handler
+  receives.
+- `.end(name)` and `.endAsync(name)` return the value bound to `name`, plus the
+  reason types of every gate whose output is `result:<name>`, plus `undefined`
+  only when an earlier gate, boolean halt, or optional skip can leave `name`
+  unset. Ending a pipeline on its gate's own name therefore gives `T | R` with
+  no runtime change.
+- Injected pipes (`'loadUser'`, `'!isBlocked'`, `'?enrich'`) resolve the
+  dependency's type: functions have their parameters checked against the
+  declared inputs, boolean deps and `!` pipes are flow control, and `?` pipes
+  make their output possibly `undefined`.
+- Output names that are reserved (`next`) or shadow a configured dependency are
+  compile errors, matching the runtime `OutputNameError`. Problems like these
+  are reported through the builder's return type as `TypedError<message>`, so
+  the error appears at the next chained call with the message in it.
+- Once any pipe returns a promise or declares `next`, `.end(name)` is refused
+  at compile time; use `.endAsync(name)`.
+- A pipe that declares `next` binds its output as `unknown`.
+
+The typed builder uses `const` type parameters, so consumers need TypeScript
+5.0 or later.
+
 ## Go Port
 
 SuperPipe also ships as a Go module — same semantics, idiomatic Go: one

@@ -30,7 +30,7 @@ npm run coverage              # v8 coverage over src/**/*.ts (text + lcov + html
 npx vitest run test/superpipe.test.mjs        # one file
 npx vitest run -t "reason handler"            # tests whose name matches a pattern
 
-npm run typecheck             # tsc --noEmit
+npm run typecheck             # tsc on src (tsconfig.json), then on the type tests (tsconfig.test.json)
 npm run lint                  # biome check src test
 npm run lint:fix              # biome check --write
 npm run format                # biome format --write
@@ -72,8 +72,9 @@ are not installed. Do not use or extend them.
   wrap in `new Promise((done) => …)` and call `done()` from inside the pipeline.
 - README behaviors are pinned by contract suites: `test/flow-control-contract.test.mjs` for
   flow control, output binding, cancellation, and live deps; `test/exit-channel.test.mjs` for
-  `.onExit()`/`.reason()`; `test/result-protocol.test.mjs` for `result:<name>`. Change the README
-  and the matching suite together.
+  `.onExit()`/`.reason()`; `test/result-protocol.test.mjs` for `result:<name>`;
+  `test/typed.test-d.ts` for the typed builder's inference. Change the README and the matching
+  suite together.
 - Commit messages use conventional prefixes (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
   `ci:`, `bench:`, `feat(go):`). Releases are a `chore(release): X.Y.Z` commit that bumps
   `package.json` and adds a hand-written `X.Y.Z YYYY-MM-DD` section (underlined with `=`) to
@@ -92,6 +93,17 @@ superpipe(deps)                     src/index.ts — factory; deps are shared by
             .endAsync(output?)      → promise runner with .withSignal(signal, ...args)
                  └─ runPipeline()   src/pipeline/executor.ts — one PipeState per run
 ```
+
+`src/typed.ts` is a types-only layer: `typed(deps)` returns the same `Pipeline` builder cast to
+`TypedPipeline<State>`, where the state record carries deps, invocation args, the context so far,
+gate reasons, names that may be undefined (`skipped` from `?` pipes, `late` after a stop point),
+and whether the pipeline is async. Every method is a state transition; nothing at runtime changes.
+Name and parameter mismatches fail at the call through generic constraints; semantic problems
+(reserved or dependency-shadowing outputs, a non-Result return under `result:`, destructure key
+mismatches) are reported through the return type as `TypedError<message>`, so the error surfaces at
+the next chained call. Type tests live in `test/typed.test-d.ts`, are compiled by
+`tsconfig.test.json` as part of `npm run typecheck`, and are never executed; vitest's own typecheck
+mode does not report errors with this TypeScript, so do not rely on it.
 
 `end()`/`endAsync()` copy the pipe, input, and exit-handler lists into a `PipelineBase` the runner
 never mutates, but the deps object is held by reference and stays live: mutating it after `end()`

@@ -1,3 +1,20 @@
+Unreleased
+==========
+- Added `typed(deps)`, a typed entry point over the same runtime. The builder
+  carries the context record through the type system: `.input` binds the
+  declared invocation arguments, `.pipe` checks input names and the function's
+  parameters positionally and binds outputs (single name, array destructure,
+  `'{...}'` merge, `result:<name>` gates), `.end`/`.endAsync` infer the runner
+  signature with the value plus the reasons of same-named gates and `undefined`
+  only where an earlier exit can leave the name unset, `.reason` receives the
+  union of gate reasons, and reserved or dependency-shadowing output names fail
+  at compile time. Sync `.end(name)` is refused once a pipe is async. Brace
+  picks and `src:dst` renames are not typed yet. The untyped API is unchanged.
+- `superpipe()(name)` now returns `PipelineAPI` and `superpipe()(name, defs)`
+  the runner, so the untyped builder no longer needs an `as PipelineAPI` cast.
+- Fixed the CommonJS build dropping every named export: `require('superpipe')`
+  now exposes `typed` and the error classes alongside the default export.
+
 0.19.0 2026-09-15
 =================
 - Added an exit channel. `.onExit(handler)` runs once when a run settles,
