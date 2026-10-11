@@ -226,6 +226,13 @@ describe('injected function pipes', () => {
     expectTypeOf(tp<[number]>('p').input('n').pipe('loadUser', 'n', 'user')).toExtend<Problem>()
   })
 
+  it('rejects dependencies that are neither functions nor booleans', () => {
+    const withConfig = typed({ config: { retries: 3 } })
+    expectTypeOf(withConfig('p').pipe('config', null, 'c')).toExtend<Problem>()
+    expectTypeOf(withConfig('p').pipe('!config')).toExtend<Problem>()
+    expectTypeOf(withConfig('p').pipe('?config', null, 'c')).toExtend<Problem>()
+  })
+
   it('rejects unknown dependency names unless optional', () => {
     // @ts-expect-error nope is not a dependency
     tp('p').pipe('nope')

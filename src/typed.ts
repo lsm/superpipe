@@ -235,6 +235,16 @@ type InjectedResult<S extends TypedState, N, K> = Produced<K, InjectedReturn<S, 
 type InjectedInputMismatch =
   'The declared inputs do not match the parameters of the injected function'
 
+type InjectedNotCallable = 'This dependency is neither a function nor a boolean'
+
+type InjectedKindProblem<S extends TypedState, N> = [Resolved<S, N>] extends [never]
+  ? never
+  : [Resolved<S, N>] extends [boolean]
+    ? never
+    : Resolved<S, N> extends AnyCallable
+      ? never
+      : InjectedNotCallable
+
 type InjectedInputProblem<S extends TypedState, N, K> = K extends undefined | null
   ? never
   : IsFlowControl<Resolved<S, N>, Sigils<N>['not']> extends true
@@ -365,7 +375,9 @@ export interface TypedPipeline<S extends TypedState> {
     input?: K,
     output?: O,
   ): Checked<
-    InjectedInputProblem<S, N, K> | OutputProblem<S, O, InjectedResult<S, N, K>>,
+    | InjectedKindProblem<S, N>
+    | InjectedInputProblem<S, N, K>
+    | OutputProblem<S, O, InjectedResult<S, N, K>>,
     TypedPipeline<AfterInjectedPipe<S, N, K, O>>
   >
 
