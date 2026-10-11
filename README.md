@@ -549,6 +549,9 @@ What the types track:
   the error appears at the next chained call with the message in it.
 - Once any pipe returns a promise or declares `next`, `.end(name)` is refused
   at compile time; use `.endAsync(name)`.
+- The runtime's ordering rules are compile errors too: `.input()` after the
+  first pipe, `.pipe()` or a second `.error()` after the error handler, and a
+  second `.reason()`.
 - A pipe that declares `next` binds its output as `unknown`.
 
 The typed builder uses `const` type parameters, so consumers need TypeScript

@@ -17,6 +17,9 @@ export interface TypedState {
   late: string
   stopped: boolean
   async: boolean
+  started: boolean
+  handled: boolean
+  observed: boolean
 }
 
 export interface TypedError<Message extends string> {
@@ -128,6 +131,7 @@ interface Change {
   stop: boolean
   async: boolean
   gates: object
+  start: boolean
 }
 
 type Bind<S extends TypedState, C extends Change> = {
@@ -141,7 +145,16 @@ type Bind<S extends TypedState, C extends Change> = {
   late: S['late'] | (S['stopped'] extends true ? Keys<C['add']> : never)
   stopped: Either<S['stopped'], C['stop']>
   async: Either<S['async'], C['async']>
+  started: Either<S['started'], C['start']>
+  handled: S['handled']
+  observed: S['observed']
 }
+
+type SetFlag<S extends TypedState, F extends 'handled' | 'observed'> = Flat<
+  Omit<S, F> & { [P in F]: true }
+>
+
+type NotTypedElement = `{${string}}` | `${string}:${string}`
 
 type GateNeedsResult = 'A "result:<name>" output requires the pipe to return { value } | { reason }'
 
@@ -174,13 +187,15 @@ type OutputProblem<S extends TypedState, O, R> = O extends undefined
       : O extends `{${string}}` | `${string}:${string}`
         ? NotTypedYet
         : O extends readonly string[]
-          ? [O[number] & ReservedOutput<S>] extends [never]
-            ? Awaited<R> extends readonly unknown[]
-              ? never
-              : O[number] extends keyof Awaited<R>
+          ? [Extract<O[number], NotTypedElement>] extends [never]
+            ? [O[number] & ReservedOutput<S>] extends [never]
+              ? Awaited<R> extends readonly unknown[]
                 ? never
-                : DestructureMismatch
-            : ReservedName
+                : O[number] extends keyof Awaited<R>
+                  ? never
+                  : DestructureMismatch
+              : ReservedName
+            : NotTypedYet
           : O extends ReservedOutput<S>
             ? ReservedName
             : never
@@ -193,6 +208,7 @@ type AfterFunctionPipe<S extends TypedState, K, O, R> = Bind<
     stop: IsGate<O>
     async: Either<IsAsync<R>, UsesNext<K>>
     gates: GateBindings<S, O, Produced<K, R>>
+    start: true
   }
 >
 
@@ -263,6 +279,7 @@ type AfterInjectedPipe<S extends TypedState, N, K, O> =
           stop: true
           async: IsAsync<InjectedReturn<S, N>>
           gates: S['gates']
+          start: true
         }
       >
     : Bind<
@@ -273,6 +290,7 @@ type AfterInjectedPipe<S extends TypedState, N, K, O> =
           stop: IsGate<O>
           async: Either<IsAsync<InjectedReturn<S, N>>, UsesNext<K>>
           gates: GateBindings<S, O, InjectedResult<S, N, K>>
+          start: true
         }
       >
 
@@ -305,7 +323,14 @@ type InputNamesProblem<K> = K extends `{${string}}`
 
 type AfterInput<S extends TypedState, K> = Bind<
   S,
-  { add: InputBindings<S, K>; optional: false; stop: false; async: false; gates: S['gates'] }
+  {
+    add: InputBindings<S, K>
+    optional: false
+    stop: false
+    async: false
+    gates: S['gates']
+    start: false
+  }
 >
 
 type ErrorInputName<S extends TypedState> = 'error' | KnownName<S>
@@ -361,12 +386,20 @@ export interface TypedAsyncRunner<Args extends readonly unknown[], Out> {
   withSignal(signal: AbortSignalLike, ...args: [...Args]): Promise<Out>
 }
 
-export interface TypedPipeline<S extends TypedState> {
-  input<const K extends string | readonly string[]>(
-    names: K,
-  ): Checked<InputNamesProblem<K>, TypedPipeline<AfterInput<S, K>>>
+type InputAfterPipe = 'An input pipe must come before the first pipe'
 
-  pipe<
+type PipeAfterError = 'Adding a pipe after the error handler is not allowed'
+
+type SecondErrorHandler = 'Each pipeline can have only one error handler'
+
+type SecondReasonHandler = 'Each pipeline can have only one reason handler'
+
+type InputMethod<S extends TypedState> = <const K extends string | readonly string[]>(
+  names: K,
+) => Checked<InputNamesProblem<K>, TypedPipeline<AfterInput<S, K>>>
+
+interface PipeMethod<S extends TypedState> {
+  <
     const N extends InjectedSpec<S>,
     const K extends InputSpec<S> = undefined,
     const O extends OutputSpec = undefined,
@@ -381,20 +414,36 @@ export interface TypedPipeline<S extends TypedState> {
     TypedPipeline<AfterInjectedPipe<S, N, K, O>>
   >
 
-  pipe<R, const K extends InputSpec<S> = undefined, const O extends OutputSpec = undefined>(
+  <R, const K extends InputSpec<S> = undefined, const O extends OutputSpec = undefined>(
     fn: (...args: InputTuple<S, K>) => R,
     input?: K,
     output?: O,
   ): Checked<OutputProblem<S, O, Produced<K, R>>, TypedPipeline<AfterFunctionPipe<S, K, O, R>>>
+}
 
-  error<const K extends ErrorInputName<S> | readonly ErrorInputName<S>[] = 'error'>(
-    handler: ((...args: ErrorTuple<S, K>) => unknown) | Keys<S['deps']>,
-    input?: K,
-  ): TypedPipeline<S>
+type ErrorMethod<S extends TypedState> = <
+  const K extends ErrorInputName<S> | readonly ErrorInputName<S>[] = 'error',
+>(
+  handler: ((...args: ErrorTuple<S, K>) => unknown) | Keys<S['deps']>,
+  input?: K,
+) => TypedPipeline<SetFlag<S, 'handled'>>
 
-  reason(
-    handler: (reason: Reasons<S>, exit: PipelineExit, container: ResultContainer) => unknown,
-  ): TypedPipeline<S>
+type ReasonMethod<S extends TypedState> = (
+  handler: (reason: Reasons<S>, exit: PipelineExit, container: ResultContainer) => unknown,
+) => TypedPipeline<SetFlag<S, 'observed'>>
+
+export interface TypedPipeline<S extends TypedState> {
+  readonly input: S['started'] extends true ? (names: InputAfterPipe) => never : InputMethod<S>
+
+  readonly pipe: S['handled'] extends true ? (fn: PipeAfterError) => never : PipeMethod<S>
+
+  readonly error: S['handled'] extends true
+    ? (handler: SecondErrorHandler) => never
+    : ErrorMethod<S>
+
+  readonly reason: S['observed'] extends true
+    ? (handler: SecondReasonHandler) => never
+    : ReasonMethod<S>
 
   onExit(handler: ExitHandler): TypedPipeline<S>
 
@@ -413,6 +462,9 @@ type InitialState<D extends object, Args extends readonly unknown[]> = {
   late: never
   stopped: false
   async: false
+  started: false
+  handled: false
+  observed: false
 }
 
 export type TypedFactory<D extends object> = <Args extends readonly unknown[] = unknown[]>(

@@ -114,9 +114,11 @@ describe('typed pipe', () => {
     expectTypeOf(tp('p').pipe(() => ['x'], null, ['loadUser'])).toExtend<Problem>()
   })
 
-  it('does not type brace picks or renames yet', () => {
+  it('does not type brace picks or renames yet, inside arrays included', () => {
     expectTypeOf(tp('p').pipe(() => ({ a: 1 }), null, '{a}')).toExtend<Problem>()
     expectTypeOf(tp('p').pipe(() => ({ a: 1 }), null, 'a:b')).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => ({ a: 1 }), null, ['a:b'])).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => [1], null, ['{a}'])).toExtend<Problem>()
   })
 
   it('types next as a callback and binds its output as unknown', () => {
@@ -352,5 +354,31 @@ describe('HyperNeo-shaped intake pipeline', () => {
         db: Db,
       ): Promise<Target | Rejected>
     }>()
+  })
+})
+
+describe('builder ordering', () => {
+  it('refuses an input pipe after the first pipe', () => {
+    const started = tp('p').pipe(() => 1, null, 'n')
+    // @ts-expect-error input must come first
+    started.input('late')
+  })
+
+  it('refuses pipes and a second handler after the error handler', () => {
+    const handled = tp('p')
+      .pipe(() => 1, null, 'n')
+      .error(() => undefined)
+    // @ts-expect-error no pipes after the error handler
+    handled.pipe(() => 2, null, 'm')
+    // @ts-expect-error only one error handler
+    handled.error(() => undefined)
+    expectTypeOf(handled.end('n')).returns.toEqualTypeOf<number>()
+  })
+
+  it('refuses a second reason handler', () => {
+    const observed = tp('p').reason(() => undefined)
+    // @ts-expect-error only one reason handler
+    observed.reason(() => undefined)
+    observed.pipe(() => 1, null, 'n').error(() => undefined)
   })
 })
