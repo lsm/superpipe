@@ -342,6 +342,12 @@ type InjectedKindProblem<S extends TypedState, N> = N extends 'input' | 'error'
 
 type EmptyNamesProblem<K> = IsEmptyArray<K> extends true ? EmptyNames : never
 
+type AmbiguousContinuation =
+  'A pipe that declares "next" must not return a thenable; use one continuation channel'
+
+type ContinuationProblem<K, R> =
+  UsesNext<K> extends true ? (IsAsync<R> extends true ? AmbiguousContinuation : never) : never
+
 type InjectedInputProblem<S extends TypedState, N, K> =
   IsFlowControl<Resolved<S, N>, Sigils<N>['not']> extends true
     ? never
@@ -500,6 +506,7 @@ interface PipeMethod<S extends TypedState> {
   ): Checked<
     | InjectedKindProblem<S, N>
     | EmptyNamesProblem<K>
+    | ContinuationProblem<K, InjectedReturn<S, N>>
     | InjectedInputProblem<S, N, K>
     | OutputProblem<S, O, InjectedResult<S, N, K>>,
     TypedPipeline<AfterInjectedPipe<S, N, K, O>>
@@ -510,7 +517,7 @@ interface PipeMethod<S extends TypedState> {
     input?: K,
     output?: O,
   ): Checked<
-    EmptyNamesProblem<K> | OutputProblem<S, O, Produced<K, R>>,
+    EmptyNamesProblem<K> | ContinuationProblem<K, R> | OutputProblem<S, O, Produced<K, R>>,
     TypedPipeline<AfterFunctionPipe<S, K, O, R>>
   >
 }

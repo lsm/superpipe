@@ -184,6 +184,23 @@ describe('typed pipe', () => {
     expectTypeOf(tp('p').pipe(() => [1], null, ['{a}'])).toExtend<Problem>()
   })
 
+  it('rejects a pipe that declares next and returns a thenable', () => {
+    expectTypeOf(
+      tp('p').pipe(
+        async (next) => {
+          next(null, 1)
+        },
+        'next',
+        'out',
+      ),
+    ).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe((next) => Promise.resolve(next), ['next'], 'out')).toExtend<Problem>()
+    const fetchWithNext = typed({
+      fetchWithNext: (next: unknown): Promise<void> => Promise.resolve(void next),
+    })
+    expectTypeOf(fetchWithNext('p').pipe('fetchWithNext', 'next', 'out')).toExtend<Problem>()
+  })
+
   it('types next as a callback and binds its output as unknown', () => {
     tp('p')
       .pipe(
