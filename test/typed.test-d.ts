@@ -305,6 +305,17 @@ describe('injected function pipes', () => {
       .pipe((user) => expectTypeOf(user).toEqualTypeOf<User>(), 'user')
   })
 
+  it('skips the parameter check for optional unknown names whatever the args are', () => {
+    tp<[string]>('p')
+      .input('id')
+      .pipe('?enrich', 'id', 'extra')
+      .pipe((extra) => expectTypeOf(extra).toBeUnknown(), 'extra')
+    tp<[string, number]>('p')
+      .pipe('?enrich', undefined, 'extra')
+      .pipe((extra) => expectTypeOf(extra).toBeUnknown(), 'extra')
+    expectTypeOf(tp<[string]>('p').pipe('?enrich').endAsync()).returns.resolves.toBeUndefined()
+  })
+
   it('rejects unknown dependency names unless optional', () => {
     // @ts-expect-error nope is not a dependency
     tp('p').pipe('nope')
