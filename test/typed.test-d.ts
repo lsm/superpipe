@@ -139,6 +139,16 @@ describe('typed pipe', () => {
       .pipe((a) => expectTypeOf(a).toEqualTypeOf<string | undefined>(), 'a')
   })
 
+  it('rejects empty and malformed spec strings', () => {
+    expectTypeOf(tp('p').input('')).toExtend<Problem>()
+    expectTypeOf(tp('p').input([''])).toExtend<Problem>()
+    expectTypeOf(tp('p').input(['{a}'])).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => 1, null, '')).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => [1], null, [''])).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => ({ value: 1 }), null, 'result:')).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => ({ value: 1 }), null, 'result:a:b')).toExtend<Problem>()
+  })
+
   it('merges every key of a spread output', () => {
     tp('p')
       .pipe(() => ({ ok: true, total: 2 }), null, '{...}')
@@ -333,6 +343,23 @@ describe('end', () => {
 describe('error handler', () => {
   it('receives the active error by default', () => {
     tp('p').error((error) => expectTypeOf(error).toEqualTypeOf<unknown>())
+  })
+
+  it('checks a handler named by dependency for callability and parameter fit', () => {
+    const withHandlers = typed({
+      config: { retries: 3 },
+      logError: (error: unknown): void => {
+        void error
+      },
+      logCount: (count: number): void => {
+        void count
+      },
+    })
+    expectTypeOf(withHandlers('p').error('config')).toExtend<Problem>()
+    expectTypeOf(withHandlers('p').error('logCount')).toExtend<Problem>()
+    expectTypeOf(withHandlers('p').error('logError').end()).returns.toEqualTypeOf<undefined>()
+    // @ts-expect-error nope is not a dependency
+    withHandlers('p').error('nope')
   })
 
   it('receives context values as possibly undefined', () => {

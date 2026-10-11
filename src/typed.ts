@@ -178,8 +178,6 @@ type SetFlag<S extends TypedState, F extends 'handled' | 'observed'> = Flat<
   Omit<S, F> & { [P in F]: true }
 >
 
-type NotTypedElement = `{${string}}` | `${string}:${string}`
-
 type GateNeedsResult = 'A "result:<name>" output requires the pipe to return { value } | { reason }'
 
 type SpreadNeedsObject = 'A "{...}" output requires the pipe to return a plain object'
@@ -196,6 +194,14 @@ type DestructureTooLong = 'An array output names more positions than the returne
 
 type EmptyNames = 'An input, output, or end spec cannot be an empty array'
 
+type EmptyName = 'A name cannot be an empty string'
+
+type BraceInArray = 'A brace spec is not allowed inside an array'
+
+type MalformedResultName = 'A "result:<name>" output needs a non-empty name without ":"'
+
+type HandlerNotCallable = 'This error handler dependency is not a function'
+
 type InterceptedName =
   'The names "input" and "error" are dispatched to .input() and .error() by the runtime; rename the dependency'
 
@@ -204,45 +210,53 @@ type OptionalKey =
 
 type OutputProblem<S extends TypedState, O, R> = O extends undefined
   ? never
-  : O extends `result:${infer N}`
-    ? N extends ReservedOutput<S>
-      ? ReservedName
-      : IsAny<Awaited<R>> extends true
-        ? never
-        : Awaited<R> extends Result<unknown, unknown>
-          ? never
-          : GateNeedsResult
-    : O extends '{...}'
-      ? IsAny<Awaited<R>> extends true
-        ? never
-        : IsPlainObject<Awaited<R>> extends true
-          ? [Keys<Awaited<R>> & ReservedOutput<S>] extends [never]
+  : O extends ''
+    ? EmptyName
+    : O extends `result:${infer N}`
+      ? N extends '' | `${string}:${string}`
+        ? MalformedResultName
+        : N extends ReservedOutput<S>
+          ? ReservedName
+          : IsAny<Awaited<R>> extends true
             ? never
-            : ReservedName
-          : SpreadNeedsObject
-      : O extends `{${string}}` | `${string}:${string}`
-        ? NotTypedYet
-        : O extends readonly string[]
-          ? IsEmptyArray<O> extends true
-            ? EmptyNames
-            : [Extract<O[number], NotTypedElement>] extends [never]
-              ? [O[number] & ReservedOutput<S>] extends [never]
-                ? IsAny<Awaited<R>> extends true
-                  ? never
-                  : Awaited<R> extends readonly unknown[]
-                    ? FitsTuple<O, Awaited<R>> extends true
-                      ? never
-                      : DestructureTooLong
-                    : O[number] extends keyof Awaited<R>
-                      ? O[number] extends RequiredKeys<Awaited<R>>
+            : Awaited<R> extends Result<unknown, unknown>
+              ? never
+              : GateNeedsResult
+      : O extends '{...}'
+        ? IsAny<Awaited<R>> extends true
+          ? never
+          : IsPlainObject<Awaited<R>> extends true
+            ? [Keys<Awaited<R>> & ReservedOutput<S>] extends [never]
+              ? never
+              : ReservedName
+            : SpreadNeedsObject
+        : O extends `{${string}}` | `${string}:${string}`
+          ? NotTypedYet
+          : O extends readonly string[]
+            ? IsEmptyArray<O> extends true
+              ? EmptyNames
+              : '' extends O[number]
+                ? EmptyName
+                : [Extract<O[number], `{${string}}`>] extends [never]
+                  ? [Extract<O[number], `${string}:${string}`>] extends [never]
+                    ? [O[number] & ReservedOutput<S>] extends [never]
+                      ? IsAny<Awaited<R>> extends true
                         ? never
-                        : OptionalKey
-                      : DestructureMismatch
-                : ReservedName
-              : NotTypedYet
-          : O extends ReservedOutput<S>
-            ? ReservedName
-            : never
+                        : Awaited<R> extends readonly unknown[]
+                          ? FitsTuple<O, Awaited<R>> extends true
+                            ? never
+                            : DestructureTooLong
+                          : O[number] extends keyof Awaited<R>
+                            ? O[number] extends RequiredKeys<Awaited<R>>
+                              ? never
+                              : OptionalKey
+                            : DestructureMismatch
+                      : ReservedName
+                    : NotTypedYet
+                  : BraceInArray
+            : O extends ReservedOutput<S>
+              ? ReservedName
+              : never
 
 type AfterFunctionPipe<S extends TypedState, K, O, R> = Bind<
   S,
@@ -359,17 +373,23 @@ type InputBindings<S extends TypedState, K> = K extends readonly string[]
     ? { [P in K]: ArgAt<S['args'], '0'> }
     : Empty
 
-type InputNamesProblem<K> = K extends `{${string}}`
-  ? NotTypedYet
-  : K extends 'next'
-    ? ReservedName
-    : K extends readonly string[]
-      ? IsEmptyArray<K> extends true
-        ? EmptyNames
-        : 'next' extends K[number]
-          ? ReservedName
-          : never
-      : never
+type InputNamesProblem<K> = K extends ''
+  ? EmptyName
+  : K extends `{${string}}`
+    ? NotTypedYet
+    : K extends 'next'
+      ? ReservedName
+      : K extends readonly string[]
+        ? IsEmptyArray<K> extends true
+          ? EmptyNames
+          : '' extends K[number]
+            ? EmptyName
+            : [Extract<K[number], `{${string}}`>] extends [never]
+              ? 'next' extends K[number]
+                ? ReservedName
+                : never
+              : BraceInArray
+        : never
 
 type AfterInput<S extends TypedState, K> = Bind<
   S,
@@ -477,12 +497,24 @@ interface PipeMethod<S extends TypedState> {
   >
 }
 
+type ErrorHandlerProblem<S extends TypedState, H, K> = H extends string
+  ? InputValue<S, H> extends AnyCallable
+    ? [ErrorTuple<S, K>] extends [Parameters<InputValue<S, H>>]
+      ? never
+      : InjectedInputMismatch
+    : HandlerNotCallable
+  : never
+
 type ErrorMethod<S extends TypedState> = <
+  H extends ((...args: ErrorTuple<S, K>) => unknown) | KnownName<S>,
   const K extends ErrorInputName<S> | readonly ErrorInputName<S>[] = 'error',
 >(
-  handler: ((...args: ErrorTuple<S, K>) => unknown) | Keys<S['deps']>,
+  handler: H,
   input?: K,
-) => Checked<EmptyNamesProblem<K>, TypedPipeline<SetFlag<S, 'handled'>>>
+) => Checked<
+  EmptyNamesProblem<K> | ErrorHandlerProblem<S, H, K>,
+  TypedPipeline<SetFlag<S, 'handled'>>
+>
 
 type ReasonMethod<S extends TypedState> = (
   handler: (reason: Reasons<S>, exit: PipelineExit, container: ResultContainer) => unknown,
