@@ -123,6 +123,22 @@ describe('typed pipe', () => {
     expectTypeOf(clashing('p').pipe('error', null, 'b')).toExtend<Problem>()
   })
 
+  it('treats any-returning functions as sync and skips return-shape checks', () => {
+    const parse = (text: string): any => JSON.parse(text)
+    const run = tp<[string]>('p').input('text').pipe(parse, 'text', 'data').end('data')
+    expectTypeOf(run).returns.toBeAny()
+    tp<[string]>('p').input('text').pipe(parse, 'text', 'result:data').endAsync('data')
+    tp<[string]>('p').input('text').pipe(parse, 'text', '{...}')
+    tp<[string]>('p').input('text').pipe(parse, 'text', ['a', 'b'])
+  })
+
+  it('rejects array outputs that name optional properties', () => {
+    expectTypeOf(tp('p').pipe((): { a?: string } => ({}), null, ['a'])).toExtend<Problem>()
+    tp('p')
+      .pipe((): { a: string | undefined } => ({ a: undefined }), null, ['a'])
+      .pipe((a) => expectTypeOf(a).toEqualTypeOf<string | undefined>(), 'a')
+  })
+
   it('merges every key of a spread output', () => {
     tp('p')
       .pipe(() => ({ ok: true, total: 2 }), null, '{...}')

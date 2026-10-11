@@ -36,7 +36,14 @@ type Keys<T> = keyof T & string
 
 type Either<A extends boolean, B extends boolean> = A extends true ? true : B
 
-type IsAsync<R> = [Extract<R, PromiseLike<unknown>>] extends [never] ? false : true
+type IsAny<T> = 0 extends 1 & T ? true : false
+
+type IsAsync<R> =
+  IsAny<R> extends true ? false : [Extract<R, PromiseLike<unknown>>] extends [never] ? false : true
+
+type RequiredKeys<V> = {
+  [K in keyof V]-?: Record<never, never> extends Pick<V, K> ? never : K
+}[keyof V]
 
 type IsOpen<D> = string extends Keys<D> ? true : false
 
@@ -192,20 +199,27 @@ type EmptyNames = 'An input, output, or end spec cannot be an empty array'
 type InterceptedName =
   'The names "input" and "error" are dispatched to .input() and .error() by the runtime; rename the dependency'
 
+type OptionalKey =
+  'An array output names an optional property; the runtime throws when it is absent'
+
 type OutputProblem<S extends TypedState, O, R> = O extends undefined
   ? never
   : O extends `result:${infer N}`
     ? N extends ReservedOutput<S>
       ? ReservedName
-      : Awaited<R> extends Result<unknown, unknown>
+      : IsAny<Awaited<R>> extends true
         ? never
-        : GateNeedsResult
-    : O extends '{...}'
-      ? IsPlainObject<Awaited<R>> extends true
-        ? [Keys<Awaited<R>> & ReservedOutput<S>] extends [never]
+        : Awaited<R> extends Result<unknown, unknown>
           ? never
-          : ReservedName
-        : SpreadNeedsObject
+          : GateNeedsResult
+    : O extends '{...}'
+      ? IsAny<Awaited<R>> extends true
+        ? never
+        : IsPlainObject<Awaited<R>> extends true
+          ? [Keys<Awaited<R>> & ReservedOutput<S>] extends [never]
+            ? never
+            : ReservedName
+          : SpreadNeedsObject
       : O extends `{${string}}` | `${string}:${string}`
         ? NotTypedYet
         : O extends readonly string[]
@@ -213,13 +227,17 @@ type OutputProblem<S extends TypedState, O, R> = O extends undefined
             ? EmptyNames
             : [Extract<O[number], NotTypedElement>] extends [never]
               ? [O[number] & ReservedOutput<S>] extends [never]
-                ? Awaited<R> extends readonly unknown[]
-                  ? FitsTuple<O, Awaited<R>> extends true
-                    ? never
-                    : DestructureTooLong
-                  : O[number] extends keyof Awaited<R>
-                    ? never
-                    : DestructureMismatch
+                ? IsAny<Awaited<R>> extends true
+                  ? never
+                  : Awaited<R> extends readonly unknown[]
+                    ? FitsTuple<O, Awaited<R>> extends true
+                      ? never
+                      : DestructureTooLong
+                    : O[number] extends keyof Awaited<R>
+                      ? O[number] extends RequiredKeys<Awaited<R>>
+                        ? never
+                        : OptionalKey
+                      : DestructureMismatch
                 : ReservedName
               : NotTypedYet
           : O extends ReservedOutput<S>
