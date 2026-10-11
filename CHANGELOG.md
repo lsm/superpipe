@@ -1,5 +1,6 @@
-Unreleased
-==========
+0.20.0 2026-10-11
+=================
+- 0.19.0 was never published to npm; its exit channel ships in this release.
 - Added `typed(deps)`, a typed entry point over the same runtime. The builder
   carries the context record through the type system: `.input` binds the
   declared invocation arguments, `.pipe` checks input names and the function's
@@ -8,8 +9,10 @@ Unreleased
   signature with the value plus the reasons of same-named gates and `undefined`
   only where an earlier exit can leave the name unset, `.reason` receives the
   union of gate reasons, and reserved or dependency-shadowing output names fail
-  at compile time. Sync `.end(name)` is refused once a pipe is async. Brace
-  picks and `src:dst` renames are not typed yet. The untyped API is unchanged.
+  at compile time, as do the builder ordering rules and malformed specs the
+  runtime would throw on. Sync `.end(name)` is refused once a pipe is async.
+  Brace picks and `src:dst` renames are not typed yet. Consumers need
+  TypeScript 5.0 or later. The untyped API is unchanged.
 - `superpipe()(name)` now returns `PipelineAPI` and `superpipe()(name, defs)`
   the runner, so the untyped builder no longer needs an `as PipelineAPI` cast.
 - Fixed the CommonJS build dropping every named export: `require('superpipe')`
