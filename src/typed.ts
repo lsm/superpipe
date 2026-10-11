@@ -93,8 +93,25 @@ type Positional<O extends readonly string[], V extends readonly unknown[]> = {
     ? O[I] extends string
       ? O[I]
       : never
-    : never]: I extends keyof V ? V[I] : never
+    : never]: I extends keyof V ? V[I] : V[number]
 }
+
+type FitsTuple<
+  O extends readonly string[],
+  V extends readonly unknown[],
+> = number extends V['length'] ? true : O['length'] extends Partial<V>['length'] ? true : false
+
+type IsPlainObject<V> = V extends AnyCallable
+  ? false
+  : V extends readonly unknown[]
+    ? false
+    : V extends object
+      ? [Keys<V>] extends [never]
+        ? false
+        : true
+      : false
+
+type IsEmptyArray<K> = K extends readonly [] ? true : false
 
 type Picked<O extends readonly string[], V> = {
   [K in O[number]]: K extends keyof V ? V[K] : never
@@ -168,6 +185,13 @@ type ReservedName = 'This output name is reserved or shadows a configured depend
 type DestructureMismatch =
   'An array output requires the pipe to return an array or an object with every named key'
 
+type DestructureTooLong = 'An array output names more positions than the returned tuple has'
+
+type EmptyNames = 'An input, output, or end spec cannot be an empty array'
+
+type InterceptedName =
+  'The names "input" and "error" are dispatched to .input() and .error() by the runtime; rename the dependency'
+
 type OutputProblem<S extends TypedState, O, R> = O extends undefined
   ? never
   : O extends `result:${infer N}`
@@ -177,25 +201,27 @@ type OutputProblem<S extends TypedState, O, R> = O extends undefined
         ? never
         : GateNeedsResult
     : O extends '{...}'
-      ? Awaited<R> extends readonly unknown[]
-        ? SpreadNeedsObject
-        : Awaited<R> extends object
-          ? [Keys<Awaited<R>> & ReservedOutput<S>] extends [never]
-            ? never
-            : ReservedName
-          : SpreadNeedsObject
+      ? IsPlainObject<Awaited<R>> extends true
+        ? [Keys<Awaited<R>> & ReservedOutput<S>] extends [never]
+          ? never
+          : ReservedName
+        : SpreadNeedsObject
       : O extends `{${string}}` | `${string}:${string}`
         ? NotTypedYet
         : O extends readonly string[]
-          ? [Extract<O[number], NotTypedElement>] extends [never]
-            ? [O[number] & ReservedOutput<S>] extends [never]
-              ? Awaited<R> extends readonly unknown[]
-                ? never
-                : O[number] extends keyof Awaited<R>
-                  ? never
-                  : DestructureMismatch
-              : ReservedName
-            : NotTypedYet
+          ? IsEmptyArray<O> extends true
+            ? EmptyNames
+            : [Extract<O[number], NotTypedElement>] extends [never]
+              ? [O[number] & ReservedOutput<S>] extends [never]
+                ? Awaited<R> extends readonly unknown[]
+                  ? FitsTuple<O, Awaited<R>> extends true
+                    ? never
+                    : DestructureTooLong
+                  : O[number] extends keyof Awaited<R>
+                    ? never
+                    : DestructureMismatch
+                : ReservedName
+              : NotTypedYet
           : O extends ReservedOutput<S>
             ? ReservedName
             : never
@@ -253,13 +279,17 @@ type InjectedInputMismatch =
 
 type InjectedNotCallable = 'This dependency is neither a function nor a boolean'
 
-type InjectedKindProblem<S extends TypedState, N> = [Resolved<S, N>] extends [never]
-  ? never
-  : [Resolved<S, N>] extends [boolean]
+type InjectedKindProblem<S extends TypedState, N> = N extends 'input' | 'error'
+  ? InterceptedName
+  : [Resolved<S, N>] extends [never]
     ? never
-    : Resolved<S, N> extends AnyCallable
+    : [Resolved<S, N>] extends [boolean]
       ? never
-      : InjectedNotCallable
+      : Resolved<S, N> extends AnyCallable
+        ? never
+        : InjectedNotCallable
+
+type EmptyNamesProblem<K> = IsEmptyArray<K> extends true ? EmptyNames : never
 
 type InjectedInputProblem<S extends TypedState, N, K> = K extends undefined | null
   ? never
@@ -316,9 +346,11 @@ type InputNamesProblem<K> = K extends `{${string}}`
   : K extends 'next'
     ? ReservedName
     : K extends readonly string[]
-      ? 'next' extends K[number]
-        ? ReservedName
-        : never
+      ? IsEmptyArray<K> extends true
+        ? EmptyNames
+        : 'next' extends K[number]
+          ? ReservedName
+          : never
       : never
 
 type AfterInput<S extends TypedState, K> = Bind<
@@ -373,7 +405,9 @@ type SyncEndUnavailable = 'This pipeline has an async pipe; use endAsync()'
 
 interface SyncEnd<S extends TypedState> {
   (): SyncRunner<S, undefined>
-  <const O extends EndSpec<S>>(output: O): SyncRunner<S, EndValue<S, O>>
+  <const O extends EndSpec<S>>(
+    output: O,
+  ): Checked<EmptyNamesProblem<O>, SyncRunner<S, EndValue<S, O>>>
 }
 
 interface SyncEndWhenAsync<S extends TypedState> {
@@ -409,6 +443,7 @@ interface PipeMethod<S extends TypedState> {
     output?: O,
   ): Checked<
     | InjectedKindProblem<S, N>
+    | EmptyNamesProblem<K>
     | InjectedInputProblem<S, N, K>
     | OutputProblem<S, O, InjectedResult<S, N, K>>,
     TypedPipeline<AfterInjectedPipe<S, N, K, O>>
@@ -418,7 +453,10 @@ interface PipeMethod<S extends TypedState> {
     fn: (...args: InputTuple<S, K>) => R,
     input?: K,
     output?: O,
-  ): Checked<OutputProblem<S, O, Produced<K, R>>, TypedPipeline<AfterFunctionPipe<S, K, O, R>>>
+  ): Checked<
+    EmptyNamesProblem<K> | OutputProblem<S, O, Produced<K, R>>,
+    TypedPipeline<AfterFunctionPipe<S, K, O, R>>
+  >
 }
 
 type ErrorMethod<S extends TypedState> = <
@@ -426,7 +464,7 @@ type ErrorMethod<S extends TypedState> = <
 >(
   handler: ((...args: ErrorTuple<S, K>) => unknown) | Keys<S['deps']>,
   input?: K,
-) => TypedPipeline<SetFlag<S, 'handled'>>
+) => Checked<EmptyNamesProblem<K>, TypedPipeline<SetFlag<S, 'handled'>>>
 
 type ReasonMethod<S extends TypedState> = (
   handler: (reason: Reasons<S>, exit: PipelineExit, container: ResultContainer) => unknown,
@@ -450,7 +488,9 @@ export interface TypedPipeline<S extends TypedState> {
   readonly end: S['async'] extends true ? SyncEndWhenAsync<S> : SyncEnd<S>
 
   endAsync(): TypedAsyncRunner<S['args'], undefined>
-  endAsync<const O extends EndSpec<S>>(output: O): TypedAsyncRunner<S['args'], EndValue<S, O>>
+  endAsync<const O extends EndSpec<S>>(
+    output: O,
+  ): Checked<EmptyNamesProblem<O>, TypedAsyncRunner<S['args'], EndValue<S, O>>>
 }
 
 type InitialState<D extends object, Args extends readonly unknown[]> = {

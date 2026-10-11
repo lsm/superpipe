@@ -94,6 +94,35 @@ describe('typed pipe', () => {
     expectTypeOf(tp('p').pipe(() => ({ id: 'u' }), null, ['id', 'missing'])).toExtend<Problem>()
   })
 
+  it('rejects spread outputs that are not plain objects', () => {
+    expectTypeOf(tp('p').pipe(() => () => 1, null, '{...}')).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => [1], null, '{...}')).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => ({}), null, '{...}')).toExtend<Problem>()
+  })
+
+  it('checks array outputs against the tuple length and types open arrays', () => {
+    expectTypeOf(tp('p').pipe(() => ['a'] as const, null, ['first', 'second'])).toExtend<Problem>()
+    tp('p')
+      .pipe((): string[] => ['a', 'b'], null, ['first', 'second'])
+      .pipe((first) => expectTypeOf(first).toEqualTypeOf<string>(), 'first')
+  })
+
+  it('rejects empty arrays wherever the runtime would throw', () => {
+    expectTypeOf(tp('p').input([])).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => 1, [])).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe('loadUser', [])).toExtend<Problem>()
+    expectTypeOf(tp('p').pipe(() => 1, null, [])).toExtend<Problem>()
+    expectTypeOf(tp('p').error(() => undefined, [])).toExtend<Problem>()
+    expectTypeOf(tp('p').end([])).toExtend<Problem>()
+    expectTypeOf(tp('p').endAsync([])).toExtend<Problem>()
+  })
+
+  it('refuses dependencies named input or error as injected pipes', () => {
+    const clashing = typed({ input: () => 1, error: () => 2 })
+    expectTypeOf(clashing('p').pipe('input', null, 'a')).toExtend<Problem>()
+    expectTypeOf(clashing('p').pipe('error', null, 'b')).toExtend<Problem>()
+  })
+
   it('merges every key of a spread output', () => {
     tp('p')
       .pipe(() => ({ ok: true, total: 2 }), null, '{...}')
