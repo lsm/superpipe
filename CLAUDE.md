@@ -77,8 +77,10 @@ are not installed. Do not use or extend them.
   suite together.
 - Commit messages use conventional prefixes (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
   `ci:`, `bench:`, `feat(go):`). Releases are a `chore(release): X.Y.Z` commit that bumps
-  `package.json` and adds a hand-written `X.Y.Z YYYY-MM-DD` section (underlined with `=`) to
-  the top of `CHANGELOG.md`.
+  `package.json` and the lockfile and dates the `Unreleased` section of `CHANGELOG.md` as
+  `X.Y.Z YYYY-MM-DD` (underlined with `=`). Pushing a `vX.Y.Z` tag runs
+  `.github/workflows/release.yml`, which re-verifies, checks the tag against `package.json`, and
+  publishes to npm through trusted publishing (OIDC, no token). Never `npm publish` by hand.
 
 ## Architecture (TypeScript)
 
