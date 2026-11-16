@@ -213,10 +213,13 @@ try {
       check('ESM import', () => run('node', ['esm.mjs'], consumer).trim())
       check('CJS require', () => run('node', ['cjs.cjs'], consumer).trim())
       check('IIFE global Superpipe', () => run('node', ['iife.cjs'], consumer).trim())
-      const tsc = join(dirname(createRequire(join(repo, 'package.json')).resolve('typescript/package.json')), 'bin/tsc')
       const tscArgs = ['--noEmit', '--strict', '--skipLibCheck', 'false', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--lib', 'es2022,dom']
-      check('types (ESM consumer)', () => run('node', [tsc, ...tscArgs, 'consumer.mts'], consumer) || 'tsc exit 0')
-      check('types (CJS consumer)', () => run('node', [tsc, ...tscArgs, 'consumer.cts'], consumer) || 'tsc exit 0')
+      const typecheck = (file) => {
+        const tsc = join(dirname(createRequire(join(repo, 'package.json')).resolve('typescript/package.json')), 'bin/tsc')
+        return run('node', [tsc, ...tscArgs, file], consumer) || 'tsc exit 0'
+      }
+      check('types (ESM consumer)', () => typecheck('consumer.mts'))
+      check('types (CJS consumer)', () => typecheck('consumer.cts'))
     }
   }
   if (!args.has('--no-go')) {
