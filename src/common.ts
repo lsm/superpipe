@@ -48,21 +48,23 @@ export interface AbortSignalLike {
   removeEventListener(type: string, listener: () => void): void
 }
 
+export type DescribedSpec = string | readonly string[]
+
 export interface StepDescription {
   readonly name: string
   readonly injected: boolean
   readonly not: boolean
   readonly optional: boolean
-  readonly input?: PipeParameter
-  readonly output?: PipeParameter
+  readonly input?: DescribedSpec
+  readonly output?: DescribedSpec
 }
 
 export interface PipelineDescription {
   readonly name: string
   readonly async: boolean
-  readonly inputs: readonly PipeParameter[]
+  readonly inputs: readonly DescribedSpec[]
   readonly steps: readonly StepDescription[]
-  readonly output?: PipeParameter
+  readonly output?: DescribedSpec
 }
 
 export interface DescribedRunner {

@@ -5,8 +5,9 @@ Unreleased
   `name`, `injected`/`not`/`optional` flags and declared `input`/`output`
   specs, and the final `output`. It is set by `.end()`, `.endAsync()` and the
   declarative form, typed on the `typed()` runners, and does not affect a run.
-  The public `PipelineDescription`, `StepDescription`, `DescribedRunner` and
-  `PipelineRunner` types describe it. TypeScript only; the Go port has no
+  The public `PipelineDescription`, `StepDescription`, `DescribedSpec`,
+  `DescribedRunner` and `PipelineRunner` types describe it; spec arrays in it
+  are copied when the runner is built and typed read-only. TypeScript only; the Go port has no
   counterpart.
 - The untyped `.end()` and the declarative form are now typed as
   `PipelineRunner` (`(...args: unknown[]) => PipeOutput` plus `pipeline`)

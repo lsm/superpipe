@@ -1,6 +1,7 @@
 import {
   type AnyFunction,
   type DescribedRunner,
+  type DescribedSpec,
   type FunctionContainer,
   isNonEmptyString,
   type PipeFunction,
@@ -33,8 +34,8 @@ export function createPipe(
     fetcher: new Fetcher(input),
     producer: new Producer(output),
     injected: false,
-    input: copySpec(input),
-    output: copySpec(output),
+    input,
+    output,
   }
 
   if (isNonEmptyString(fn)) {
@@ -66,7 +67,7 @@ export function createInputPipe(input: PipeParameter): InputPipe {
   const pipe: InputPipe = {
     fnName: 'input',
     producer: new Producer(input, 'input'),
-    input: copySpec(input) as PipeParameter,
+    input,
   }
 
   return pipe
@@ -74,11 +75,11 @@ export function createInputPipe(input: PipeParameter): InputPipe {
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
-function copySpec(spec: PipeParameter | null | undefined): PipeParameter | undefined {
+function copySpec(spec: PipeParameter | null | undefined): DescribedSpec | undefined {
   if (spec == null) {
     return undefined
   }
-  return Array.isArray(spec) ? (Object.freeze([...spec]) as string[]) : spec
+  return Array.isArray(spec) ? Object.freeze([...spec]) : spec
 }
 
 export function describePipeline<Runner extends object>(
@@ -94,18 +95,22 @@ export function describePipeline<Runner extends object>(
       not: pipe.not === true,
       optional: pipe.optional === true,
     }
-    if (pipe.input !== undefined) {
-      step.input = pipe.input
+    const input = copySpec(pipe.input)
+    if (input !== undefined) {
+      step.input = input
     }
-    if (pipe.output !== undefined) {
-      step.output = pipe.output
+    const output = copySpec(pipe.output)
+    if (output !== undefined) {
+      step.output = output
     }
     return Object.freeze(step)
   })
   const description: Mutable<PipelineDescription> = {
     name: pipeline.name,
     async,
-    inputs: Object.freeze((pipeline.inputPipes || []).map((pipe) => pipe.input)),
+    inputs: Object.freeze(
+      (pipeline.inputPipes || []).map((pipe) => copySpec(pipe.input) as DescribedSpec),
+    ),
     steps: Object.freeze(steps),
   }
   const end = copySpec(output)

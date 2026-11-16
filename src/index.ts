@@ -49,6 +49,7 @@ export type {
   AnyFunction,
   AsyncPipelineRunner,
   DescribedRunner,
+  DescribedSpec,
   ExitHandler,
   FunctionContainer,
   PipeFunction,
