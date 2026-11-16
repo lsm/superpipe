@@ -13,6 +13,14 @@ Unreleased
   `PipelineRunner` (`(...args: unknown[]) => PipeOutput` plus `pipeline`)
   instead of `Function` and `(...args: unknown[]) => void`. Assigning a runner
   to `Function` or casting it to a specific signature keeps compiling.
+- Added opt-in literal pipeline names: `typed<typeof deps, Pipelines>(deps)`,
+  where `Pipelines` maps each name to its invocation arguments, accepts only a
+  single registered string literal as the name, takes the runner's arguments
+  from the registry, and types `run.pipeline.name` as that literal. A string,
+  a template built from a string or an unregistered name is refused at the
+  name; a union of registered names yields a `TypedError`. Types only;
+  `PipelineDescription` and `DescribedRunner` gain a name parameter that
+  defaults to `string`, and `typed(deps)` without a registry is unchanged.
 
 0.20.0 2026-10-11
 =================

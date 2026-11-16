@@ -1,6 +1,6 @@
 # Design: literal pipeline names (opt-in, types only)
 
-Issue: #92. Status: proposed, waiting for sign-off before any code.
+Issue: #92. Status: signed; implemented in `src/typed.ts` and `src/common.ts`.
 
 ## Problem
 

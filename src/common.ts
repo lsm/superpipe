@@ -59,16 +59,16 @@ export interface StepDescription {
   readonly output?: DescribedSpec
 }
 
-export interface PipelineDescription {
-  readonly name: string
+export interface PipelineDescription<N extends string = string> {
+  readonly name: N
   readonly async: boolean
   readonly inputs: readonly DescribedSpec[]
   readonly steps: readonly StepDescription[]
   readonly output?: DescribedSpec
 }
 
-export interface DescribedRunner {
-  readonly pipeline: PipelineDescription
+export interface DescribedRunner<N extends string = string> {
+  readonly pipeline: PipelineDescription<N>
 }
 
 export interface PipelineRunner extends DescribedRunner {

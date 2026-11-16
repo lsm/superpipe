@@ -7,6 +7,7 @@ import superpipe, {
   type Result,
   type StepDescription,
   type TypedError,
+  type TypedFactory,
   typed,
 } from '../src'
 
@@ -529,5 +530,83 @@ describe('builder ordering', () => {
     // @ts-expect-error only one reason handler
     observed.reason(() => undefined)
     observed.pipe(() => 1, null, 'n').error(() => undefined)
+  })
+})
+
+describe('literal pipeline names', () => {
+  type Pipelines = {
+    'todo.remove': [input: string, caller: User]
+    'todo.add': [input: string]
+    'health.ping': []
+  }
+  type NotSingle = TypedError<'Pipeline name must be a single string literal, not a union'>
+  const named = typed<typeof deps, Pipelines>(deps)
+  const user: User = { id: 'u', name: 'ada' }
+
+  it('accepts a registered literal and carries it into run.pipeline.name', () => {
+    const run = named('todo.remove')
+      .input(['input', 'caller'])
+      .pipe((input) => input.length, 'input', 'n')
+      .endAsync('n')
+    expectTypeOf(run.pipeline.name).toEqualTypeOf<'todo.remove'>()
+    expectTypeOf(run).parameters.toEqualTypeOf<[input: string, caller: User]>()
+    run('id', user)
+    // @ts-expect-error the registry declares two arguments
+    run('id')
+    const ping = named('health.ping').end()
+    expectTypeOf(ping.pipeline.name).toEqualTypeOf<'health.ping'>()
+    ping()
+  })
+
+  it('refuses a string, a string-hole template and an unregistered literal', () => {
+    const name: string = 'todo.remove'
+    const action: string = 'remove'
+    // @ts-expect-error a string is not a literal
+    named(name)
+    // @ts-expect-error a template with a string hole is not a literal
+    named(`todo.${action}`)
+    // @ts-expect-error an unregistered literal
+    named('todo.nope')
+  })
+
+  it('reports a union of registered names through the result', () => {
+    const which = 'todo.add' as 'todo.remove' | 'todo.add'
+    expectTypeOf(named(which)).toEqualTypeOf<NotSingle>()
+    const build = (n: 'todo.remove' | 'health.ping') => named(n)
+    expectTypeOf(build).returns.toEqualTypeOf<NotSingle>()
+    const verb = 'add' as 'remove' | 'add'
+    expectTypeOf(named(`todo.${verb}`)).toEqualTypeOf<NotSingle>()
+  })
+
+  it('accepts a narrowed or const literal', () => {
+    const maybe = 'todo.add' as 'todo.remove' | 'todo.add'
+    if (maybe === 'todo.add') {
+      expectTypeOf(named(maybe).end().pipeline.name).toEqualTypeOf<'todo.add'>()
+    }
+    const fixed = 'health.ping'
+    expectTypeOf(named(fixed).end().pipeline.name).toEqualTypeOf<'health.ping'>()
+  })
+
+  it('refuses a registry whose keys are not all literals', () => {
+    expectTypeOf(typed<typeof deps, Record<string, []>>(deps)).toEqualTypeOf<
+      TypedError<'Pipeline registry keys must be string literals'>
+    >()
+    expectTypeOf(
+      typed<typeof deps, { 'todo.remove': [] } & { [k: `todo.${string}`]: [] }>(deps),
+    ).toEqualTypeOf<TypedError<'Pipeline registry keys must be string literals'>>()
+  })
+
+  it('accepts the annotated form', () => {
+    const annotated: TypedFactory<typeof deps, Pipelines> = typed(deps)
+    expectTypeOf(annotated('todo.add').end().pipeline.name).toEqualTypeOf<'todo.add'>()
+  })
+
+  it('leaves registry-less and untyped names as string', () => {
+    const run = tp<[string]>('x').input('id').end()
+    expectTypeOf(run.pipeline.name).toEqualTypeOf<string>()
+    expectTypeOf(run).parameters.toEqualTypeOf<[string]>()
+    const name: string = 'dynamic'
+    expectTypeOf(tp(name).end().pipeline.name).toEqualTypeOf<string>()
+    expectTypeOf(superpipe()(name).end().pipeline.name).toEqualTypeOf<string>()
   })
 })
