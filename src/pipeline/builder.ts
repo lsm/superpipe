@@ -73,6 +73,41 @@ export function createInputPipe(input: PipeParameter): InputPipe {
   return pipe
 }
 
+export interface Part {
+  readonly name: string
+  pipe(fn: PipeFunction, input?: PipeParameter, output?: PipeParameter): Part
+}
+
+const partSteps = new WeakMap<Part, { owner: object; pipes: readonly Pipe[] }>()
+
+function ownSpec(spec: PipeParameter | undefined): PipeParameter | undefined {
+  return Array.isArray(spec) ? (Object.freeze([...spec]) as string[]) : spec
+}
+
+export function createPart(name: string, owner: object, pipes: readonly Pipe[] = []): Part {
+  const part: Part = Object.freeze({
+    name,
+    pipe(fn: PipeFunction, input?: PipeParameter, output?: PipeParameter): Part {
+      if (fn === FN_TYPE.INPUT || fn === FN_TYPE.ERROR) {
+        throw new Error(`A part holds steps only; "${fn}" belongs to the pipeline.`)
+      }
+      const pipe = createPipe(fn, ownSpec(input), ownSpec(output))
+      pipe.part = name
+      return createPart(name, owner, Object.freeze([...pipes, pipe]))
+    },
+  })
+  partSteps.set(part, { owner, pipes })
+  return part
+}
+
+export function partPipes(part: Part, owner: object | undefined): readonly Pipe[] {
+  const entry = partSteps.get(part)
+  if (entry === undefined || entry.owner !== owner) {
+    throw new Error('A part can only be used by pipelines of the factory that declared it.')
+  }
+  return entry.pipes
+}
+
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
 function copySpec(spec: PipeParameter | null | undefined): DescribedSpec | undefined {
@@ -102,6 +137,9 @@ export function describePipeline<Runner extends object>(
     const output = copySpec(pipe.output)
     if (output !== undefined) {
       step.output = output
+    }
+    if (pipe.part !== undefined) {
+      step.part = pipe.part
     }
     return Object.freeze(step)
   })

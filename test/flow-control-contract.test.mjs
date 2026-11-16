@@ -3506,3 +3506,203 @@ describe('endAsync abort contract', () => {
     expect(active).to.equal(0)
   })
 })
+
+describe('.use(part) contract (same as the steps written inline)', () => {
+  const boom = new Error('boom')
+  const scenarios = {
+    value: { output: 'y', steps: [[(x) => x + 1, 'x', 'y']] },
+    reason: {
+      output: 'outcome',
+      steps: [
+        [
+          function deny() {
+            return { reason: 'denied' }
+          },
+          null,
+          'result:outcome',
+        ],
+        [() => 'later', null, 'outcome'],
+      ],
+    },
+    halt: {
+      output: 'y',
+      steps: [[() => 'before', null, 'y'], ['!isArchived'], [() => 'after', null, 'y']],
+    },
+    throws: {
+      output: 'y',
+      steps: [
+        [
+          function explode() {
+            throw boom
+          },
+          null,
+          'y',
+        ],
+      ],
+    },
+  }
+
+  async function observe(sp, scenario, viaPart, handled, finish) {
+    const exits = []
+    const handlerSaw = []
+    let pipeline = sp('p').input(['x'])
+    if (viaPart) {
+      let part = sp.steps('shared')
+      for (const [fn, input, output] of scenario.steps) part = part.pipe(fn, input, output)
+      pipeline = pipeline.use(part)
+    } else {
+      for (const [fn, input, output] of scenario.steps) pipeline = pipeline.pipe(fn, input, output)
+    }
+    if (handled) pipeline = pipeline.error((error) => handlerSaw.push(error))
+    pipeline = pipeline.onExit((exit) => exits.push([exit.via, exit.step, exit.name]))
+    const run = pipeline[finish](scenario.output)
+    let outcome
+    try {
+      outcome = { returned: await run(1) }
+    } catch (error) {
+      outcome = { threw: error }
+    }
+    return { outcome, handlerSaw, exits }
+  }
+
+  for (const finish of ['end', 'endAsync']) {
+    for (const [name, scenario] of Object.entries(scenarios)) {
+      for (const handled of [false, true]) {
+        it(`${finish}: ${name}${handled ? ' with an error handler' : ''}`, async () => {
+          const sp = superpipe({ isArchived: true })
+          const inline = await observe(sp, scenario, false, handled, finish)
+          const used = await observe(sp, scenario, true, handled, finish)
+          expect(used).to.deep.equal(inline)
+          expect(used.exits).to.have.lengthOf(1)
+        })
+      }
+    }
+  }
+
+  it('settles each scenario the way its runner kind does', async () => {
+    const sp = superpipe({ isArchived: true })
+    const value = await observe(sp, scenarios.value, true, false, 'end')
+    expect(value.outcome).to.deep.equal({ returned: 2 })
+    const reason = await observe(sp, scenarios.reason, true, false, 'endAsync')
+    expect(reason.outcome).to.deep.equal({ returned: 'denied' })
+    expect(reason.exits).to.deep.equal([['reason', 0, 'deny']])
+    const halt = await observe(sp, scenarios.halt, true, false, 'end')
+    expect(halt.outcome).to.deep.equal({ returned: 'before' })
+    expect(halt.exits).to.deep.equal([['halt', 1, 'isArchived']])
+    const handledSync = await observe(sp, scenarios.throws, true, true, 'end')
+    expect(handledSync.outcome).to.deep.equal({ returned: undefined })
+    expect(handledSync.handlerSaw).to.deep.equal([boom])
+    const unhandledSync = await observe(sp, scenarios.throws, true, false, 'end')
+    expect(unhandledSync.outcome).to.deep.equal({ threw: boom })
+    const handledAsync = await observe(sp, scenarios.throws, true, true, 'endAsync')
+    expect(handledAsync.outcome).to.deep.equal({ threw: boom })
+    expect(handledAsync.handlerSaw).to.deep.equal([boom])
+    expect(handledAsync.exits).to.deep.equal([['error', 0, 'explode']])
+  })
+
+  it('endAsync: aborting while a part step is pending rejects without the handler', async () => {
+    const sp = superpipe({})
+    let handlerRuns = 0
+    const part = sp
+      .steps('slow')
+      .pipe((next) => setTimeout(() => next(null, 'late'), 20), ['next'], 'y')
+    const run = sp('p')
+      .use(part)
+      .error(() => {
+        handlerRuns += 1
+      })
+      .endAsync('y')
+    const controller = new AbortController()
+    const pending = run.withSignal(controller.signal)
+    controller.abort('stop')
+    const error = await pending.catch((e) => e)
+    expect(error).to.be.instanceOf(PipelineAbortedError)
+    expect(error.reason).to.equal('stop')
+    expect(handlerRuns).to.equal(0)
+  })
+
+  it('returns a new frozen part from each .pipe and never changes a used part', () => {
+    const sp = superpipe({})
+    const first = sp.steps('grow').pipe((x) => x + 1, 'x', 'x')
+    const run = sp('p').input(['x']).use(first).end('x')
+    const second = first.pipe((x) => x * 10, 'x', 'x')
+    expect(second).to.not.equal(first)
+    expect(Object.isFrozen(first)).to.equal(true)
+    expect(Object.isFrozen(second)).to.equal(true)
+    expect(run(1)).to.equal(2)
+    expect(run.pipeline.steps).to.have.lengthOf(1)
+    expect(sp('q').input(['x']).use(second).end('x')(1)).to.equal(20)
+  })
+
+  it('copies the spec arrays it is given', () => {
+    const sp = superpipe({})
+    const input = ['caller']
+    const output = ['owner']
+    const part = sp.steps('owned').pipe((who) => [`owner:${who}`], input, output)
+    input[0] = 'input'
+    output[0] = 'other'
+    const first = sp('a').input(['input', 'caller']).use(part).end('owner')
+    input[0] = 'nope'
+    output.push('extra')
+    const second = sp('b').input(['input', 'caller']).use(part).end('owner')
+
+    for (const run of [first, second]) {
+      expect(run('in', 'me')).to.equal('owner:me')
+      expect(run.pipeline.steps[0].input).to.deep.equal(['caller'])
+      expect(run.pipeline.steps[0].output).to.deep.equal(['owner'])
+    }
+    expect(Object.isFrozen(input)).to.equal(false)
+    expect(Object.isFrozen(output)).to.equal(false)
+  })
+
+  it('allows a part in many pipelines and twice in one', () => {
+    const sp = superpipe({})
+    const inc = sp.steps('inc').pipe((x) => x + 1, 'x', 'x')
+    expect(sp('twice').input(['x']).use(inc).use(inc).end('x')(1)).to.equal(3)
+    expect(sp('once').input(['x']).use(inc).end('x')(1)).to.equal(2)
+  })
+
+  it('keeps inputs, the error handler and nesting off a part', () => {
+    const sp = superpipe({})
+    const part = sp.steps('p').pipe((x) => x, 'x', 'x')
+    expect(() => part.pipe('input', ['x'])).to.throw()
+    expect(() => part.pipe('error', () => undefined)).to.throw()
+    expect(part.use).to.equal(undefined)
+    expect(() =>
+      sp('late')
+        .error(() => undefined)
+        .use(part),
+    ).to.throw('Adding new pipe after error pipe is not allowed.')
+    expect(() => sp('first').use(part).input(['x'])).to.throw(
+      'Input pipe must be the first pipe in the pipeline.',
+    )
+  })
+
+  it('refuses .input() after using an empty part', () => {
+    const sp = superpipe({})
+    expect(() => sp('p').use(sp.steps('empty')).input('x')).to.throw(
+      'Input pipe must be the first pipe in the pipeline.',
+    )
+  })
+
+  it('leaves the builder unchanged when it refuses a part', () => {
+    const foreign = superpipe({})
+      .steps('elsewhere')
+      .pipe((x) => x, 'x', 'x')
+    const builder = superpipe({})('p')
+    expect(() => builder.use(foreign)).to.throw()
+    const run = builder
+      .input('x')
+      .pipe((x) => x * 2, 'x', 'x')
+      .end('x')
+    expect(run(2)).to.equal(4)
+    expect(run.pipeline.steps).to.have.lengthOf(1)
+  })
+
+  it('refuses a part declared by another factory', () => {
+    const part = superpipe({})
+      .steps('elsewhere')
+      .pipe((x) => x, 'x', 'x')
+    expect(() => superpipe({})('p').use(part)).to.throw()
+  })
+})

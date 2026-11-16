@@ -507,6 +507,16 @@ describe('HyperNeo-shaped intake pipeline', () => {
   })
 })
 
+describe('parts', () => {
+  it('refuses .use on the typed builder and returns the builder untyped', () => {
+    const sp = superpipe(deps)
+    const part = sp.steps('shared').pipe('loadUser', 'id', 'user')
+    // @ts-expect-error parts are not typed yet
+    tp<[string]>('p').input('id').use(part)
+    expectTypeOf(sp('p').use(part)).toEqualTypeOf<PipelineAPI>()
+  })
+})
+
 describe('builder ordering', () => {
   it('refuses an input pipe after the first pipe', () => {
     const started = tp('p').pipe(() => 1, null, 'n')

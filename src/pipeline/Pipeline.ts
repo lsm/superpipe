@@ -16,7 +16,14 @@ import {
   signalReason,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
-import { createErrorPipe, createInputPipe, createPipe, describePipeline } from './builder'
+import {
+  createErrorPipe,
+  createInputPipe,
+  createPipe,
+  describePipeline,
+  type Part,
+  partPipes,
+} from './builder'
 import { dispatchAbortExit, runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
@@ -36,14 +43,19 @@ export default class Pipeline implements PipelineBase {
 
   reasonHandler?: ReasonHandler
 
-  constructor(name: string, functions?: FunctionContainer) {
+  owner?: object
+
+  usedPart = false
+
+  constructor(name: string, functions?: FunctionContainer, owner?: object) {
     this.name = name
+    this.owner = owner
 
     this.functions = functions || {}
   }
 
   input(input?: PipeParameter): Pipeline {
-    if (this.pipes.length > 0) {
+    if (this.pipes.length > 0 || this.usedPart) {
       throw new Error('Input pipe must be the first pipe in the pipeline.')
     }
     if (input == null || input === '' || (Array.isArray(input) && input.length === 0)) {
@@ -67,6 +79,17 @@ export default class Pipeline implements PipelineBase {
     }
     const pipe = createPipe(fn, input, output)
     this.pipes.push(pipe)
+    return this
+  }
+
+  use(part: Part): Pipeline {
+    if (this.errorHandler) {
+      throw new Error('Adding new pipe after error pipe is not allowed.')
+    }
+    for (const pipe of partPipes(part, this.owner)) {
+      this.pipes.push(pipe)
+    }
+    this.usedPart = true
     return this
   }
 

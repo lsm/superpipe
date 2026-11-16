@@ -128,7 +128,19 @@ async function smoke(superpipe, ns) {
   })
   eq('run.pipeline frozen', Object.isFrozen(described.pipeline), true)
 
-  return '8 behaviors'
+  const keys = ['x']
+  const inc = sp.steps('inc').pipe(function inc(x) { return x + 1 }, keys, 'x')
+  keys[0] = 'nope'
+  const inline = sp('inline').input(['x']).pipe((x) => x + 1, 'x', 'x').pipe((x) => x * 10, 'x', 'x').end('x')
+  const used = sp('used').input(['x']).use(inc).pipe((x) => x * 10, 'x', 'x').end('x')
+  keys.push('later')
+  eq('.use value', used(1), inline(1))
+  eq('.use description', used.pipeline.steps.map((s) => [s.name, s.input, s.part]), [
+    ['inc', ['x'], 'inc'],
+    ['anonymous', 'x', undefined],
+  ])
+
+  return '9 behaviors'
 }
 
 const consumerTs = `import superpipe, { typed, PipelineAbortedError, type PipelineDescription } from 'superpipe'

@@ -1,5 +1,12 @@
 Unreleased
 ==========
+- Added parts: `sp.steps(name).pipe(...)` declares a named, frozen run of
+  steps and `.use(part)` adds them to a pipeline as if written inline. A part
+  copies its spec arrays, holds steps only, cannot use another part, and only
+  works with pipelines of the factory that declared it. `run.pipeline` marks
+  its steps with `part`; `StepDescription` gains `part?: string` and `Part` is
+  exported. The `typed()` builder refuses `.use` for now. TypeScript only; Go
+  composes `[]Def` slices instead.
 - Added `run.pipeline`, a frozen description of the pipeline a runner was built
   from: its `name`, whether it is `async`, the declared `inputs`, each step's
   `name`, `injected`/`not`/`optional` flags and declared `input`/`output`

@@ -490,6 +490,8 @@ export interface TypedAsyncRunner<
   withSignal(signal: AbortSignalLike, ...args: [...Args]): Promise<Out>
 }
 
+type PartsNotTyped = 'Parts are not typed yet; build this pipeline with superpipe(deps)'
+
 type InputAfterPipe = 'An input pipe must come before the first pipe'
 
 type PipeAfterError = 'Adding a pipe after the error handler is not allowed'
@@ -557,6 +559,8 @@ export interface TypedPipeline<S extends TypedState> {
   readonly input: S['started'] extends true ? (names: InputAfterPipe) => never : InputMethod<S>
 
   readonly pipe: S['handled'] extends true ? (fn: PipeAfterError) => never : PipeMethod<S>
+
+  readonly use: (part: PartsNotTyped) => never
 
   readonly error: S['handled'] extends true
     ? (handler: SecondErrorHandler) => never

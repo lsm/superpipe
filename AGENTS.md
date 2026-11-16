@@ -182,6 +182,6 @@ instead of `AbortSignal`; typed spec constructors (`Out`, `Pick`, `Destructure`,
 joined into the returned error; own-key map reads with no prototype or accessor semantics;
 definition errors (ordering, empty names, malformed specs) joined and reported at `Build`, while a
 wrong-typed argument to `Optional()` or `.Out()` panics at the call site in `go/def.go`; and
-`errors.Is`-checkable sentinels in `go/errors.go`. The Go port has no `.onExit()`/`.reason()` exit channel and no `run.pipeline` description. When the TS contract
+`errors.Is`-checkable sentinels in `go/errors.go`. The Go port has no `.onExit()`/`.reason()` exit channel and no `run.pipeline` description; reusable steps are a `[]Def` slice rather than a frozen `sp.steps()` part. When the TS contract
 changes, check §2 first: if Go deliberately diverges on that behavior, update its divergence row;
 otherwise update the numbered contracts in §4 and the Go tests alongside it.

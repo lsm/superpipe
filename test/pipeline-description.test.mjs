@@ -142,6 +142,53 @@ describe('runner pipeline description', () => {
     }
   })
 
+  it('lists the steps of a used part in place with its name', () => {
+    function resolveOwner(caller) {
+      return { value: caller }
+    }
+    function createGoal(outcome) {
+      return outcome
+    }
+    const sp = superpipe({ isArchived: () => false })
+    const owned = sp
+      .steps('goal.owned')
+      .pipe(resolveOwner, ['caller', 'input'], 'result:outcome')
+      .pipe('!isArchived', 'outcome')
+    const create = sp('goal.create')
+      .input(['input', 'caller'])
+      .use(owned)
+      .pipe(createGoal, ['outcome', 'input'], 'outcome')
+      .endAsync('outcome')
+
+    expect(create.pipeline.steps).to.deep.equal([
+      {
+        name: 'resolveOwner',
+        injected: false,
+        not: false,
+        optional: false,
+        input: ['caller', 'input'],
+        output: 'result:outcome',
+        part: 'goal.owned',
+      },
+      {
+        name: 'isArchived',
+        injected: true,
+        not: true,
+        optional: false,
+        input: 'outcome',
+        part: 'goal.owned',
+      },
+      {
+        name: 'createGoal',
+        injected: false,
+        not: false,
+        optional: false,
+        input: ['outcome', 'input'],
+        output: 'outcome',
+      },
+    ])
+  })
+
   it('names the same step the exit channel reports', () => {
     const seen = []
     function deny() {
