@@ -48,7 +48,32 @@ export interface AbortSignalLike {
   removeEventListener(type: string, listener: () => void): void
 }
 
-export interface AsyncPipelineRunner {
+export interface StepDescription {
+  readonly name: string
+  readonly injected: boolean
+  readonly not: boolean
+  readonly optional: boolean
+  readonly input?: PipeParameter
+  readonly output?: PipeParameter
+}
+
+export interface PipelineDescription {
+  readonly name: string
+  readonly async: boolean
+  readonly inputs: readonly PipeParameter[]
+  readonly steps: readonly StepDescription[]
+  readonly output?: PipeParameter
+}
+
+export interface DescribedRunner {
+  readonly pipeline: PipelineDescription
+}
+
+export interface PipelineRunner extends DescribedRunner {
+  (...args: unknown[]): PipeOutput
+}
+
+export interface AsyncPipelineRunner extends DescribedRunner {
   (...args: unknown[]): Promise<PipeOutput>
   withSignal(signal: AbortSignalLike, ...args: unknown[]): Promise<PipeOutput>
 }

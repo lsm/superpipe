@@ -1,3 +1,18 @@
+Unreleased
+==========
+- Added `run.pipeline`, a frozen description of the pipeline a runner was built
+  from: its `name`, whether it is `async`, the declared `inputs`, each step's
+  `name`, `injected`/`not`/`optional` flags and declared `input`/`output`
+  specs, and the final `output`. It is set by `.end()`, `.endAsync()` and the
+  declarative form, typed on the `typed()` runners, and does not affect a run.
+  The public `PipelineDescription`, `StepDescription`, `DescribedRunner` and
+  `PipelineRunner` types describe it. TypeScript only; the Go port has no
+  counterpart.
+- The untyped `.end()` and the declarative form are now typed as
+  `PipelineRunner` (`(...args: unknown[]) => PipeOutput` plus `pipeline`)
+  instead of `Function` and `(...args: unknown[]) => void`. Assigning a runner
+  to `Function` or casting it to a specific signature keeps compiling.
+
 0.20.0 2026-10-11
 =================
 - 0.19.0 was never published to npm; its exit channel ships in this release.
