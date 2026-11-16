@@ -23,9 +23,14 @@ const args = new Set(process.argv.slice(2))
 const work = mkdtempSync(join(tmpdir(), 'superpipe-verify-'))
 const results = []
 
+// On Windows npm is a .cmd shim, which Node only spawns through a shell.
+const shell = process.platform === 'win32'
+
 function run(cmd, cmdArgs, cwd, env) {
-  return execFileSync(cmd, cmdArgs, {
+  const argv = shell ? cmdArgs.map((a) => (/\s/.test(a) ? `"${a}"` : a)) : cmdArgs
+  return execFileSync(cmd, argv, {
     cwd,
+    shell,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...env },
