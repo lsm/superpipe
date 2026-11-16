@@ -7,8 +7,8 @@ Unreleased
   declarative form, typed on the `typed()` runners, and does not affect a run.
   The public `PipelineDescription`, `StepDescription`, `DescribedSpec`,
   `DescribedRunner` and `PipelineRunner` types describe it; spec arrays in it
-  are copied when the runner is built and typed read-only. TypeScript only; the Go port has no
-  counterpart.
+  are copied when the runner is built and typed read-only. TypeScript only;
+  the Go port has no counterpart.
 - The untyped `.end()` and the declarative form are now typed as
   `PipelineRunner` (`(...args: unknown[]) => PipeOutput` plus `pipeline`)
   instead of `Function` and `(...args: unknown[]) => void`. Assigning a runner
