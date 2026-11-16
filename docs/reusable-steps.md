@@ -49,8 +49,10 @@ const create = sp('goal.create')
 
 The steps are copied into the pipeline at `.use`, so the executor does not change. Values,
 `result:` exits, `!` halts, `?` skips, thrown errors and their handler, `next`, promises and
-cancellation behave exactly as for the same steps written inline. Injected names in a part
-resolve against the deps of the pipeline that runs it, which is the factory's deps.
+cancellation behave exactly as for the same steps written inline under the same runner: `.end`
+returns after a handled error and throws an unhandled one, `.endAsync` rejects either way, and
+only `.endAsync` can be cancelled. Injected names in a part resolve against the deps of the
+pipeline that runs it, which is the factory's deps.
 
 The exit channel reports the step's position in the whole pipeline (`exit.step`) and its own
 name (`exit.name`), as today.
@@ -85,7 +87,7 @@ follow-up design, not part of this slice (open question 2).
 
 ## Go port
 
-Not TypeScript-only in substance: Go already composes a definition list, because `Build` takes
+Composition is not TypeScript-only: Go already composes a definition list, because `Build` takes
 `defs ...Def`. A part is a `[]superpipe.Def` and including it is `append`:
 
 ```go
@@ -99,11 +101,19 @@ run, err := superpipe.Build("goal.create", deps, append(defs,
 )...)
 ```
 
-`Build` clones every definition, including its name slices, so each runner is a snapshot of the
-shared `owned` slice. So the Go port needs no code. The slice adds a row to §2 of `docs/go-port-spec.md`: "`.use(part)`
-| a `[]Def` slice spread into `Build` | Go composes variadic definition lists natively". The
-`part` field of the description has no Go counterpart because Go has no `run.pipeline` (already
-recorded in §2).
+`Build` clones every definition, including its name slices, so a runner already built is a
+snapshot. The slice itself is not: `StepDef.In`/`.Out` change the definition they are called on,
+so calling `.In` or `.Out` again on a `*StepDef` kept in the slice changes every runner built
+afterwards from it (runner A built first still binds `caller`; runner B built after
+`step.In("input")` binds `input`). Go slices give
+composition, not a part that is immutable from declaration. The Go port needs no code; the
+named, frozen part API is TypeScript-only, and the slice records that in a row of §2 of
+`docs/go-port-spec.md`:
+
+| `sp.steps(name)` part and `.use(part)` | a `[]Def` slice spread into `Build` | Go composes variadic definition lists natively; a runner is a snapshot at `Build`, but the slice's definitions stay mutable until then, so declaration-time immutability and the part name are TypeScript-only |
+
+The `part` field of the description has no Go counterpart because Go has no `run.pipeline`
+(already recorded in §2).
 
 ## What stays unchanged
 
@@ -116,14 +126,22 @@ recorded in §2).
 
 Contract tests (`test/flow-control-contract.test.mjs` for behavior,
 `test/pipeline-description.test.mjs` for the description) compare each pipeline with `.use`
-against the same steps written inline, for `.end` and `.endAsync`:
+against the same steps written inline. Parity means the same observable result for the runner
+kind, not one result for both kinds; cases 1 to 4 run under `.end` and `.endAsync`, each with and
+without an error handler, and compare the return or throw, the handler calls and the `.onExit()`
+record (`via`, `step`, `name`):
 
-1. Values: same final output.
-2. A `result:` reason in a part step: same outcome and same exit (`via`, `step`, `name`).
-3. A `!` gate in a part halts the same way.
-4. A step in a part throws: same error reaches the pipeline's handler and the caller.
-5. Abort through `withSignal` while a part step is pending: `PipelineAbortedError`, handler not
-   called.
+1. Values: the same final output from both runners.
+2. A `result:` reason in a part step: both runners resolve to the reason under the output name,
+   and the exit is `via: 'reason'` with the part step's position and name.
+3. A `!` gate in a part: both runners return the value bound before the gate, and the exit is
+   `via: 'halt'` at the gate's position.
+4. A step in a part throws. `.end` with a handler: the handler gets the error and the call
+   returns without throwing. `.end` without a handler: the call throws the error. `.endAsync`:
+   the promise rejects with the error whether or not a handler ran, and the handler gets it when
+   present. The exit is `via: 'error'` in every case.
+5. `.endAsync` only: abort through `withSignal` while a part step is pending rejects with
+   `PipelineAbortedError` carrying the abort reason, and the error handler is not called.
 6. `run.pipeline` lists the part's steps in place with `part`; inline steps have none.
 7. Extending a used part returns a new part; the earlier runner and its description are
    unchanged; a part is frozen.
