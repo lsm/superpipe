@@ -5,6 +5,8 @@
 //
 //   node scripts/verify-package.mjs            # build + pack + all surfaces
 //   node scripts/verify-package.mjs --no-go    # skip the Go consumer
+//   node scripts/verify-package.mjs --go-only  # only the Go consumer
+//   node scripts/verify-package.mjs --skip-build   # reuse the current dist/
 //   node scripts/verify-package.mjs --keep     # keep the consumer directory for inspection
 //
 // Exit code 0 only when every check passed; the last line prints the counts.
@@ -198,22 +200,24 @@ func main() {
 }
 
 try {
-  if (!args.has('--skip-build')) check('build', () => (run('npm', ['run', 'build'], repo), ''))
-  let consumer
-  check('pack + install tarball', () => {
-    const tarball = packTarball()
-    consumer = makeConsumer(tarball)
-    const pkg = JSON.parse(readFileSync(join(consumer, 'node_modules/superpipe/package.json'), 'utf8'))
-    return `${pkg.name}@${pkg.version}`
-  })
-  if (consumer) {
-    check('ESM import', () => run('node', ['esm.mjs'], consumer).trim())
-    check('CJS require', () => run('node', ['cjs.cjs'], consumer).trim())
-    check('IIFE global Superpipe', () => run('node', ['iife.cjs'], consumer).trim())
-    const tsc = join(dirname(createRequire(join(repo, 'package.json')).resolve('typescript/package.json')), 'bin/tsc')
-    const tscArgs = ['--noEmit', '--strict', '--skipLibCheck', 'false', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--lib', 'es2022,dom']
-    check('types (ESM consumer)', () => run('node', [tsc, ...tscArgs, 'consumer.mts'], consumer) || 'tsc exit 0')
-    check('types (CJS consumer)', () => run('node', [tsc, ...tscArgs, 'consumer.cts'], consumer) || 'tsc exit 0')
+  if (!args.has('--go-only')) {
+    if (!args.has('--skip-build')) check('build', () => (run('npm', ['run', 'build'], repo), ''))
+    let consumer
+    check('pack + install tarball', () => {
+      const tarball = packTarball()
+      consumer = makeConsumer(tarball)
+      const pkg = JSON.parse(readFileSync(join(consumer, 'node_modules/superpipe/package.json'), 'utf8'))
+      return `${pkg.name}@${pkg.version}`
+    })
+    if (consumer) {
+      check('ESM import', () => run('node', ['esm.mjs'], consumer).trim())
+      check('CJS require', () => run('node', ['cjs.cjs'], consumer).trim())
+      check('IIFE global Superpipe', () => run('node', ['iife.cjs'], consumer).trim())
+      const tsc = join(dirname(createRequire(join(repo, 'package.json')).resolve('typescript/package.json')), 'bin/tsc')
+      const tscArgs = ['--noEmit', '--strict', '--skipLibCheck', 'false', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--lib', 'es2022,dom']
+      check('types (ESM consumer)', () => run('node', [tsc, ...tscArgs, 'consumer.mts'], consumer) || 'tsc exit 0')
+      check('types (CJS consumer)', () => run('node', [tsc, ...tscArgs, 'consumer.cts'], consumer) || 'tsc exit 0')
+    }
   }
   if (!args.has('--no-go')) {
     check('Go module consumer', () => {

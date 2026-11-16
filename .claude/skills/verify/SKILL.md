@@ -1,62 +1,61 @@
 ---
 name: verify
-description: Prove a SuperPipe change works where a user meets it — the packed npm tarball installed into a fresh consumer project (ESM, CJS, browser IIFE, TypeScript types) and the Go module imported from a fresh Go module. Use before calling any change to src/, the build, package.json or go/ done.
+description: Prove a SuperPipe change works where a user meets it. Shared setup and gates (build, type check, lint, zero-comments, contract suites, package lint) live here; the journeys/ directory holds one file per user surface (installed npm package, Go module, a behavior change end to end). Use before calling any change to src/, the build, package.json or go/ done.
 ---
 
-# Verify SuperPipe as a user installs it
+# Verify SuperPipe
 
 Unit tests import `src/` directly, so they cannot catch a broken build, a missing export, a bad
-`exports` map, or shipped `.d.ts` files that do not compile. This skill checks the artifact a user
-actually installs.
+`exports` map, or shipped `.d.ts` files that do not compile. The gates below are necessary; the
+proof is a journey that observes the change through what a user installs.
 
 ## Setup
 
 - Node `^22.18.0 || >=24.11.0` (the locked tsdown refuses others), then `npm ci` at the repo root.
-- Go 1.22 or newer on `PATH` for the Go check (or pass `--no-go`).
-- No network beyond the `npm ci` above: the consumer installs the local tarball, which has no
-  runtime dependencies, and the Go consumer uses a `replace` directive.
+- Go 1.22 or newer on `PATH` for anything under `go/`.
+- Run from the repo root. Nothing here needs network after `npm ci`.
 
-## Run
+## Gates
+
+Run in this order and stop at the first non-zero exit. CI runs the same steps
+(`.github/workflows/ci.yml`); a gate that only CI ran is reported as CI's result, with the job
+name.
 
 ```bash
-node scripts/verify-package.mjs            # build, pack, install, run every surface
-node scripts/verify-package.mjs --no-go    # skip the Go consumer
-node scripts/verify-package.mjs --keep     # keep the temp consumer to inspect it
+npm run typecheck            # src, then the type tests in test/typed.test-d.ts
+npm run lint                 # biome check src test
+npm run check:no-comments    # no comments in any tracked .ts file
+npm test                     # vitest, including the contract suites below
+npm run build                # dist/: CJS, ESM, .d.ts/.d.mts, IIFE bundles
+npm run lint:pkg             # publint + arethetypeswrong on the built package
 ```
 
-Each check prints `PASS` or `FAIL` with its output; the last line is
-`verify: N passed, M failed`, and the exit code is 0 only when nothing failed. A run that prints
-no checks is a failure, not a pass.
+For `go/`, from that directory:
 
-What it does, in order:
+```bash
+test -z "$(gofmt -l .)"; echo gofmt=$?
+go vet ./...
+go test -race ./...
+```
 
-1. `npm run build`, then `npm pack` into a temp directory.
-2. Installs the tarball into a fresh consumer project (`npm install <tarball>`).
-3. Runs the same smoke routine through `import 'superpipe'` (ESM), `require('superpipe')` (CJS),
-   and `dist/superpipe.min.js` loaded as a script (global `Superpipe`). It covers the README quick
-   start, sync output, a `!` gate, the declarative form, `endAsync`, `withSignal` abort, and the
-   typed entry point at run time.
-4. Type-checks a consumer file as `.mts` and as `.cts` against the shipped declarations with
-   `--strict --skipLibCheck false` under `nodenext`. One line carries `@ts-expect-error`, so types
-   that silently became `any` fail the check.
-5. Builds and runs a throwaway Go module that imports `github.com/lsm/superpipe/go` through a
-   `replace` directive, runs a gated pipeline, and checks cancellation reports `ErrAborted`.
+The contract suites pin README behavior; a README change and its suite change together:
 
-## Proving a new feature
+| Behavior | Suite |
+| --- | --- |
+| flow control, output binding, cancellation, live deps | `test/flow-control-contract.test.mjs` |
+| `.onExit()` / `.reason()` | `test/exit-channel.test.mjs` |
+| `result:<name>` | `test/result-protocol.test.mjs` |
+| typed builder inference | `test/typed.test-d.ts` (compiled by `npm run typecheck`, never executed) |
 
-A change is verified when the new behavior is observed through the installed package, not only
-in `test/`. When a change adds or alters a user-facing behavior:
+Run one suite with `npx vitest run test/<file>`.
 
-- Add the README example's observable result to `smoke()` in `scripts/verify-package.mjs`
-  (runs on all three JavaScript surfaces), and bump its summary count.
-- If the change touches public types, add a line to `consumerTs` that only compiles when the
-  types are right, plus an `@ts-expect-error` line for the misuse they must reject.
-- If the Go port gains the behavior, extend the Go consumer's `main.go` and its expected output.
+## Journeys
 
-Then run the script and report its full output. To confirm a new check can fail, break the
-behavior in `src/` temporarily, rerun, see the `FAIL`, and restore the file.
+List `.claude/skills/verify/journeys/` and read the files that match the change. Each journey
+names its command, what a pass looks like, and how to prove its check can fail. Add a journey for
+a new surface as a new file there.
 
-## Not covered
+## Reporting
 
-CI runs the unit, contract and type tests; this skill does not replace them and is not run in
-CI. It does not exercise a real browser; the IIFE bundle runs in a Node `vm` context.
+Paste each command with its exit code and the last lines of output. A run that prints no checks,
+or a gate skipped without saying so, is not a pass. Label anything you did not run.
