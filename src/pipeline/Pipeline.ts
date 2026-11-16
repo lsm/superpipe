@@ -45,6 +45,8 @@ export default class Pipeline implements PipelineBase {
 
   owner?: object
 
+  usedPart = false
+
   constructor(name: string, functions?: FunctionContainer, owner?: object) {
     this.name = name
     this.owner = owner
@@ -53,7 +55,7 @@ export default class Pipeline implements PipelineBase {
   }
 
   input(input?: PipeParameter): Pipeline {
-    if (this.pipes.length > 0) {
+    if (this.pipes.length > 0 || this.usedPart) {
       throw new Error('Input pipe must be the first pipe in the pipeline.')
     }
     if (input == null || input === '' || (Array.isArray(input) && input.length === 0)) {
@@ -87,6 +89,7 @@ export default class Pipeline implements PipelineBase {
     for (const pipe of partPipes(part, this.owner)) {
       this.pipes.push(pipe)
     }
+    this.usedPart = true
     return this
   }
 
