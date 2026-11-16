@@ -3678,6 +3678,27 @@ describe('.use(part) contract (same as the steps written inline)', () => {
     )
   })
 
+  it('refuses .input() after using an empty part', () => {
+    const sp = superpipe({})
+    expect(() => sp('p').use(sp.steps('empty')).input('x')).to.throw(
+      'Input pipe must be the first pipe in the pipeline.',
+    )
+  })
+
+  it('leaves the builder unchanged when it refuses a part', () => {
+    const foreign = superpipe({})
+      .steps('elsewhere')
+      .pipe((x) => x, 'x', 'x')
+    const builder = superpipe({})('p')
+    expect(() => builder.use(foreign)).to.throw()
+    const run = builder
+      .input('x')
+      .pipe((x) => x * 2, 'x', 'x')
+      .end('x')
+    expect(run(2)).to.equal(4)
+    expect(run.pipeline.steps).to.have.lengthOf(1)
+  })
+
   it('refuses a part declared by another factory', () => {
     const part = superpipe({})
       .steps('elsewhere')
