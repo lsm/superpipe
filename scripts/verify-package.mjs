@@ -111,10 +111,27 @@ async function smoke(superpipe, ns) {
   const tp = typed({ greet: (name) => `Hello, ${name}!` })
   eq('typed runtime', tp('t').input('name').pipe('greet', 'name', 'm').end('m')('typed'), 'Hello, typed!')
 
-  return '7 behaviors'
+  const described = sp('todo.remove')
+    .input(['input', 'caller'])
+    .pipe(function resolveTarget(input) { return { value: input } }, 'input', 'result:outcome')
+    .pipe('!isBlocked', 'caller')
+    .endAsync('outcome')
+  eq('run.pipeline', described.pipeline, {
+    name: 'todo.remove',
+    async: true,
+    inputs: [['input', 'caller']],
+    steps: [
+      { name: 'resolveTarget', injected: false, not: false, optional: false, input: 'input', output: 'result:outcome' },
+      { name: 'isBlocked', injected: true, not: true, optional: false, input: 'caller' },
+    ],
+    output: 'outcome',
+  })
+  eq('run.pipeline frozen', Object.isFrozen(described.pipeline), true)
+
+  return '8 behaviors'
 }
 
-const consumerTs = `import superpipe, { typed, PipelineAbortedError } from 'superpipe'
+const consumerTs = `import superpipe, { typed, PipelineAbortedError, type PipelineDescription } from 'superpipe'
 
 const sp = superpipe({ greet: (name: string) => \`Hello, \${name}!\` })
 const untyped = sp('sum').input(['x']).pipe('greet', 'x', 'm').end('m')
@@ -127,11 +144,17 @@ const greet = tp<[string]>('greet').input('name').pipe('greet', 'name', 'm').end
 const out: Promise<string> = greet('x')
 const cancelled: Promise<string> = greet.withSignal(new AbortController().signal, 'x')
 const err: Error = new PipelineAbortedError()
+const description: PipelineDescription = untyped.pipeline
+const asyncSteps: readonly { readonly name: string }[] = greet.pipeline.steps
+const declarativeName: string = declarative.pipeline.name
+
+// @ts-expect-error the description is read-only
+untyped.pipeline = description
 
 // @ts-expect-error unknown input name must be rejected
 tp<[string]>('bad').input('name').pipe('greet', 'nope', 'm')
 
-export { out, cancelled, err }
+export { out, cancelled, err, asyncSteps, declarativeName }
 `
 
 function packTarball() {
