@@ -159,7 +159,20 @@ if (stepInput !== undefined && typeof stepInput !== 'string') {
 // @ts-expect-error unknown input name must be rejected
 tp<[string]>('bad').input('name').pipe('greet', 'nope', 'm')
 
-export { out, cancelled, err, asyncSteps, declarativeName }
+const greetDeps = { greet: (name: string) => \`Hello, \${name}!\` }
+const named = typed<typeof greetDeps, { 'greet.one': [name: string]; 'greet.two': [] }>(greetDeps)
+const one = named('greet.one').input('name').pipe('greet', 'name', 'm').end('m')
+const oneName: 'greet.one' = one.pipeline.name
+const dynamic: string = 'greet.one'
+// @ts-expect-error a string pipeline name is refused
+named(dynamic)
+const either = 'greet.two' as 'greet.one' | 'greet.two'
+// @ts-expect-error a union of registered names is refused
+named(either).end()
+const wide: { problem: 'Pipeline registry keys must be string literals' } =
+  typed<typeof greetDeps, Record<string, []>>(greetDeps)
+
+export { out, cancelled, err, asyncSteps, declarativeName, oneName, wide }
 `
 
 function packTarball() {
