@@ -55,6 +55,17 @@ describe('typed input', () => {
     expectTypeOf(sync).returns.toEqualTypeOf<string>()
   })
 
+  it('types every described spec array as read-only', () => {
+    const { inputs, steps, output } = superpipe()('p').end().pipeline
+    const step = steps[0]
+    for (const spec of [inputs[0], step?.input, step?.output, output]) {
+      if (spec !== undefined && typeof spec !== 'string') {
+        // @ts-expect-error a described spec array is frozen
+        spec.push('x')
+      }
+    }
+  })
+
   it('types a single input name from the first arg', () => {
     tp<[User]>('p')
       .input('user')

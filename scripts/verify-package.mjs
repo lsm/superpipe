@@ -150,6 +150,11 @@ const declarativeName: string = declarative.pipeline.name
 
 // @ts-expect-error the description is read-only
 untyped.pipeline = description
+const stepInput = untyped.pipeline.steps[0]?.input
+if (stepInput !== undefined && typeof stepInput !== 'string') {
+  // @ts-expect-error a described spec array is frozen
+  stepInput.push('x')
+}
 
 // @ts-expect-error unknown input name must be rejected
 tp<[string]>('bad').input('name').pipe('greet', 'nope', 'm')

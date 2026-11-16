@@ -122,6 +122,26 @@ describe('runner pipeline description', () => {
     expect(run(1, 2)).to.equal(3)
   })
 
+  it('describes the specs the runner binds when arrays change before it is built', async () => {
+    for (const finish of ['end', 'endAsync']) {
+      const inputs = ['a']
+      const stepInput = ['a']
+      const stepOutput = ['x']
+      const builder = superpipe()('late')
+        .input(inputs)
+        .pipe((v) => [v], stepInput, stepOutput)
+      inputs[0] = 'b'
+      stepInput[0] = 'b'
+      stepOutput[0] = 'y'
+      const run = builder[finish]('y')
+
+      expect(run.pipeline.inputs).to.deep.equal([['b']])
+      expect(run.pipeline.steps[0].input).to.deep.equal(['b'])
+      expect(run.pipeline.steps[0].output).to.deep.equal(['y'])
+      expect(await run(5)).to.equal(5)
+    }
+  })
+
   it('names the same step the exit channel reports', () => {
     const seen = []
     function deny() {
