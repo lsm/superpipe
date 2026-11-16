@@ -1,5 +1,6 @@
 import type {
   AbortSignalLike,
+  DescribedRunner,
   ExitHandler,
   FunctionContainer,
   PipelineExit,
@@ -461,7 +462,7 @@ type EndValue<S extends TypedState, O> = O extends readonly string[]
   ? [...{ [I in keyof O]: EndSingle<S, O[I]> }]
   : EndSingle<S, O>
 
-type SyncRunner<S extends TypedState, Out> = (...args: [...S['args']]) => Out
+type SyncRunner<S extends TypedState, Out> = ((...args: [...S['args']]) => Out) & DescribedRunner
 
 type SyncEndUnavailable = 'This pipeline has an async pipe; use endAsync()'
 
@@ -477,7 +478,7 @@ interface SyncEndWhenAsync<S extends TypedState> {
   (output: SyncEndUnavailable): never
 }
 
-export interface TypedAsyncRunner<Args extends readonly unknown[], Out> {
+export interface TypedAsyncRunner<Args extends readonly unknown[], Out> extends DescribedRunner {
   (...args: [...Args]): Promise<Out>
   withSignal(signal: AbortSignalLike, ...args: [...Args]): Promise<Out>
 }

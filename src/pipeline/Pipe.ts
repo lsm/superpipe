@@ -10,11 +10,14 @@ export default interface Pipe {
   fetcher: Fetcher
   producer: Producer
   injected: boolean
+  input?: PipeParameter
+  output?: PipeParameter
 }
 
 export interface InputPipe {
   fnName: string
   producer: Producer
+  input: PipeParameter
 }
 
 export type PipeDefinition = [PipeFunction, PipeParameter?, PipeParameter?]

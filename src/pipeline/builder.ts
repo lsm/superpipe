@@ -1,10 +1,15 @@
 import {
   type AnyFunction,
+  type DescribedRunner,
+  type DescribedSpec,
   type FunctionContainer,
   isNonEmptyString,
   type PipeFunction,
+  type PipelineBase,
+  type PipelineDescription,
   type PipeParameter,
   type PipeResult,
+  type StepDescription,
   setEntry,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
@@ -29,6 +34,8 @@ export function createPipe(
     fetcher: new Fetcher(input),
     producer: new Producer(output),
     injected: false,
+    input,
+    output,
   }
 
   if (isNonEmptyString(fn)) {
@@ -60,9 +67,61 @@ export function createInputPipe(input: PipeParameter): InputPipe {
   const pipe: InputPipe = {
     fnName: 'input',
     producer: new Producer(input, 'input'),
+    input,
   }
 
   return pipe
+}
+
+type Mutable<T> = { -readonly [K in keyof T]: T[K] }
+
+function copySpec(spec: PipeParameter | null | undefined): DescribedSpec | undefined {
+  if (spec == null) {
+    return undefined
+  }
+  return Array.isArray(spec) ? Object.freeze([...spec]) : spec
+}
+
+export function describePipeline<Runner extends object>(
+  runner: Runner,
+  pipeline: PipelineBase,
+  output: PipeParameter | undefined,
+  async: boolean,
+): Runner & DescribedRunner {
+  const steps = pipeline.pipes.map((pipe): StepDescription => {
+    const step: Mutable<StepDescription> = {
+      name: pipe.fnName,
+      injected: pipe.injected,
+      not: pipe.not === true,
+      optional: pipe.optional === true,
+    }
+    const input = copySpec(pipe.input)
+    if (input !== undefined) {
+      step.input = input
+    }
+    const output = copySpec(pipe.output)
+    if (output !== undefined) {
+      step.output = output
+    }
+    return Object.freeze(step)
+  })
+  const description: Mutable<PipelineDescription> = {
+    name: pipeline.name,
+    async,
+    inputs: Object.freeze(
+      (pipeline.inputPipes || []).map((pipe) => copySpec(pipe.input) as DescribedSpec),
+    ),
+    steps: Object.freeze(steps),
+  }
+  const end = copySpec(output)
+  if (end !== undefined) {
+    description.output = end
+  }
+  Object.defineProperty(runner, 'pipeline', {
+    value: Object.freeze(description),
+    enumerable: true,
+  })
+  return runner as Runner & DescribedRunner
 }
 
 export function createErrorPipe(errorFn: PipeFunction, input?: PipeParameter): AnyFunction {

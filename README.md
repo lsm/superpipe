@@ -253,6 +253,40 @@ const run = sp('my-pipeline')
 run(5)  // Executes the pipeline with x=5, returns 10
 ```
 
+#### `run.pipeline`
+
+Every runner returned by `.end()`, `.endAsync()` or the declarative form carries
+a frozen description of the pipeline it was built from, so a host can check a
+runner's name or list its steps without running it:
+
+```javascript
+const run = sp('todo.remove')
+  .input(['input', 'caller'])
+  .pipe(resolveTarget, 'input', 'result:outcome')
+  .pipe('!isBlocked', 'caller')
+  .endAsync('outcome')
+
+run.pipeline
+// {
+//   name: 'todo.remove',
+//   async: true,
+//   inputs: [['input', 'caller']],
+//   steps: [
+//     { name: 'resolveTarget', injected: false, not: false, optional: false,
+//       input: 'input', output: 'result:outcome' },
+//     { name: 'isBlocked', injected: true, not: true, optional: false, input: 'caller' },
+//   ],
+//   output: 'outcome',
+// }
+```
+
+A step's `name` is the one the exit channel reports: the function's name,
+`anonymous` for an unnamed function, or the injected name without its `!`/`?`
+sigil. `input` and `output` are the specs as declared and are left out when a
+step declares none. The description is taken when the runner is built; later
+changes to the builder or to a declared array do not reach it, and it plays no
+part in a run.
+
 ### Declarative API
 
 Pipelines can also be defined declaratively:

@@ -1,5 +1,14 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import superpipe, { type PipelineAPI, type Result, type TypedError, typed } from '../src'
+import superpipe, {
+  type DescribedRunner,
+  type PipelineAPI,
+  type PipelineDescription,
+  type PipelineRunner,
+  type Result,
+  type StepDescription,
+  type TypedError,
+  typed,
+} from '../src'
 
 interface User {
   id: string
@@ -31,6 +40,30 @@ describe('typed input', () => {
     expectTypeOf(run).parameters.toEqualTypeOf<[string, number]>()
     expectTypeOf(run).returns.resolves.toEqualTypeOf<{ id: string; count: number }>()
     expectTypeOf(run.withSignal).parameter(1).toEqualTypeOf<string>()
+  })
+
+  it('exposes the pipeline description on sync, async and untyped runners', () => {
+    const sync = tp<[string]>('p')
+      .input(['id'])
+      .pipe((id) => id, ['id'], 'same')
+      .end('same')
+    const later = tp<[string]>('p').input(['id']).endAsync()
+    const plain = superpipe()('p').end()
+    expectTypeOf(sync.pipeline).toEqualTypeOf<PipelineDescription>()
+    expectTypeOf(later.pipeline.steps).toEqualTypeOf<readonly StepDescription[]>()
+    expectTypeOf(plain.pipeline.name).toEqualTypeOf<string>()
+    expectTypeOf(sync).returns.toEqualTypeOf<string>()
+  })
+
+  it('types every described spec array as read-only', () => {
+    const { inputs, steps, output } = superpipe()('p').end().pipeline
+    const step = steps[0]
+    for (const spec of [inputs[0], step?.input, step?.output, output]) {
+      if (spec !== undefined && typeof spec !== 'string') {
+        // @ts-expect-error a described spec array is frozen
+        spec.push('x')
+      }
+    }
   })
 
   it('types a single input name from the first arg', () => {
@@ -355,7 +388,7 @@ describe('end', () => {
       .input('id')
       .pipe((id) => id.length, 'id', 'n')
       .end('n')
-    expectTypeOf(run).toEqualTypeOf<(id: string) => number>()
+    expectTypeOf(run).toEqualTypeOf<((id: string) => number) & DescribedRunner>()
   })
 
   it('returns a tuple for an array output', () => {
@@ -422,7 +455,7 @@ describe('untyped factory overloads', () => {
   it('returns the builder without a cast when no defs are given', () => {
     const sp = superpipe()
     expectTypeOf(sp('p')).toEqualTypeOf<PipelineAPI>()
-    expectTypeOf(sp('p', [])).toEqualTypeOf<(...args: unknown[]) => void>()
+    expectTypeOf(sp('p', [])).toEqualTypeOf<PipelineRunner>()
   })
 })
 
@@ -468,6 +501,7 @@ describe('HyperNeo-shaped intake pipeline', () => {
         caller: Caller,
         db: Db,
       ): Promise<Target | Rejected>
+      readonly pipeline: PipelineDescription
     }>()
   })
 })

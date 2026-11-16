@@ -13,9 +13,9 @@ consumer project, and then:
   `require('superpipe')` result called directly as the factory with its named exports (CJS), and
   `dist/superpipe.min.js` loaded as a script (global `Superpipe`, in a Node `vm` context). It
   covers the README quick start, sync output, a `!` gate, the declarative form, `endAsync`,
-  `withSignal` abort, and `typed()` at run time. A surface passes only when it prints
-  `SMOKE COMPLETE` within 30 seconds, so a promise that never settles is a `FAIL`, not a silent
-  exit 0;
+  `withSignal` abort, `typed()` at run time, and the README `run.pipeline` description. A
+  surface passes only when it prints `SMOKE COMPLETE` within 30 seconds, so a promise that never
+  settles is a `FAIL`, not a silent exit 0;
 - type-checks one consumer file as `.mts` and as `.cts` against the shipped declarations with
   `--strict --skipLibCheck false` under `nodenext`. One line carries `@ts-expect-error`, so types
   that silently became `any` fail.

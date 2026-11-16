@@ -7,6 +7,7 @@ import {
   type PipeFunction,
   PipelineAbortedError,
   type PipelineBase,
+  type PipelineRunner,
   type PipeOutput,
   type PipeParameter,
   type PipeResult,
@@ -15,7 +16,7 @@ import {
   signalReason,
 } from '../common'
 import Fetcher from '../parameter/Fetcher'
-import { createErrorPipe, createInputPipe, createPipe } from './builder'
+import { createErrorPipe, createInputPipe, createPipe, describePipeline } from './builder'
 import { dispatchAbortExit, runPipeline } from './executor'
 import type Pipe from './Pipe'
 import type { InputPipe } from './Pipe'
@@ -96,7 +97,7 @@ export default class Pipeline implements PipelineBase {
     return this
   }
 
-  end(output?: PipeParameter): (...args: unknown[]) => PipeOutput {
+  end(output?: PipeParameter): PipelineRunner {
     const fetcher = new Fetcher(output, 'raw')
 
     const pipeline: PipelineBase = {
@@ -110,17 +111,27 @@ export default class Pipeline implements PipelineBase {
     }
 
     if (output === undefined) {
-      return function (): undefined {
-        runPipeline(Array.prototype.slice.apply(arguments), pipeline)
-      }
+      return describePipeline(
+        function (): undefined {
+          runPipeline(Array.prototype.slice.apply(arguments), pipeline)
+        },
+        pipeline,
+        output,
+        false,
+      )
     }
 
-    return function (): PipeOutput {
-      const args: PipeResult = Array.prototype.slice.apply(arguments)
+    return describePipeline(
+      function (): PipeOutput {
+        const args: PipeResult = Array.prototype.slice.apply(arguments)
 
-      const container = runPipeline(args, pipeline)
-      return fetcher.fetch(container, [], pipeline.functions)
-    }
+        const container = runPipeline(args, pipeline)
+        return fetcher.fetch(container, [], pipeline.functions)
+      },
+      pipeline,
+      output,
+      false,
+    )
   }
 
   endAsync(output?: PipeParameter): AsyncPipelineRunner {
@@ -164,9 +175,14 @@ export default class Pipeline implements PipelineBase {
         )
       })
 
-    const run = function (): Promise<PipeOutput> {
-      return runPipelinePromise(Array.prototype.slice.apply(arguments))
-    } as AsyncPipelineRunner
+    const run = describePipeline(
+      function (): Promise<PipeOutput> {
+        return runPipelinePromise(Array.prototype.slice.apply(arguments))
+      },
+      pipeline,
+      output,
+      true,
+    ) as AsyncPipelineRunner
 
     run.withSignal = (signal: AbortSignalLike, ...args: unknown[]): Promise<PipeOutput> => {
       if (signalAborted(signal)) {
