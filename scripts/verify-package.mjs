@@ -26,11 +26,12 @@ const results = []
 // On Windows npm is a .cmd shim, which Node only spawns through a shell.
 const shell = process.platform === 'win32'
 
-function run(cmd, cmdArgs, cwd, env) {
+function run(cmd, cmdArgs, cwd, env, timeout = 300_000) {
   const argv = shell ? cmdArgs.map((a) => (/\s/.test(a) ? `"${a}"` : a)) : cmdArgs
   return execFileSync(cmd, argv, {
     cwd,
     shell,
+    timeout,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...env },
@@ -49,11 +50,18 @@ function check(name, fn) {
   }
 }
 
-// Runs inside each consumer surface. It receives the module namespace (ESM, CJS or the IIFE
-// global) and returns a promise of a summary line, rejecting on the first mismatch.
-async function smoke(ns) {
-  const superpipe = ns.default
+// Printed by a runtime surface only after every smoke step settled. A promise that never
+// settles lets node exit 0 with no output, so the marker, not the exit code, is the pass signal.
+const SMOKE_DONE = 'SMOKE COMPLETE'
+
+// Runs inside each consumer surface. It receives the factory as a user calls it and the
+// object carrying the named exports, and rejects on the first mismatch.
+async function smoke(superpipe, ns) {
   const { PipelineAbortedError, typed } = ns
+  if (typeof superpipe !== 'function') throw new Error(`factory is ${typeof superpipe}`)
+  if (typeof typed !== 'function' || typeof PipelineAbortedError !== 'function') {
+    throw new Error('named exports typed / PipelineAbortedError missing')
+  }
   const eq = (label, got, want) => {
     if (JSON.stringify(got) !== JSON.stringify(want)) {
       throw new Error(`${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
@@ -146,15 +154,20 @@ function makeConsumer(tarball) {
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'consumer', private: true }))
   run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', tarball], dir)
   const fn = `const smoke = ${smoke.toString()}\n`
-  const report = `.then((s) => console.log(s), (e) => { console.error(e.message); process.exit(1) })\n`
-  writeFileSync(join(dir, 'esm.mjs'), `import * as ns from 'superpipe'\n${fn}smoke(ns)${report}`)
-  writeFileSync(join(dir, 'cjs.cjs'), `const ns = require('superpipe')\n${fn}smoke(ns)${report}`)
+  const report =
+    `.then((s) => console.log('${SMOKE_DONE}: ' + s), ` +
+    `(e) => { console.error(e.message); process.exit(1) })\n`
+  writeFileSync(join(dir, 'esm.mjs'), `import * as ns from 'superpipe'\n${fn}smoke(ns.default, ns)${report}`)
+  writeFileSync(
+    join(dir, 'cjs.cjs'),
+    `const superpipe = require('superpipe')\n${fn}smoke(superpipe, superpipe)${report}`,
+  )
   writeFileSync(
     join(dir, 'iife.cjs'),
     `const vm = require('node:vm')\nconst fs = require('node:fs')\n` +
       `const ctx = vm.createContext({ setTimeout, AbortController })\n` +
       `vm.runInContext(fs.readFileSync(require.resolve('superpipe/package.json').replace('package.json', 'dist/superpipe.min.js'), 'utf8'), ctx)\n` +
-      `${fn}smoke(ctx.Superpipe)${report}`,
+      `${fn}smoke(ctx.Superpipe.default, ctx.Superpipe)${report}`,
   )
   writeFileSync(join(dir, 'consumer.mts'), consumerTs)
   writeFileSync(join(dir, 'consumer.cts'), consumerTs)
@@ -166,7 +179,7 @@ function goConsumer() {
   mkdirSync(dir)
   writeFileSync(
     join(dir, 'go.mod'),
-    `module consumer\n\ngo 1.22\n\nrequire github.com/lsm/superpipe/go v0.0.0\n\nreplace github.com/lsm/superpipe/go => ${join(repo, 'go')}\n`,
+    `module consumer\n\ngo 1.22\n\nrequire github.com/lsm/superpipe/go v0.0.0\n\nreplace github.com/lsm/superpipe/go => ${JSON.stringify(join(repo, 'go'))}\n`,
   )
   writeFileSync(
     join(dir, 'main.go'),
@@ -215,9 +228,16 @@ try {
       return `${pkg.name}@${pkg.version}`
     })
     if (consumer) {
-      check('ESM import', () => run('node', ['esm.mjs'], consumer).trim())
-      check('CJS require', () => run('node', ['cjs.cjs'], consumer).trim())
-      check('IIFE global Superpipe', () => run('node', ['iife.cjs'], consumer).trim())
+      const smokeRun = (file) => {
+        const out = run('node', [file], consumer, {}, 30_000).trim()
+        if (!out.startsWith(SMOKE_DONE)) {
+          throw new Error(`no '${SMOKE_DONE}' marker; output: ${out || '(empty)'}`)
+        }
+        return out
+      }
+      check('ESM import', () => smokeRun('esm.mjs'))
+      check('CJS require', () => smokeRun('cjs.cjs'))
+      check('IIFE global Superpipe', () => smokeRun('iife.cjs'))
       const tscArgs = ['--noEmit', '--strict', '--skipLibCheck', 'false', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--lib', 'es2022,dom']
       const typecheck = (file) => {
         const tsc = join(dirname(createRequire(join(repo, 'package.json')).resolve('typescript/package.json')), 'bin/tsc')

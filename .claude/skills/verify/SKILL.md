@@ -33,7 +33,7 @@ npm run lint:pkg             # publint + arethetypeswrong on the built package
 For `go/`, from that directory:
 
 ```bash
-test -z "$(gofmt -l .)"; echo gofmt=$?
+files=$(gofmt -l .); echo "gofmt: ${files:-clean}"; test -z "$files"
 go vet ./...
 go test -race ./...
 ```
