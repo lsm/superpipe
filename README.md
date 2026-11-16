@@ -596,6 +596,41 @@ What the types track:
 The typed builder uses `const` type parameters, so consumers need TypeScript
 5.0 or later.
 
+#### Literal pipeline names
+
+To refuse pipeline names that are not string literals, give `typed` a registry
+type mapping each name to its invocation arguments. The name is then the only
+thing the call infers, the arguments come from the registry, and the runner's
+`pipeline.name` is the literal:
+
+```typescript
+type Pipelines = {
+  'todo.remove': [input: string, caller: Caller]
+  'health.ping': []
+}
+
+const tp = typed<typeof deps, Pipelines>(deps)
+// or: const tp: TypedFactory<typeof deps, Pipelines> = typed(deps)
+
+const remove = tp('todo.remove')
+  .input(['input', 'caller'])
+  .pipe(resolveTarget, 'input', 'result:outcome')
+  .endAsync('outcome')   // (input: string, caller: Caller) => Promise<…>
+
+remove.pipeline.name     // type 'todo.remove'
+
+tp(name)                 // refused: a string is not a registered name
+tp(`todo.${action}`)     // refused: built from a string
+tp(which)                // 'todo.remove' | 'health.ping': the next call fails with
+                         // TypedError<'Pipeline name must be a single string literal, not a union'>
+```
+
+A literal narrowed by an `if`, or held in a `const`, is accepted. A registry
+whose keys are not all literals (`Record<string, …>` or a `` `todo.${string}` ``
+key) makes the factory a `TypedError`. This is types only: the runtime is the
+same, and `typed(deps)` without a registry and the untyped API keep `string`
+names.
+
 ## Go Port
 
 SuperPipe also ships as a Go module — same semantics, idiomatic Go: one

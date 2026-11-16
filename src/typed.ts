@@ -10,6 +10,7 @@ import type {
 import PipelineBuilder from './pipeline/Pipeline'
 
 export interface TypedState {
+  name: string
   deps: object
   args: readonly unknown[]
   ctx: object
@@ -179,6 +180,7 @@ interface Change {
 }
 
 type Bind<S extends TypedState, C extends Change> = {
+  name: S['name']
   deps: S['deps']
   args: S['args']
   ctx: Merge<S['ctx'], C['add']>
@@ -462,7 +464,8 @@ type EndValue<S extends TypedState, O> = O extends readonly string[]
   ? [...{ [I in keyof O]: EndSingle<S, O[I]> }]
   : EndSingle<S, O>
 
-type SyncRunner<S extends TypedState, Out> = ((...args: [...S['args']]) => Out) & DescribedRunner
+type SyncRunner<S extends TypedState, Out> = ((...args: [...S['args']]) => Out) &
+  DescribedRunner<S['name']>
 
 type SyncEndUnavailable = 'This pipeline has an async pipe; use endAsync()'
 
@@ -478,7 +481,11 @@ interface SyncEndWhenAsync<S extends TypedState> {
   (output: SyncEndUnavailable): never
 }
 
-export interface TypedAsyncRunner<Args extends readonly unknown[], Out> extends DescribedRunner {
+export interface TypedAsyncRunner<
+  Args extends readonly unknown[],
+  Out,
+  Name extends string = string,
+> extends DescribedRunner<Name> {
   (...args: [...Args]): Promise<Out>
   withSignal(signal: AbortSignalLike, ...args: [...Args]): Promise<Out>
 }
@@ -563,13 +570,14 @@ export interface TypedPipeline<S extends TypedState> {
 
   readonly end: S['async'] extends true ? SyncEndWhenAsync<S> : SyncEnd<S>
 
-  endAsync(): TypedAsyncRunner<S['args'], undefined>
+  endAsync(): TypedAsyncRunner<S['args'], undefined, S['name']>
   endAsync<const O extends EndSpec<S>>(
     output: O,
-  ): Checked<EmptyNamesProblem<O>, TypedAsyncRunner<S['args'], EndValue<S, O>>>
+  ): Checked<EmptyNamesProblem<O>, TypedAsyncRunner<S['args'], EndValue<S, O>, S['name']>>
 }
 
-type InitialState<D extends object, Args extends readonly unknown[]> = {
+type InitialState<D extends object, Args extends readonly unknown[], N extends string = string> = {
+  name: N
   deps: D
   args: Args
   ctx: Empty
@@ -583,12 +591,34 @@ type InitialState<D extends object, Args extends readonly unknown[]> = {
   observed: false
 }
 
-export type TypedFactory<D extends object> = <Args extends readonly unknown[] = unknown[]>(
-  name: string,
-) => TypedPipeline<InitialState<D, Args>>
+type PipelineRegistry = Record<string, readonly unknown[]>
 
-export function typed<D extends object = Empty>(deps?: D): TypedFactory<D> {
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never
+
+type NonLiteralKey<R> = {
+  [K in Keys<R>]: string extends K ? K : Empty extends Record<K, unknown> ? K : never
+}[Keys<R>]
+
+type NotSingleName = 'Pipeline name must be a single string literal, not a union'
+
+type NonLiteralRegistry = 'Pipeline registry keys must be string literals'
+
+type RegisteredFactory<D extends object, R extends PipelineRegistry> = <const N extends Keys<R>>(
+  name: N,
+) => true extends IsUnion<N> ? TypedError<NotSingleName> : TypedPipeline<InitialState<D, R[N], N>>
+
+export type TypedFactory<D extends object, R extends PipelineRegistry = never> = [R] extends [never]
+  ? <Args extends readonly unknown[] = unknown[]>(
+      name: string,
+    ) => TypedPipeline<InitialState<D, Args>>
+  : [NonLiteralKey<R>] extends [never]
+    ? RegisteredFactory<D, R>
+    : TypedError<NonLiteralRegistry>
+
+export function typed<D extends object = Empty, R extends PipelineRegistry = never>(
+  deps?: D,
+): TypedFactory<D, R> {
   const factory = (name: string): PipelineBuilder =>
     new PipelineBuilder(name, deps as FunctionContainer | undefined)
-  return factory as unknown as TypedFactory<D>
+  return factory as unknown as TypedFactory<D, R>
 }
