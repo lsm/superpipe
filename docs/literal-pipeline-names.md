@@ -47,7 +47,8 @@ the host registered, with the arguments the host declared for it.
 
 ## What the caller sees
 
-Each refused name fails at the name argument (TypeScript 7, checked against a prototype):
+A name outside the registry fails at the name argument (TypeScript 7, checked against a
+prototype):
 
 ```
 tp(name)              Argument of type 'string' is not assignable to parameter of type
@@ -58,6 +59,29 @@ tp('todo.add')        Argument of type '"todo.add"' is not assignable to paramet
                       '"health.ping" | "todo.remove"'.
 remove(1)             Expected 2 arguments, but got 1.
 ```
+
+Registry membership alone still allows a choice made at run time: an argument typed
+`'todo.remove' | 'health.ping'`, or a template over a finite union such as
+`` `todo.${'remove' | 'add'}` ``, has only registered alternatives. So the name call also checks
+that the inferred name is a single literal, without distributing over the union, and reports a
+union through its return type, the way the typed builder reports other semantic problems:
+
+```ts
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never
+
+<const N extends keyof R & string>(name: N):
+  true extends IsUnion<N> ? TypedError<'Pipeline name must be a single string literal, not a union'>
+                          : TypedPipeline<…>
+
+tp(which).input(…)    Property 'input' does not exist on type
+                      'TypedError<"Pipeline name must be a single string literal, not a union">'.
+```
+
+A literal narrowed by control flow (`if (n === 'todo.remove') tp(n)`) or held in a `const` is a
+single literal and is accepted. Putting the check in the parameter type instead
+(`name: N & SingleName<N>`) also refuses unions, but every diagnostic, including the membership
+ones above, then degrades to "not assignable to parameter of type 'never'", so the design keeps
+membership on the parameter and the singleton check on the result.
 
 A registry whose keys are not all literals (`Record<string, …>`, or a key such as
 `` `todo.${string}` ``) would let any matching name through, so the factory type becomes
@@ -89,18 +113,24 @@ Type tests in `test/typed.test-d.ts`, mirrored in the verify skill's type consum
 2. `tp(name)` with `name: string` is refused.
 3. `` tp(`todo.${action}`) `` is refused.
 4. An unregistered literal is refused.
-5. The runner's parameters are the registry's tuple for that name; other arguments are refused.
-6. A registry with a `string` or pattern key yields the `TypedError` above.
-7. The annotated form `const tp: TypedFactory<typeof deps, R> = typed(deps)` works.
-8. Without a registry, `tp<[string]>('x')` and the untyped API compile exactly as before, and
-   their `pipeline.name` stays `string`.
+5. A union of registered names (`which: 'todo.remove' | 'health.ping'`, or a function parameter
+   of that type) yields the single-literal `TypedError` at the next call.
+6. A template over a finite union whose alternatives are all registered
+   (`` `todo.${verb}` `` with `verb: 'remove' | 'add'`) yields the same `TypedError`.
+7. A literal narrowed by control flow, or held in a `const`, is accepted and keeps its literal
+   `pipeline.name`.
+8. The runner's parameters are the registry's tuple for that name; other arguments are refused.
+9. A registry with a `string` or pattern key yields the registry-keys `TypedError` above.
+10. The annotated form `const tp: TypedFactory<typeof deps, R> = typed(deps)` works.
+11. Without a registry, `tp<[string]>('x')` and the untyped API compile exactly as before, and
+    their `pipeline.name` stays `string`.
 
 ## Implementation slice (one PR)
 
 - `src/typed.ts`: registry branch of `TypedFactory`, `name` in the state and the two runner types.
 - `src/common.ts`: name parameter on `PipelineDescription` and `DescribedRunner`.
 - README: a short "Literal pipeline names" subsection under Typed pipelines; CHANGELOG entry.
-- Tests: the eight cases above; the verify consumer gains cases 1, 2 and 6.
+- Tests: the eleven cases above; the verify consumer gains cases 1, 2, 5 and 9.
 
 Roughly 40 lines of type code; no `.js` output changes, which the verify skill confirms by the
 unchanged runtime smoke.
