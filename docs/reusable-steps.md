@@ -1,7 +1,6 @@
 # Design: a reusable run of steps included by reference (`.use`)
 
-Issue: #93. Status: proposed, waiting for sign-off before any code. Names (`steps`, `use`,
-`part`) are placeholders the human may change; see open questions.
+Issue: #93. Status: signed with the five recommended answers below; implemented.
 
 ## Problem
 

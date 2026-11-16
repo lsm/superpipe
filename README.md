@@ -230,6 +230,37 @@ exit.
 .reason((reason, exit) => metrics.increment(`denied.${exit.name}`))
 ```
 
+#### `sp.steps(name)` and `.use(part)`
+
+A part is a named, frozen run of steps that several pipelines share.
+`sp.steps(name)` starts an empty part; its only method, `.pipe()`, takes the
+same arguments as a pipeline's `.pipe()` and returns a new part, so a part that
+is already used never changes. `.use(part)` adds the part's steps at that
+point, exactly as if they were written inline:
+
+```javascript
+const owned = sp.steps('goal.owned')
+  .pipe(resolveOwner, ['caller', 'input'], 'result:outcome')
+  .pipe('!isArchived', 'outcome')
+
+const create = sp('goal.create')
+  .input(['input', 'caller'])
+  .use(owned)
+  .pipe(createGoal, ['outcome', 'input'], 'outcome')
+  .endAsync('outcome')
+```
+
+- Values, `result:` exits, halts, errors, the error handler and cancellation
+  behave as for the same steps written inline under the same runner.
+- A part copies the spec arrays it is given, so changing them later changes
+  nothing.
+- A part holds steps only: `.pipe('input', …)` and `.pipe('error', …)` throw,
+  and a part cannot use another part. `.use` follows `.pipe`'s ordering rules.
+- A part can only be used by pipelines of the factory that declared it;
+  anything else throws.
+- `run.pipeline` lists the part's steps in place with `part: 'goal.owned'`.
+- The `typed()` builder refuses `.use` at compile time for now.
+
 #### `.error(handler, input?)`
 
 Sets an error handler for the pipeline. Only one error handler is allowed per pipeline.

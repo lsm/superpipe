@@ -12,6 +12,7 @@ export default interface Pipe {
   injected: boolean
   input?: PipeParameter
   output?: PipeParameter
+  part?: string
 }
 
 export interface InputPipe {

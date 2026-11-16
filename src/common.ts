@@ -57,6 +57,7 @@ export interface StepDescription {
   readonly optional: boolean
   readonly input?: DescribedSpec
   readonly output?: DescribedSpec
+  readonly part?: string
 }
 
 export interface PipelineDescription {

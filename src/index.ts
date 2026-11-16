@@ -7,16 +7,17 @@ import type {
   PipeParameter,
   ReasonHandler,
 } from './common'
-import { FN_TYPE } from './pipeline/builder'
+import { createPart, FN_TYPE, type Part } from './pipeline/builder'
 import type { PipeDefinition } from './pipeline/Pipe'
 import PipelineBuilder from './pipeline/Pipeline'
 
 export default function superpipe<T extends FunctionContainer = FunctionContainer>(
   functions?: T,
 ): SuperPipeFactory {
+  const owner = {}
   const factory = (name: string, defs?: PipeDefinition[]): PipelineAPI | PipelineRunner => {
     let endOutput: PipeParameter | undefined
-    const pipeline = new PipelineBuilder(name, functions)
+    const pipeline = new PipelineBuilder(name, functions, owner)
 
     if (Array.isArray(defs)) {
       defs.forEach((pipeDef: PipeDefinition): void => {
@@ -41,6 +42,7 @@ export default function superpipe<T extends FunctionContainer = FunctionContaine
 
     return pipeline
   }
+  factory.steps = (name: string): Part => createPart(name, owner)
   return factory as SuperPipeFactory
 }
 
@@ -78,6 +80,7 @@ export {
   OutputNameError,
   PipelineAbortedError,
 } from './common'
+export type { Part } from './pipeline/builder'
 export type { PipeDefinition, PipeDefinition as PipelineDefinition } from './pipeline/Pipe'
 export type {
   InputSpec,
@@ -111,6 +114,7 @@ export type { FunctionContainer as Dependencies } from './common'
 export interface PipelineAPI {
   input: (input?: PipeParameter) => PipelineAPI
   pipe: (fn: PipeFunction, input?: PipeParameter, output?: PipeParameter) => PipelineAPI
+  use: (part: Part) => PipelineAPI
   error: (fn: PipeFunction, input?: PipeParameter) => PipelineAPI
 
   onExit: (handler: ExitHandler) => PipelineAPI
@@ -126,6 +130,7 @@ export interface SuperPipeFactory {
   (name: string): PipelineAPI
   (name: string, defs: PipeDefinition[]): PipelineRunner
   (name: string, defs?: PipeDefinition[]): PipelineAPI | PipelineRunner
+  steps(name: string): Part
 }
 export type Store = {
   next: (error?: unknown, value?: unknown) => void
