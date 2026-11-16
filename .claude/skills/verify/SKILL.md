@@ -13,7 +13,8 @@ proof is a journey that observes the change through what a user installs.
 
 - Node `^22.18.0 || >=24.11.0` (the locked tsdown refuses others), then `npm ci` at the repo root.
 - Go 1.22 or newer on `PATH` for anything under `go/`.
-- Run from the repo root. Nothing here needs network after `npm ci`.
+- Run from the repo root on macOS or Linux (the script spawns `npm` directly, which Windows
+  does not support). Nothing here needs network after `npm ci`.
 
 ## Gates
 

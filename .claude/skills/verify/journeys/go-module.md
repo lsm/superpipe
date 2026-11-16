@@ -17,5 +17,7 @@ code 0.
 For a new Go behavior, extend `main.go` in `goConsumer()` and its expected output string in the
 same file.
 
-Prove the check can fail: change the expected output string or break `go/run.go` temporarily,
-rerun, see `FAIL` and a non-zero exit, then restore.
+Prove the check can fail by breaking the Go port, not the expected string: in `go/errors.go`
+make `(*AbortedError).Unwrap` return `nil`, rerun, see
+`FAIL Go module consumer — unexpected output: receipt-u-123 <nil> false` and a non-zero exit, then
+restore the file.
