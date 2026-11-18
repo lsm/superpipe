@@ -1,5 +1,5 @@
-Unreleased
-==========
+0.21.0 2026-11-17
+=================
 - Added parts: `sp.steps(name).pipe(...)` declares a named, frozen run of
   steps and `.use(part)` adds them to a pipeline as if written inline. A part
   copies its spec arrays, holds steps only, cannot use another part, and only
